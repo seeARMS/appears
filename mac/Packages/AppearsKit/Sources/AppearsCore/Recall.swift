@@ -79,8 +79,11 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
     /// 0–1: how sure Appears is that this is worth your attention.
     public let confidence: Double
     public let features: Features
+    /// When the context asks for a value ("what was the wifi password?"), the unit's line
+    /// that holds it.
+    public let line: MatchedLine?
 
-    public init(item: Item, unit: Unit, reason: String, snippet: String, score: Double, confidence: Double, features: Features) {
+    public init(item: Item, unit: Unit, reason: String, snippet: String, score: Double, confidence: Double, features: Features, line: MatchedLine? = nil) {
         self.item = item
         self.unit = unit
         self.reason = reason
@@ -88,6 +91,7 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
         self.score = score
         self.confidence = confidence
         self.features = features
+        self.line = line
     }
 }
 
@@ -302,6 +306,9 @@ public struct Recall: Sendable {
             if !folder.isEmpty { usedFolders.insert(folder) }
         }
 
+        // The fact itself, when the context asks for one.
+        let question = Question(context)
+        let terms = query.matchable + query.contextMatchable + query.rareTerms
         let suggestions = chosen.map { index -> Suggestion in
             let entry = pool[index]
             return Suggestion(
@@ -311,7 +318,8 @@ public struct Recall: Sendable {
                 snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
                 score: entry.score,
                 confidence: entry.confidence,
-                features: entry.features
+                features: entry.features,
+                line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) }
             )
         }
         return RecallResponse(

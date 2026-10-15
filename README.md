@@ -129,7 +129,7 @@ cd mac/Packages/AppearsModel && xcodebuild -scheme appears -destination 'platfor
 mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 ```
 
-`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15, with the meeting and asking scenarios (20 + 19): recall@3 0.98, MRR 1.00, ambient hits 20/20, false surfaces 0/19, median 53 ms. Scenarios whose app is "Calendar" are made into a context the way the app reads an event. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
+`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15, with the meeting and asking scenarios (20 + 19): recall@3 0.98, MRR 1.00, ambient hits 20/20, false surfaces 0/19, matched lines 3/3 with none unexpected, median 181 ms (noisy: measured while other builds ran). Scenarios whose app is "Calendar" are made into a context the way the app reads an event. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
 
 Other commands:
 

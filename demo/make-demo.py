@@ -243,6 +243,7 @@ pdf(
     [
         """
         EASTSHORE HONDA — SERVICE INVOICE  RO# 418820
+        Service date: Aug 14, 2023
         Vehicle: 2019 Honda CR-V EX   Mileage in: 42,118
         Services performed:
           Maintenance B1: oil and filter, tire rotation          $189.95
