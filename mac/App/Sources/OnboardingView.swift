@@ -82,7 +82,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 8) {
                 promise("Reads the window you're in, in memory, and throws it away.")
                 promise("Keeps an index of your own files and notes, on this Mac.")
-                promise("Can't use the network. The engine has no network entitlement, and the app turns its own network access off at launch.")
+                promise("The part that reads your files can't use the network: macOS blocks it. The menu bar app has no networking code, and it's open source so you can check.")
             }
             .padding(.top, 8)
         }

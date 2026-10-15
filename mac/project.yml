@@ -2,8 +2,10 @@
 #
 # Two processes (see PLAN.md, "Permissions and the two-process split"):
 # - Appears.app: the menu bar app. Reads the screen through the Accessibility API, which
-#   Apple doesn't allow in the App Sandbox, so it isn't sandboxed. It has no networking code
-#   and applies the built-in no-network sandbox profile to itself at launch (NoNetwork.swift).
+#   Apple doesn't allow in the App Sandbox, so it isn't sandboxed. It has no networking code;
+#   scripts/check-no-network.sh fails if its binary imports any networking API. (It can't
+#   sandbox itself either: a self-applied sandbox_init profile, even one that only denies IP
+#   networking, makes macOS refuse it Accessibility. Found 2026-10-15.)
 # - AppearsEngine.xpc: indexing, the model, search and the journal. App Sandbox with NO
 #   network entitlement; read-only access to the home folder and /Volumes. Never add
 #   com.apple.security.network.client or network.server to it.

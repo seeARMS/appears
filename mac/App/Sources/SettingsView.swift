@@ -191,7 +191,6 @@ private struct PrivacyPane: View {
     @Bindable var model: AppModel
     @State private var confirmIndex = false
     @State private var confirmJournal = false
-    @State private var probe: String?
 
     var body: some View {
         Form {
@@ -208,14 +207,8 @@ private struct PrivacyPane: View {
                     }
             }
             Section("Network") {
-                LabeledContent("Engine") { Text("Sandboxed, no network entitlement") }
-                LabeledContent("This app") { Text(model.networkBlocked ? "No-network profile applied" : "Profile not applied").foregroundStyle(model.networkBlocked ? Color.primary : .red) }
-                HStack {
-                    Button("Test it") {
-                        probe = NoNetwork.probe() ? "A connection was allowed. Something's wrong." : "Blocked, as it should be."
-                    }
-                    if let probe { Text(probe).font(.caption).foregroundStyle(.secondary) }
-                }
+                LabeledContent("Engine") { Text("Sandboxed, no network entitlement: macOS blocks it") }
+                LabeledContent("This app") { Text("No networking code (it can't be sandboxed: Accessibility isn't allowed there)") }
                 Text("Check the engine yourself: codesign -d --entitlements - /Applications/Appears.app/Contents/XPCServices/AppearsEngine.xpc")
                     .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             }

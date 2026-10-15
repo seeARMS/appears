@@ -7,7 +7,7 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 ## Rules that protect the product's promise
 
 - **The engine never gets the network.** `mac/project.yml` gives `AppearsEngine` the App Sandbox with no `com.apple.security.network.client` or `network.server`. Never add them, and never add networking code, analytics or crash reporting anywhere in `mac/`.
-- **The app keeps its no-network profile.** It can't be sandboxed (Accessibility isn't allowed in the sandbox), so `NoNetwork.apply()` runs first thing at launch. Don't remove it or weaken its profile. On macOS 27 the built-in named profile kills the process; use a profile string.
+- **The app has no networking code.** It can't be sandboxed (Accessibility isn't allowed in the sandbox), and it can't sandbox itself: any self-applied `sandbox_init` profile makes macOS refuse it Accessibility (found 2026-10-15). So `mac/scripts/check-no-network.sh` is the guard: run it on every build you hand over, and keep it passing. Don't link Network.framework, URLSession or sockets into the app or `AppearsContext`.
 - **Nothing about the screen is stored.** Context text lives in memory only. The journal keeps item ids, scores, outcomes and a salted fingerprint. The one exception is `debugContext`, behind a Debug-build setting that dogfooding uses, kept for 14 days. Don't log context text, even with `NSLog`.
 - **Silence is the default.** No notifications, sounds or pop-ups. Ambient suggestions only change the menu bar glyph, behind `SurfacePolicy` (dwell, confidence, budget, backoff). Don't loosen these without checking `appears eval`'s false-surface rate.
 - **Exclusions stay on:** password managers and secure fields (`Exclusions.swift`), private windows, Safari in ambient mode unless the setting allows.
@@ -31,7 +31,7 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
     - `IndexStore` (GRDB, FTS5, float16 vectors), `VectorIndex` (brute force), `Indexer`;
     - `QueryBuilder`, `Recall` (ranking and `Confidence`), `Journal`, `SurfacePolicy`;
     - `Engine` (the engine's logic and XPC protocol, also used in-process by the CLI).
-  - `AppearsContext`: `ContextReader` (AX), `Browsers`, `Exclusions`, `ScreenText` (OCR fallback), `NoNetwork`.
+  - `AppearsContext`: `ContextReader` (AX), `Browsers`, `Exclusions`, `ScreenText` (OCR fallback).
 - **`mac/Packages/AppearsModel`:** needs Xcode, since MLX compiles Metal shaders.
   - `EmbeddingGemma2`: copied unmodified from whosaid, which copied it from Obscyra-app/EmbeddingGemma2Swift.
   - `GemmaEmbedder`: loads the vision tower lazily and unloads it after indexing.

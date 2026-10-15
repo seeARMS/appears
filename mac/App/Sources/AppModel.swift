@@ -47,7 +47,6 @@ final class AppModel {
     var showWeaker = false
     private(set) var pullError: String?
     private(set) var accessibilityTrusted = ContextReader.isTrusted
-    private(set) var networkBlocked = NoNetwork.isApplied
     /// Why the last context wasn't used, for the panel's footer ("password field").
     private(set) var skippedReason: String?
 
@@ -384,7 +383,6 @@ final class AppModel {
         updateGlyph()
     }
 
-    func noteNetworkBlocked() { networkBlocked = NoNetwork.isApplied }
 
     /// For the snapshot tool: show these suggestions without the engine.
     func showForSnapshot(_ shown: Shown?, status: EngineStatus?, trusted: Bool = true) {

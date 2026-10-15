@@ -20,16 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var onboardingWindow: NSWindow?
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        // First thing: give up the network for the life of this process. See NoNetwork.swift.
-        if let error = NoNetwork.apply() {
-            NSLog("Appears: couldn't apply the no-network profile: \(error)")
-        } else {
-            NSLog("Appears: no-network profile applied; test connection %@", NoNetwork.probe() ? "ALLOWED (unexpected)" : "blocked")
-        }
-        model.noteNetworkBlocked()
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         let status = StatusController(model: model)
         status.openSettings = { [weak self] in self?.showSettings() }

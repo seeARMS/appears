@@ -24,9 +24,13 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing
   codesign -d --entitlements - mac/build/DerivedData/Build/Products/Release/Appears.app/Contents/XPCServices/AppearsEngine.xpc
   ```
 
-- **The app** reads the screen through the Accessibility API, which Apple doesn't allow in the sandbox, so it isn't sandboxed. It has no networking code. At launch it applies a sandbox profile to itself that denies all IP networking (`NoNetwork.swift`). Settings → Privacy → Test it tries a connection and shows that it's blocked.
-  - macOS 27 kills a process that applies the built-in named `no-network` profile, so Appears uses a profile string. Found 2026-10-15.
-  - If the profile ever gets in the way of Accessibility while testing, turn it off and relaunch: `defaults write rs.appea.appears applyNoNetworkProfile -bool NO`.
+- **The app** reads the screen through the Accessibility API, which Apple doesn't allow in the sandbox, so it isn't sandboxed, and nothing in macOS stops it from connecting. It has no networking code, and `mac/scripts/check-no-network.sh` fails if its binary imports any networking API (sockets, URLSession, Network.framework, CFNetwork streams):
+
+  ```bash
+  mac/scripts/check-no-network.sh mac/build/DerivedData/Build/Products/Release/Appears.app
+  ```
+
+  It can't sandbox itself either. A self-applied `sandbox_init` profile, even one that allows everything except IP networking, makes macOS refuse the process Accessibility, and on macOS 27 the built-in named `no-network` profile kills the process outright. Both found 2026-10-15.
 - **Nothing about what was on screen is stored.** Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
 
 ## Repository
@@ -37,10 +41,10 @@ mac/
   Engine/                   the sandboxed XPC service
   Packages/AppearsKit/      builds and tests with the Command Line Tools
     AppearsCore/            sources, extractors, Notes reader, index, ranking, journal, surface policy
-    AppearsContext/         Accessibility reader, browser URLs, exclusions, OCR fallback, no-network
+    AppearsContext/         Accessibility reader, browser URLs, exclusions, OCR fallback
   Packages/AppearsModel/    EmbeddingGemma 2 on MLX (copied from whosaid), the `appears` CLI
   Tools/                    ContextProbe (`appears-context`), Snapshots (`appears-snapshots`)
-  scripts/                  model download and preparation, reference vectors
+  scripts/                  model download and preparation, reference vectors, check-no-network
   project.yml               XcodeGen spec (Appears.xcodeproj is generated, not committed)
 web/                        appea.rs (Astro, static, plus a small Markdown-negotiation Worker)
 demo/                       a made-up home folder and eval scenarios; never real data

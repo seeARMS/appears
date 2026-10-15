@@ -108,7 +108,7 @@ export const PRIVACY = [
   },
   {
     label: "The menu bar app",
-    text: "Reading the screen needs the Accessibility API, which Apple doesn't allow inside the sandbox. So the app that reads it contains no networking code, and it turns off its own network access at launch with macOS's built-in no-network sandbox profile.",
+    text: "Reading the screen needs the Accessibility API, which Apple doesn't allow inside the sandbox. So the app that reads it isn't sandboxed. It contains no networking code, a check in the build fails if it ever imports a networking API, and the source is open for you to read.",
   },
   {
     label: "What it keeps",

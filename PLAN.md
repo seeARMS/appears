@@ -26,7 +26,7 @@ These are the product. Each one is enforced in code, by macOS, or by the release
 
 1. **Nothing leaves the Mac.**
    - **The engine** (indexing, the model, the index, file parsing) runs in an App Sandbox with no network entitlement, so macOS blocks every connection.
-   - **The app** reads your screen through the Accessibility API, which Apple doesn't allow inside the sandbox. It is small and has no networking code. It also denies itself TCP/IP at launch (`sandbox_init` with the built-in no-network profile; *unverified* that Accessibility still works under it, tested in M0).
+   - **The app** reads your screen through the Accessibility API, which Apple doesn't allow inside the sandbox. It is small and has no networking code, checked by a build script that fails if its binary imports a networking API. (Update 2026-10-15: the planned self-applied `sandbox_init` no-network profile makes macOS refuse Accessibility, so it was dropped.)
    - **Updates** go through Sparkle's separately sandboxed downloader.
    - The README says exactly which part is enforced how.
 2. **It doesn't record your screen.** It reads only the current context, in memory, when something changes, and then throws it away. It keeps an index of files you already own, and a log of which suggestions you opened or dismissed. The log never holds the context's text (see Measuring).
@@ -281,7 +281,7 @@ Apple doesn't allow the Accessibility API inside the App Sandbox, even after the
 - **`Appears.app`: unsandboxed, Developer ID.**
   - **Does:** the menu bar UI, context reading (Accessibility, Apple Events for browser URLs, ScreenCaptureKit on pull), and FSEvents.
   - **Permission prompts** show "Appears", which is what people expect.
-  - **Contains no networking code**, and calls `sandbox_init` with the built-in no-network profile at launch. That API is deprecated but still ships; M0 checks it doesn't break Accessibility, Apple Events or ScreenCaptureKit.
+  - **Contains no networking code**, checked by `mac/scripts/check-no-network.sh`. The plan was also to call `sandbox_init` with a no-network profile at launch; tested 2026-10-15, any self-applied profile makes macOS refuse Accessibility, so that's out.
   - **Updates:** Sparkle has to use its Downloader XPC service, since the app can't reach the network itself.
 - **`AppearsEngine.xpc`: App Sandbox, no network entitlement.**
   - **Does:** file parsing, the model, `index.sqlite`, `journal.sqlite` and search.
@@ -429,7 +429,7 @@ These are targets to measure in M0, not guesses to trust:
 
 ## Decisions (Colin, 2026-10-15)
 
-1. **Process split:** an unsandboxed app that denies itself the network, plus a sandboxed engine with no network entitlement. The fallback, if M0 finds a problem, is a sandboxed app plus a tiny unsandboxed Accessibility helper.
+1. **Process split:** an unsandboxed app with no networking code (it can't deny itself the network; see Permissions), plus a sandboxed engine with no network entitlement. The fallback, if M0 finds a problem, is a sandboxed app plus a tiny unsandboxed Accessibility helper.
 2. **DigUp:** Appears builds its own index and borrows ideas from DigUp as needed. DigUp's index won't be a source.
 3. **Code from whosaid:** copy in whatever's useful, no provenance note and no shared package. Engineering only; never its UX or design.
 4. **Voice memos:** not in v0. They're in the v1 backlog.

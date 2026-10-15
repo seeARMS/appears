@@ -48,14 +48,15 @@ struct PanelView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.shown?.mode == .ambient ? "You might want these" : "You already have")
+                Text(headline)
                     .font(Theme.serif)
                     .foregroundStyle(Theme.ink)
-                if let shown = model.shown, !shown.windowTitle.isEmpty || !shown.appName.isEmpty {
-                    Text("For \(shown.windowTitle.isEmpty ? shown.appName : shown.windowTitle)")
+                if let shown = model.shown, let subtitle = Self.subtitle(shown) {
+                    Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
             }
             Spacer()
@@ -66,6 +67,27 @@ struct PanelView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 10)
+    }
+
+    private var headline: String {
+        if model.isPulling, model.shown?.suggestions.isEmpty ?? true { return "Looking through your files…" }
+        if model.shown?.mode == .ambient { return "Found something related" }
+        return "Related files and notes"
+    }
+
+    /// "For “Meet - Standup” in Google Chrome": the window's title without the app's name or
+    /// a browser profile tacked on the end.
+    static func subtitle(_ shown: AppModel.Shown) -> String? {
+        var title = shown.windowTitle
+        let app = shown.appName
+        if !app.isEmpty {
+            for separator in [" - ", " — ", " – "] {
+                if let range = title.range(of: separator + app) { title = String(title[..<range.lowerBound]) }
+            }
+        }
+        title = title.trimmingCharacters(in: .whitespaces)
+        if title.isEmpty || title == app { return app.isEmpty ? nil : "For what's in \(app)" }
+        return app.isEmpty ? "For “\(title)”" : "For “\(title)” in \(app)"
     }
 
     @ViewBuilder
