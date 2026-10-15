@@ -17,7 +17,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing
   - **Forgotten:** results are weighted toward what you haven't touched in months. Anything open or touched in the last 3 days is never shown.
   - **New:** what's in the same folder or repeats the window title counts less.
   - **Varied:** results are diversified, so you don't get three near-copies.
-- **Confidence:** each result gets a 0–1 score built from how far it stands above the context's other candidates. `appears eval` measures it.
+- **Confidence:** each result gets a 0–1 score built from how far it stands above the context's other candidates. A clear match counts for more when what you're writing asks for something you had ("what was the wifi password again?"). `appears eval` measures it.
 - **When to show something:** you can always ask, with ⇧⌘Space or a click on the menu bar ring. On its own, Appears looks only after you've stayed in one context for 15 seconds. It changes the ring (a dot appears) only when a result is confident and the budget allows: a few per hour, with backoff after each ignored or dismissed suggestion. It never sends notifications or makes sounds. "Log only" mode records what it would have shown, without showing it.
 - **Measuring:** a journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). It holds item ids and scores, and a salted fingerprint of the context, never its text. Settings → Stats and `appears stats` turn it into precision numbers.
 
@@ -122,7 +122,7 @@ cd mac/Packages/AppearsModel && xcodebuild -scheme appears -destination 'platfor
 mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 ```
 
-`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15: recall@3 0.96, MRR 1.00, ambient hits 8/8, false surfaces 0/4, median 48 ms. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
+`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15 (15 scenarios, 13 negatives): recall@3 0.98, MRR 1.00, ambient hits 15/15, false surfaces 0/13, median 48 ms. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
 
 Other commands:
 

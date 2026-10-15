@@ -84,6 +84,27 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         #expect(query.fullText.contains("\"INV-20431\""))
     }
 
+    @Test func spotsRecallIntent() {
+        for asking in ["Thanks! What was the wifi password again?", "do you still have the quote?", "Can you resend the permit",
+                       "I’ll send you the itinerary tonight", "where's that receipt for the desk?", "I can't find the lease"] {
+            #expect(QueryBuilder.recallIntent(in: asking), "\(asking)")
+        }
+        for not in ["lol what was I thinking", "I can find time Tuesday", "Where is the nearest pharmacy?",
+                    "Let me know if Thursday works", "Send the deck to the team"] {
+            #expect(!QueryBuilder.recallIntent(in: not), "\(not)")
+        }
+    }
+
+    @Test func recallIntentComesFromWhatYouWrite() {
+        // Someone else asking, in the window's history, isn't you asking your memory.
+        let theirs = ContextSnapshot(appName: "Messages", focusedText: "ok sounds good", visibleText: "Sam: can you resend the permit?")
+        #expect(!QueryBuilder.build(theirs).recallIntent)
+        let yours = ContextSnapshot(appName: "Messages", focusedText: "sure, I'll send you the permit", visibleText: "Sam: is the permit still good?")
+        #expect(QueryBuilder.build(yours).recallIntent)
+        let selected = ContextSnapshot(appName: "Notes", selection: "where did I put the warranty card")
+        #expect(QueryBuilder.build(selected).recallIntent)
+    }
+
     @Test func fingerprintIgnoresWhitespaceButNotTopic() {
         let a = ContextSnapshot(bundleID: "com.apple.mail", windowTitle: "Re: Kitchen", focusedText: "Hello  there")
         var b = a
@@ -144,11 +165,91 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         #expect(!background.features.entityHit)
     }
 
+    @Test func recallIntentOnlyLiftsAClearMatch() throws {
+        // A match that stands out: asking your memory makes Appears surer of it.
+        var clear = Features(cosine: 0.75, zScore: 4.5, agreement: true, entityHit: false, daysSinceTouched: 400, fused: 0.03, forgotten: 1, novelty: 1)
+        let plain = Confidence.estimate(clear)
+        clear.recallIntent = true
+        #expect(Confidence.estimate(clear) > plain)
+        // Nothing stands out ("what's the weather again?"): asking changes nothing.
+        var weak = Features(cosine: 0.64, zScore: 2.4, agreement: false, entityHit: false, daysSinceTouched: 400, fused: 0.02, forgotten: 1, novelty: 1)
+        let weakPlain = Confidence.estimate(weak)
+        weak.recallIntent = true
+        #expect(Confidence.estimate(weak) == weakPlain)
+        // Journal rows written before the signal existed still decode.
+        let old = #"{"cosine":0.7,"zScore":3,"agreement":true,"entityHit":false,"daysSinceTouched":10,"fused":0.02,"forgotten":0.8,"novelty":1}"#
+        #expect(try !JSONDecoder().decode(Features.self, from: Data(old.utf8)).recallIntent)
+    }
+
+    @Test func recallIntentDoesNotReorder() async throws {
+        let (recall, _, _) = try await makeIndex([
+            ("quote.txt", "Kitchen remodel quote: cabinets, quartz countertops, six new outlets, $23,900", 400),
+            ("permit.txt", "Building permit for the kitchen remodel: cabinets, countertops and outlets", 300),
+            ("hiking.txt", "Zion hiking itinerary for three days, Angels Landing permit", 300),
+        ])
+        func run(_ text: String) async throws -> RecallResponse {
+            try await recall.run(RecallRequest(context: ContextSnapshot(appName: "Messages", focusedText: text), trigger: .pull))
+        }
+        // The hashing embedder only sees words: the asking words are filler to it.
+        let plain = try await run("the kitchen remodel quote cabinets quartz countertops outlets ok")
+        let asking = try await run("the kitchen remodel quote cabinets quartz countertops outlets, can you resend it")
+        #expect(asking.suggestions.count >= 2)
+        #expect(asking.suggestions.allSatisfy { $0.features.recallIntent })
+        #expect(!plain.suggestions.contains { $0.features.recallIntent })
+        #expect(asking.suggestions.map(\.item.title) == plain.suggestions.map(\.item.title))
+    }
+
     @Test func neverShowIsRespected() async throws {
         let (recall, store, _) = try await makeIndex([("x.txt", "Solar panel installation estimate from Sunrun", 100)])
         let first = try #require(try await recall.run(RecallRequest(context: .text("solar panel estimate"), trigger: .pull)).suggestions.first)
         try store.setNeverShow(itemID: first.item.id)
         #expect(try await recall.run(RecallRequest(context: .text("solar panel estimate"), trigger: .pull)).suggestions.isEmpty)
+    }
+}
+
+@Suite struct FullTextTests {
+    /// A screenshot: the image, and its OCR text as a text unit at the same locator.
+    private func screenshot(_ text: String, in store: IndexStore, folder: URL, vector: [Float] = [1, 0]) throws -> [AppearsCore.Unit] {
+        let date = Date().addingTimeInterval(-400 * day)
+        let item = Item(source: .file, path: folder.appending(path: "shot-\(UUID().uuidString).png").path, kind: .image,
+                        title: "Screenshot.png", size: 1, created: date, modified: date, lastUsed: nil)
+        let (id, _) = try store.record(item, signature: "x")
+        return try store.replaceUnits(itemID: id, title: item.title, units: [
+            (AppearsCore.Unit(kind: .text, locator: .whole, text: text), vector), (AppearsCore.Unit(kind: .image, locator: .whole, text: text), vector),
+        ]).added
+    }
+
+    @Test func countsWordsByTheIndexsOwnStemsAndOCRTextOnce() throws {
+        let folder = try temporaryFolder()
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        _ = try screenshot("Dr. Patel at Rockridge Animal Hospital, they quoted $640 for the cleaning", in: store, folder: folder)
+        let (counts, _) = try store.documentFrequencies(["quote", "itinerary", "cleaning", "hospital"])
+        // "quote" and "quoted" are both "quot" to the index; the crude stem missed it.
+        #expect(counts["quote"] == 1)
+        #expect(counts["cleaning"] == 1)
+        #expect(counts["hospital"] == 1)
+        #expect(counts["itinerary"] == nil)
+        #expect(try store.fullText("\"quote\"", limit: 10).count == 1)
+    }
+
+    @Test func anImageAgreesThroughItsOCRText() async throws {
+        let folder = try temporaryFolder()
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let embedder = HashingEmbedder()
+        let vectors = VectorIndex(dimension: embedder.dimension)
+        let text = "Ruiz & Daughters Builders quote Q-2291: kitchen remodel, quartz countertops, six outlets"
+        let vector = try await embedder.embed(documents: [EmbeddingDocument(title: "Screenshot.png", text: text)])[0]
+        // Only the image is a vector match (noisy OCR text often isn't), and only the OCR text
+        // unit is in the full-text index.
+        for unit in try screenshot(text, in: store, folder: folder, vector: vector) where unit.kind == .image {
+            vectors.upsert(id: unit.id, kind: unit.kind, vector: vector)
+        }
+        let recall = Recall(store: store, vectors: vectors, embedder: embedder)
+        let response = try await recall.run(RecallRequest(context: .text("the quartz countertops quote for the kitchen"), trigger: .pull))
+        let first = try #require(response.suggestions.first)
+        #expect(!response.query.rareTerms.isEmpty)
+        #expect(first.unit.kind == .image)
+        #expect(first.features.agreement)
     }
 }
 

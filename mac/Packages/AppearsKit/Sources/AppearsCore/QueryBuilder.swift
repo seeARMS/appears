@@ -15,6 +15,9 @@ public struct Query: Sendable, Equatable {
     public var identifiers: [String]
     /// Uncommon words in the index that appear in the context.
     public var rareTerms: [String]
+    /// You're asking your own memory for something you had ("what was the wifi password
+    /// again?"), in what you're writing or selected.
+    public var recallIntent = false
 
     /// An FTS5 query that matches any of the entities, identifiers or rare terms.
     public var fullText: String {
@@ -82,9 +85,40 @@ public enum QueryBuilder {
             entities: unique(strong, 12),
             contextEntities: unique(weak, 8),
             identifiers: unique(identifiers, 8),
-            rareTerms: rare
+            rareTerms: rare,
+            // Not the visible text: that's often someone else asking. In a long document only
+            // the end counts, which is usually where you're typing.
+            recallIntent: recallIntent(in: selection) || recallIntent(in: String(focused.suffix(600)))
         )
     }
+
+    /// Whether the text asks your own memory for something you had.
+    public static func recallIntent(in text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        let text = text.lowercased().replacingOccurrences(of: "’", with: "'")
+        return recallIntentPatterns.contains { text.range(of: $0, options: .regularExpression) != nil }
+    }
+
+    /// Phrases that ask your own memory for something you had, matched against lowercased text
+    /// with straight apostrophes. English only. They make a clear match more convincing, never
+    /// a weak one (see `Confidence`), so "what's the weather again?" can match and stay silent.
+    static let recallIntentPatterns = [
+        // "What was the wifi password again?"
+        #"(?m)\b(what|where|when|which|who|how)\b[^.!?\n]{0,60}\bagain\b *(\?|$)"#,
+        // "do you still have the quote?"
+        #"\b(do|does|did) (you|we|anyone) (still )?have (the|that|those|it|my|our|a copy)\b"#,
+        // "can you resend the permit", "send me the itinerary again"
+        #"\bre-?send\b|\b(send|forward)\b[^.!?\n]{0,40}\bagain\b"#,
+        // "I'll send you the itinerary", "let me dig up the receipt"
+        #"\b(i'll|i will|i can|let me) (send|forward|find|dig up|dig out|pull up|look up)( you| u)? (the|that|those|my|our)\b"#,
+        // "where's that receipt", "where did I put the warranty card"
+        #"\bwhere('s| is| are) (that|those|my|our)\b|\bwhere did (i|we) (put|save|leave|get)\b"#,
+        // "I can't find the lease", "do you remember the dentist's name", "remind me where"
+        #"\b(can't|cannot|couldn't) (find|remember|recall)\b|\b(don't|do not) remember\b|\b(do|does) (you|anyone) remember\b"#,
+        #"\bremind me (what|where|when|which|how|of)\b|\bi forg[eo]t (what|where|when|which|how)\b"#,
+        // "what was that place called", "what's the name of"
+        #"\bwhat('s| was| is) (the name of|that [^.!?\n]{1,30} called)\b"#,
+    ]
 
     /// Drops what isn't the message: quoted replies, "On … wrote:" headers, signatures,
     /// and runs of whitespace.
@@ -229,12 +263,14 @@ public enum QueryBuilder {
         in text: String, frequencies: ([String]) -> (counts: [String: Int], total: Int), excluding: Set<String>
     ) -> [String] {
         // Nouns only: verbs and adjectives ("need", "call", "through") are rare in a small
-        // index without saying anything about the topic.
+        // index without saying anything about the topic. Interjections too: the tagger calls
+        // some nouns that end a chat question one ("the contractor's quote?"), and real ones
+        // are short or common words.
         var words: [String: Int] = [:]
         let tagger = NLTagger(tagSchemes: [.lexicalClass])
         tagger.string = text
         tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: [.omitPunctuation, .omitWhitespace]) { tag, range in
-            guard tag == .noun || tag == .otherWord else { return true }
+            guard tag == .noun || tag == .otherWord || tag == .interjection else { return true }
             let word = text[range].lowercased()
             if word.count >= 4, !commonWords.contains(word), !excluding.contains(word), !word.allSatisfy(\.isNumber) {
                 words[word, default: 0] += 1
@@ -242,26 +278,19 @@ public enum QueryBuilder {
             return true
         }
         guard !words.isEmpty else { return [] }
-        // FTS5 stores porter-stemmed terms; ask for the word as written and a crude stem.
+        // Asked for as written: the index stems them the way it stems what it stores.
         let candidates = Array(words.keys.prefix(300))
-        let (counts, total) = frequencies(candidates + candidates.map(stem))
+        let (counts, total) = frequencies(candidates)
         guard total > 0 else { return [] }
         let limit = max(2, total / 100)
         return candidates
             .compactMap { word -> (String, Int)? in
-                let df = counts[word] ?? counts[stem(word)] ?? 0
+                let df = counts[word] ?? 0
                 return df > 0 && df <= limit ? (word, df) : nil
             }
             .sorted { $0.1 < $1.1 }
             .prefix(8)
             .map(\.0)
-    }
-
-    static func stem(_ word: String) -> String {
-        for suffix in ["ing", "ed", "es", "s"] where word.count > suffix.count + 3 && word.hasSuffix(suffix) {
-            return String(word.dropLast(suffix.count))
-        }
-        return word
     }
 
     static let commonWords: Set<String> = [
@@ -273,5 +302,6 @@ public enum QueryBuilder {
         "february", "march", "april", "june", "july", "august", "september", "october", "november",
         "december", "file", "edit", "view", "window", "help", "inbox", "mail", "message", "untitled",
         "google", "chrome", "safari", "gmail", "search", "home", "settings", "share", "new", "open",
+        "okay", "yeah", "sorry", "cheers", "haha", "congrats",
     ]
 }
