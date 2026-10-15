@@ -17,6 +17,14 @@ public final class IndexStore: Sendable {
     /// alongside the engine's writes.
     public init(url: URL, readOnly: Bool = false) throws {
         self.url = url
+        // In memory, so a read-only index stems queries too.
+        stemmer = try DatabaseQueue()
+        try stemmer.write { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE stem USING fts5(word, tokenize='\(Self.tokenizer)');
+                CREATE VIRTUAL TABLE stem_terms USING fts5vocab(stem, instance);
+                """)
+        }
         if readOnly {
             // A read-only connection can't create the WAL and shared-memory files, and can't
             // open a WAL database without them. macOS's SQLite keeps both after closing, so
@@ -44,13 +52,6 @@ public final class IndexStore: Sendable {
         pool = try DatabasePool(path: url.path, configuration: config)
         try Self.migrator.migrate(pool)
         Self.protect(url)
-        stemmer = try DatabaseQueue()
-        try stemmer.write { db in
-            try db.execute(sql: """
-                CREATE VIRTUAL TABLE stem USING fts5(word, tokenize='\(Self.tokenizer)');
-                CREATE VIRTUAL TABLE stem_terms USING fts5vocab(stem, instance);
-                """)
-        }
     }
 
     // MARK: - Schema

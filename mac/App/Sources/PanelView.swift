@@ -15,7 +15,7 @@ struct PanelView: View {
             header
             Rectangle().fill(Theme.border).frame(height: 1)
             content
-            footer
+            if showsFooter { footer }
         }
         .frame(width: 400)
         .background(Theme.card)
@@ -28,27 +28,34 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(headline)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.foreground)
-                if let shown = model.shown, let subtitle = Self.subtitle(shown) {
-                    Text(subtitle)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.mutedForeground)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+            Text(headline)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.foreground)
+                .layoutPriority(1)
+            if let shown = model.shown, let subtitle = Self.subtitle(shown) {
+                HStack(spacing: 5) {
+                    if shown.meeting == nil, let icon = Self.appIcon(shown.bundleID) {
+                        Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                    } else if shown.meeting != nil {
+                        Image(systemName: "calendar").font(.system(size: 11))
+                    }
+                    Text(subtitle).lineLimit(1).truncationMode(.tail)
                 }
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.mutedForeground)
+                .help(shown.meeting == nil ? "\(shown.windowTitle) · \(shown.appName)" : subtitle)
             }
-            Spacer(minLength: 8)
-            if model.isPulling {
-                ProgressView().controlSize(.small)
-            } else if let count = model.shown?.suggestions.count, count > 0 {
-                Badge(text: "\(count) found")
-            }
+            Spacer(minLength: 4)
+            if model.isPulling { ProgressView().controlSize(.mini) }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .frame(height: 40)
+    }
+
+    /// The front app's icon, which says which app this is about without spelling it out.
+    static func appIcon(_ bundleID: String) -> NSImage? {
+        guard !bundleID.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     private var headline: String {
@@ -57,11 +64,12 @@ struct PanelView: View {
         return "Related"
     }
 
-    /// "Re: Kitchen · Mail": the window's title without the app's name or a browser profile
-    /// tacked on the end, then the app. For a meeting, why now: "For Kitchen walkthrough at 2:00 PM".
+    /// "Re: Kitchen": the window's title without the app's name tacked on the end (the app's
+    /// icon sits before it), or the app's name when that's all there is. For a meeting, why
+    /// now, time first so it survives truncation: "2:00 PM · Kitchen walkthrough".
     static func subtitle(_ shown: AppModel.Shown) -> String? {
         if let meeting = shown.meeting {
-            return "For \(meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)) at \(meeting.start.formatted(date: .omitted, time: .shortened))"
+            return "\(meeting.start.formatted(date: .omitted, time: .shortened)) · \(meeting.title.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
         var title = shown.windowTitle
         let app = shown.appName
@@ -72,7 +80,7 @@ struct PanelView: View {
         }
         title = title.trimmingCharacters(in: .whitespaces)
         if title.isEmpty || title == app { return app.isEmpty ? nil : app }
-        return app.isEmpty ? title : "\(title) · \(app)"
+        return shown.bundleID.isEmpty && !app.isEmpty ? "\(title) · \(app)" : title
     }
 
     // MARK: - Content
@@ -105,12 +113,9 @@ struct PanelView: View {
                     ForEach(Array(shown.suggestions.enumerated()), id: \.element.id) { index, suggestion in
                         ResultRow(suggestion: suggestion, selected: model.selectedIndex == index, model: model, close: close)
                     }
-                    if !shown.weaker.isEmpty {
-                        Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 4).padding(.horizontal, -4)
-                        weaker(shown)
-                    }
+                    if !shown.weaker.isEmpty { weaker(shown) }
                 }
-                .padding(4)
+                .padding(6)
             }
         }
     }
@@ -128,13 +133,14 @@ struct PanelView: View {
             model.showWeaker.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: model.showWeaker ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold))
-                Text("Less likely (\(shown.weaker.count))")
+                Text("\(shown.weaker.count) less likely")
+                Image(systemName: model.showWeaker ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
             }
-            .font(.system(size: 11.5, weight: .medium))
+            .font(.system(size: 11.5))
             .foregroundStyle(Theme.mutedForeground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -147,6 +153,17 @@ struct PanelView: View {
 
     // MARK: - Footer
 
+    /// The footer carries indexing status or the keys for a list; with neither, it goes.
+    private var showsFooter: Bool {
+        if let progress = model.status?.progress,
+           progress.phase == .indexing || progress.phase == .scanning || (progress.phase == .paused && progress.pausedReason != nil) { return true }
+        return model.settings.isPaused || hasRows
+    }
+
+    private var hasRows: Bool {
+        model.shown?.suggestions.isEmpty == false || (model.showWeaker && model.shown?.weaker.isEmpty == false)
+    }
+
     private var footer: some View {
         HStack(spacing: 12) {
             if let status = model.status, status.progress.phase == .indexing || status.progress.phase == .scanning {
@@ -155,32 +172,29 @@ struct PanelView: View {
                 Text("Indexing paused: \(reason)")
             } else if model.settings.isPaused {
                 Text("Paused")
-            } else if model.selected?.line != nil {
+            } else if hasRows {
                 hint("↩", "open")
-                hint("⌥⌘C", "copy line")
-                hint("␣", "preview")
-                hint("⌫", "not useful")
-            } else {
-                hint("↩", "open")
-                hint("␣", "preview")
-                hint("⌫", "not useful")
+                if model.selected?.line != nil { hint("⌥⌘C", "copy") } else { hint("␣", "preview") }
                 Spacer(minLength: 0)
-                Text("or drag into anything")
+                hint("⌫", "hide")
             }
-            Spacer(minLength: 0)
         }
-        .font(.system(size: 11.5))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.system(size: 11))
+        .lineLimit(1)
         .foregroundStyle(Theme.mutedForeground)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(height: 34)
+        .background(Theme.muted.opacity(0.5))
         .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Kbd(key: key)
             Text(label)
         }
+        .fixedSize()
     }
 }
 
@@ -221,32 +235,34 @@ struct ResultRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             preview
-            VStack(alignment: .leading, spacing: 2) {
-                Text(suggestion.item.source == .notes ? suggestion.item.title : suggestion.item.title)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(suggestion.item.title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.foreground)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 reasonText
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .lineLimit(1)
                 if selected, let line = suggestion.line {
-                    QuotedLine(line: line).padding(.top, 4)
-                } else if selected, !suggestion.snippet.isEmpty {
+                    QuotedLine(line: line).padding(.top, 5)
+                } else if selected, showsSnippet {
                     Text(suggestion.snippet)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.mutedForeground)
+                        .foregroundStyle(Theme.mutedForeground.opacity(0.85))
+                        .lineSpacing(1.5)
                         .lineLimit(2)
-                        .padding(.top, 2)
+                        .padding(.top, 3)
                 }
             }
-            .frame(minHeight: 40, alignment: .center)
+            .frame(minHeight: 36, alignment: .center)
             Spacer(minLength: 0)
             trailing
         }
-        .padding(8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
                 .fill(selected || hovering ? Theme.muted : Color.clear)
@@ -264,8 +280,14 @@ struct ResultRow: View {
             }
             return NSItemProvider(object: suggestion.snippet as NSString)
         }
-        .help(suggestion.item.source == .file ? suggestion.item.path : "Apple Notes")
+        .help(suggestion.item.source == .file ? "\(suggestion.item.path)\nDrag it into anything." : "Apple Notes")
         .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
+    }
+
+    /// A picture's text is whatever OCR made of it, which reads as noise; its thumbnail says
+    /// more. Other kinds show the passage that matched.
+    private var showsSnippet: Bool {
+        !suggestion.snippet.isEmpty && suggestion.item.kind != .image
     }
 
     /// The why ("Mentions Dana Ruiz") in the foreground colour; when and where muted.
@@ -316,9 +338,7 @@ struct ResultRow: View {
                 .frame(width: 22, height: 22)
                 .foregroundStyle(Theme.mutedForeground)
             }
-            .frame(minHeight: 40)
-        } else if selected {
-            Kbd(key: "↩").frame(minHeight: 40)
+            .frame(minHeight: 36)
         }
     }
 
@@ -331,7 +351,7 @@ struct ResultRow: View {
                 Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Theme.mutedForeground)
             }
         }
-        .frame(width: 40, height: 40)
+        .frame(width: 36, height: 36)
         .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
     }

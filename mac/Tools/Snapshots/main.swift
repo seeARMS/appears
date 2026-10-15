@@ -87,19 +87,19 @@ let weaker = [
     status.ready = true
     status.counts.indexed = [.image: 2_413, .pdf: 611, .document: 3_982, .note: 214]
 
-    model.showForSnapshot(.init(mode: .pull, appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
+    model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
                                 suggestions: suggestions, weaker: []), status: status)
     render(PanelView(model: model, close: {}), "panel-pull", width: 400)
 
-    model.showForSnapshot(.init(mode: .ambient, appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
+    model.showForSnapshot(.init(mode: .ambient, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
                                 suggestions: Array(suggestions.prefix(2)), weaker: []), status: status)
     render(PanelView(model: model, close: {}), "panel-ambient", width: 400)
 
-    model.showForSnapshot(.init(mode: .pull, appName: "Messages", windowTitle: "Joan (Pine Hollow)", fingerprint: "x",
+    model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.MobileSMS", appName: "Messages", windowTitle: "Joan (Pine Hollow)", fingerprint: "x",
                                 suggestions: [cabin], weaker: weaker), status: status)
     render(PanelView(model: model, close: {}), "panel-line-wifi", width: 400)
 
-    model.showForSnapshot(.init(mode: .pull, appName: "Notes", windowTitle: "Car", fingerprint: "x",
+    model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.Notes", appName: "Notes", windowTitle: "Car", fingerprint: "x",
                                 suggestions: [invoice], weaker: weaker), status: status)
     render(PanelView(model: model, close: {}), "panel-line-invoice", width: 400)
 
@@ -111,7 +111,7 @@ let weaker = [
                                 fingerprint: "x", suggestions: Array(suggestions.prefix(2)), weaker: [], meeting: meeting), status: status)
     render(PanelView(model: model, close: {}), "panel-meeting", width: 400)
 
-    model.showForSnapshot(.init(mode: .pull, appName: "Safari", windowTitle: "NASA rover finds evidence of ancient lakebeds", fingerprint: "x",
+    model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.Safari", appName: "Safari", windowTitle: "NASA rover finds evidence of ancient lakebeds", fingerprint: "x",
                                 suggestions: [], weaker: [suggestions[2]]), status: status)
     render(PanelView(model: model, close: {}), "panel-empty", width: 400)
 
