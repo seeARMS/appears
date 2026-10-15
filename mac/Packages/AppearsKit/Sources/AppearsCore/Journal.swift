@@ -4,6 +4,8 @@ import GRDB
 /// What happened to a suggestion.
 public enum Outcome: String, Sendable, Codable, CaseIterable {
     case opened, previewed, dragged, revealed, copied
+    /// Copied the line that answered (⌥⌘C), not the file: the fact was enough.
+    case copiedLine
     /// "Not useful"
     case dismissed
     /// "Not in this app"
@@ -13,7 +15,7 @@ public enum Outcome: String, Sendable, Codable, CaseIterable {
     /// Shown, and nothing happened before the context changed.
     case ignored
 
-    public var isUseful: Bool { [.opened, .previewed, .dragged, .revealed, .copied].contains(self) }
+    public var isUseful: Bool { [.opened, .previewed, .dragged, .revealed, .copied, .copiedLine].contains(self) }
 }
 
 /// One row: Appears had suggestions for a context (shown or, in shadow mode, not).

@@ -120,7 +120,11 @@ struct Related: AsyncParsableCommand {
             print("   \(suggestion.reason)")
             print("   \(suggestion.item.path)")
             print("   cos \(String(format: "%.3f", f.cosine)) z \(String(format: "%.1f", f.zScore)) agree \(f.agreement) entity \(f.entityHit) days \(Int(f.daysSinceTouched)) forgotten \(String(format: "%.2f", f.forgotten)) novelty \(String(format: "%.2f", f.novelty))")
-            if !suggestion.snippet.isEmpty { print("   “\(suggestion.snippet)”") }
+            if let line = suggestion.line {
+                print("   ⟶ \(line.text.replacingOccurrences(of: "\n", with: " / "))")
+            } else if !suggestion.snippet.isEmpty {
+                print("   “\(suggestion.snippet)”")
+            }
         }
         if response.suggestions.isEmpty { print("Nothing.") }
     }
@@ -175,6 +179,8 @@ struct Eval: AsyncParsableCommand {
             var document: String?
             var expect: [String]?
             var never: [String]?
+            /// Text the top result's matched line must contain (the context asks for a value).
+            var line: String?
         }
         var scenarios: [Scenario]
         var negative: [Scenario]
@@ -239,6 +245,7 @@ struct Eval: AsyncParsableCommand {
         }
 
         var recallSum = 0.0, reciprocal = 0.0, ambientHits = 0, violations = 0
+        var linesRight = 0, linesExpected = 0, linesUnexpected = 0
         var times: [Double] = []
         for scenario in scenarios.scenarios where only.map({ scenario.name.localizedCaseInsensitiveContains($0) }) ?? true {
             let response = try await recall.run(RecallRequest(context: context(scenario), trigger: .pull, limit: max(limit, 3)))
@@ -252,6 +259,16 @@ struct Eval: AsyncParsableCommand {
             violations += (scenario.never ?? []).filter(paths.contains).count
             let mark = found.count == min(expected.count, 3) ? "✓" : (found.isEmpty ? "✗" : "~")
             print("\(mark) \(scenario.name): \(found.count)/\(min(expected.count, 3)) found, top confidence \(String(format: "%.2f", response.confidence))")
+            let topLine = response.suggestions.first?.line?.text
+            if let line = scenario.line {
+                linesExpected += 1
+                let right = topLine?.contains(line) == true
+                if right { linesRight += 1 }
+                print("    \(right ? "✓" : "✗") line: \(topLine?.replacingOccurrences(of: "\n", with: " / ") ?? "none") (expected “\(line)”)")
+            } else if let topLine {
+                linesUnexpected += 1
+                print("    ✗ line where none was expected: \(topLine.replacingOccurrences(of: "\n", with: " / "))")
+            }
             if verbose || found.count < min(expected.count, 3) {
                 for s in response.suggestions {
                     print("    \(expected.contains(short(s.item.path)) ? "+" : "-") \(short(s.item.path))  \(String(format: "%.2f", s.confidence))  \(s.reason)  \(describe(s.features))")
@@ -277,6 +294,7 @@ struct Eval: AsyncParsableCommand {
             ambient hits      \(ambientHits)/\(scenarios.scenarios.count) (top result right and confident at threshold \(String(format: "%.2f", threshold)))
             false surfaces    \(falseSurfaces)/\(scenarios.negative.count)
             open file shown   \(violations) (must be 0)
+            matched lines     \(linesRight)/\(linesExpected) right, \(linesUnexpected) where none was expected
             median latency    \(Int(times.sorted()[times.count / 2])) ms
             """)
     }

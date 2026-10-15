@@ -152,6 +152,11 @@ struct PanelView: View {
                 Text("Indexing paused: \(reason)")
             } else if model.settings.isPaused {
                 Text("Paused")
+            } else if model.selected?.line != nil {
+                hint("↩", "open")
+                hint("⌥⌘C", "copy line")
+                hint("␣", "preview")
+                hint("⌫", "not useful")
             } else {
                 hint("↩", "open")
                 hint("␣", "preview")
@@ -224,7 +229,9 @@ struct ResultRow: View {
                 reasonText
                     .font(.system(size: 11.5))
                     .lineLimit(1)
-                if selected, !suggestion.snippet.isEmpty {
+                if selected, let line = suggestion.line {
+                    QuotedLine(line: line).padding(.top, 4)
+                } else if selected, !suggestion.snippet.isEmpty {
                     Text(suggestion.snippet)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.mutedForeground)
@@ -284,6 +291,12 @@ struct ResultRow: View {
                     Button("Never show this") { model.act(.blocked, on: suggestion) }
                     Button("Not in this app") { model.act(.muted, on: suggestion) }
                     Divider()
+                    if let line = suggestion.line {
+                        Button("Copy Line") {
+                            line.copyToPasteboard()
+                            model.act(.copiedLine, on: suggestion)
+                        }
+                    }
                     if suggestion.item.source == .file {
                         Button("Show in Finder") { model.act(.revealed, on: suggestion); close() }
                         Button("Copy Path") {
@@ -327,6 +340,45 @@ struct ResultRow: View {
         case .image: "photo"
         case .document: "doc.text"
         }
+    }
+}
+
+/// The line that answers, quoted from the file on a card inset into the selected row: the
+/// label muted, the answer in the foreground.
+struct QuotedLine: View {
+    let line: MatchedLine
+
+    var body: some View {
+        Text(attributed)
+            .lineSpacing(2)
+            .lineLimit(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).fill(Theme.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.kbdBorder, lineWidth: 1))
+            .accessibilityLabel(line.text)
+    }
+
+    private var attributed: AttributedString {
+        line.segments.reduce(into: AttributedString()) { string, segment in
+            var run = AttributedString(segment.text)
+            run.font = .system(size: 12, weight: segment.emphasized ? .semibold : .regular)
+            run.foregroundColor = segment.emphasized ? Theme.foreground : Theme.mutedForeground
+            string += run
+        }
+    }
+}
+
+extension MatchedLine {
+    /// Puts the line on the clipboard. A password or a code goes with the concealed type
+    /// (nspasteboard.org), so clipboard managers leave it out of their history.
+    func copyToPasteboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        if concealed { pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) }
     }
 }
 

@@ -13,7 +13,8 @@ enum Theme {
     static let primary = Color(light: 0x18181B, dark: 0xFAFAFA)
     static let primaryForeground = Color(light: 0xFAFAFA, dark: 0x18181B)
     static let accent = Color(light: 0x2563EB, dark: 0x3B82F6)
-    /// Keys sit on the muted row background, so in dark mode they need a lighter edge.
+    /// Keys and the quoted line sit on the muted row background, so in dark mode they need a
+    /// lighter edge.
     static let kbdBorder = Color(light: 0xE4E4E7, dark: 0x3F3F46)
 
     static let radius: CGFloat = 8
