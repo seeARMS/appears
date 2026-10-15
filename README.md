@@ -37,6 +37,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
   ```
 
   It can't sandbox itself either. A self-applied `sandbox_init` profile, even one that allows everything except IP networking, makes macOS refuse the process Accessibility, and on macOS 27 the built-in named `no-network` profile kills the process outright. Both found 2026-10-15.
+- **`appears mcp`,** the CLI's server for agents, has no networking code either and runs only when an agent you set up starts it. What that agent does with the results is up to the agent; see [For agents](#for-agents).
 - **Nothing about what was on screen is stored,** and the same goes for calendar events, which are read through EventKit in memory and never logged. Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
 
 ## Repository
@@ -48,6 +49,7 @@ mac/
   Packages/AppearsKit/      builds and tests with the Command Line Tools
     AppearsCore/            sources, extractors, Notes reader, index, ranking, journal, surface policy
     AppearsContext/         Accessibility reader, browser URLs, exclusions, OCR fallback
+    AppearsMCP/             `appears mcp`: the MCP server for agents (stdio), read-only on the index
   Packages/AppearsModel/    EmbeddingGemma 2 on MLX (copied from whosaid), the `appears` CLI
   Tools/                    ContextProbe (`appears-context`), Snapshots (`appears-snapshots`)
   scripts/                  model download and preparation, reference vectors, check-no-network
@@ -121,6 +123,12 @@ open -n /Applications/Appears.app --args -demo "$PWD/demo/files" -event "Kitchen
 cd mac/Packages/AppearsKit && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
+The model's tests, and `appears mcp` run as its own process with the model on the demo (they skip without the model):
+
+```bash
+cd mac/Packages/AppearsModel && xcodebuild test -scheme AppearsModel-Package -destination 'platform=macOS' -derivedDataPath ../../build/ModelDerivedData
+```
+
 ```bash
 cd mac/Packages/AppearsModel && xcodebuild -scheme appears -destination 'platform=macOS' -derivedDataPath ../../build/ModelDerivedData -configuration Release build
 ```
@@ -133,10 +141,69 @@ mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 
 Other commands:
 
-- `appears related "<text>"` and `appears index [--root DIR]` work on the real index (the terminal needs Full Disk Access for Notes).
+- `appears related "<text>"` and `appears index [--root DIR]` work on the CLI's own index in `~/Library/Application Support/rs.appea.appears.cli` (or `--data DIR`), not the app's; the terminal needs Full Disk Access for Notes.
+- `appears mcp` lets local agents ask the app's index; see [For agents](#for-agents).
 - `appears stats --data <engine data folder>` prints the journal's numbers.
 - `appears-context` (scheme `appears-context`) prints what Accessibility reads from the frontmost window every 3 seconds, for checking coverage app by app. The terminal needs Accessibility.
 - `appears-snapshots` (scheme `appears-snapshots`, run from the repo root) renders the panel and onboarding, light and dark, to `mac/build/snapshots`.
+
+## For agents
+
+`appears mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on stdin and stdout. Agents on your Mac (Claude Code, Claude desktop, Codex) can ask it what you already have about something: "what do I have about the Lisbon trip", "find the wifi card from the cabin". The menu bar never asks you for a query; an agent can.
+
+- **It does nothing unless you set it up.** Neither the app nor the engine starts it. An agent you configure starts it, and it runs only while that agent does.
+- **Appears sends nothing anywhere, but the agent you connect may.** `appears mcp` has no networking code: it answers on the pipes the agent opened, reads the index read-only, and stores nothing. Agent questions aren't journaled, so they never count toward the pull, shadow or ambient numbers, and neither questions nor results are logged. But what it answers becomes part of the agent's conversation, and the agent may send that to its model provider: paths, why each matched, and the matching text, which can be the password on a photo of a wifi card. Connect only agents you'd show those files to.
+- **Tools,** both read-only:
+  - `related`: `text` (required), `limit` (default 5, at most 20) and `prefer_forgotten` (default off). Each result has its path, title and kind, the one-line reason, the matching snippet, when it was last opened and modified, the page for PDFs, and a 0–1 confidence. They come back as structured content and as a short text.
+  - `related_to_file`: `path`, with the same options. It searches with that file's own stored vectors, so it needs no model call.
+- **Ranking:** the app's relevance, name matches and variety, without the "forgotten" weighting, because an agent asking outright should get yesterday's file as readily as last year's. `prefer_forgotten: true` ranks as the menu bar does. Excluded folders and kinds, Notes switched off, and "Never show this" apply exactly as in the app. Results under 0.15 confidence are marked "less likely", as the panel does.
+- **The index:** by default the app's own, opened read-only beside the running engine (SQLite's WAL lets it read while the engine writes), so answers keep up as the app indexes. `--demo` reads the index of the app's `-demo` mode, and `--data DIR` any index made with `appears index --data DIR`. The model loads on the first question (a couple of seconds) and stays loaded; connecting is instant. After that a question takes about 50 ms on the demo.
+- **Protocol:** stdio only. It speaks MCP 2026-07-28 (stateless, with `server/discover`) and the `initialize` handshake of 2025-11-25 back to 2024-11-05, as heade.rs's server does. Claude Code 2.1 uses 2026-07-28.
+
+Build the CLI (see [Tests and the eval](#tests-and-the-eval)), then add it to Claude Code:
+
+```bash
+claude mcp add appears -- "$PWD/mac/build/ModelDerivedData/Build/Products/Release/appears" mcp
+```
+
+For Claude desktop, add it to `~/Library/Application Support/Claude/claude_desktop_config.json` and restart Claude:
+
+```json
+{
+  "mcpServers": {
+    "appears": {
+      "command": "/path/to/appears/mac/build/ModelDerivedData/Build/Products/Release/appears",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.appears]
+command = "/path/to/appears/mac/build/ModelDerivedData/Build/Products/Release/appears"
+args = ["mcp"]
+```
+
+The app keeps its index in the engine's sandbox container, and macOS doesn't let other apps read containers. The app that runs the agent (Terminal, iTerm, Claude, Codex) needs Full Disk Access, or `appears mcp` answers every question with an error saying so. The model comes from `mac/Models/appears-model` in the checkout, or from inside an installed Appears.app; `--model` picks another.
+
+To try it on the demo without the app, index `demo/files` into a folder of its own and point the server at it:
+
+```bash
+mac/build/ModelDerivedData/Build/Products/Release/appears index --root demo/files --data /tmp/appears-demo --no-notes
+```
+
+```bash
+claude mcp add appears-demo -- "$PWD/mac/build/ModelDerivedData/Build/Products/Release/appears" mcp --data /tmp/appears-demo
+```
+
+Or pipe it a question by hand:
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"related","arguments":{"text":"what is the wifi password at the cabin"}}}' | mac/build/ModelDerivedData/Build/Products/Release/appears mcp --data /tmp/appears-demo
+```
 
 ## Not done yet
 
@@ -148,4 +215,5 @@ Other commands:
   - Sparkle (`web/public/appcast.xml` is ready and empty; the app must use Sparkle's Downloader XPC service, since it can't reach the network itself);
   - `release.sh` with its entitlement checks;
   - the Homebrew cask.
+- **`appears mcp` without a checkout or Full Disk Access:** the CLI isn't in the app or the Homebrew cask yet. Reading the app's index needs Full Disk Access for the agent's app. Tested 2026-10-15 on macOS 27: nothing signed with the self-signed dev certificate gets into the engine's container, even with the engine's exact identifier. Apple lets apps with the same Team ID read each other's containers, so shipping the CLI inside Appears.app under the release Team ID should work, but it's untested until there is a Team ID. Moving the index out of the container would let any process read Notes and Documents text, so it stays where it is.
 - **Not in v0:** voice memos and audio, video, Mail, Photos (see PLAN.md).

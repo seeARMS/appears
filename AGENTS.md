@@ -36,6 +36,7 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
     - `Engine` (the engine's logic and XPC protocol, also used in-process by the CLI);
     - `CalendarEvent` (an upcoming meeting as a context, conferencing boilerplate stripped) and `CalendarSchedule` (when to look).
   - `AppearsContext`: `ContextReader` (AX), `Browsers`, `Exclusions`, `ScreenText` (OCR fallback).
+  - `AppearsMCP`: `appears mcp`, an MCP server over stdio (`MCPServer`, `Tools`) and `AgentIndex`, which reads an index read-only. It never journals, and its stderr log never gets query text, results or file content.
 - **`mac/Packages/AppearsModel`:** needs Xcode, since MLX compiles Metal shaders.
   - `EmbeddingGemma2`: copied unmodified from whosaid, which copied it from Obscyra-app/EmbeddingGemma2Swift.
   - `GemmaEmbedder`: loads the vision tower lazily and unloads it after indexing.
