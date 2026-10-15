@@ -158,6 +158,67 @@
       "expect": [
         "Downloads/EOB-Delta-Dental-2025-03.pdf"
       ]
+    },
+    {
+      "name": "Asking: the cabin wifi, no names",
+      "app": "Messages",
+      "title": "Sam",
+      "visible": "Sam: made it up to the cabin! is there wifi?",
+      "focused": "There is, what was the password again?",
+      "expect": [
+        "Desktop/IMG_2031.jpg"
+      ]
+    },
+    {
+      "name": "Asking: do you still have the quote",
+      "app": "Messages",
+      "title": "Alex",
+      "visible": "Alex: the insurance adjuster wants to know what the kitchen cost",
+      "focused": "do you still have the contractor's quote? I think it was on paper",
+      "expect": [
+        "Documents/House/Kitchen/IMG_4471.jpg"
+      ]
+    },
+    {
+      "name": "Asking: resend the permit",
+      "app": "Mail",
+      "title": "Re: Rough electrical inspection Thursday",
+      "visible": "Please have the permit posted on site and the permit number ready for the inspector on Thursday.",
+      "focused": "Hi, could you resend the permit? I can’t find my copy.",
+      "expect": [
+        "Documents/House/Kitchen/permit-BLD-2024-0457.pdf"
+      ]
+    },
+    {
+      "name": "Asking: I'll send you the itinerary",
+      "app": "Messages",
+      "title": "Rosa",
+      "visible": "Rosa: we're finally doing Portugal in June!! where did you stay in Lisbon?",
+      "focused": "You'll love it. I’ll send you our itinerary",
+      "line": "Airbnb in Alfama",
+      "expect": [
+        "Documents/Travel/Lisbon 2023/itinerary.md"
+      ]
+    },
+    {
+      "name": "Asking: where's that receipt",
+      "app": "Messages",
+      "title": "Sam",
+      "visible": "Sam: the standing desk is stuck again, the motor just clicks",
+      "focused": "ugh. where's that receipt? pretty sure it's still under warranty",
+      "expect": [
+        "Downloads/Fernway order FW-88310.pdf"
+      ]
+    },
+    {
+      "name": "Asking: do you remember the dentist",
+      "app": "Messages",
+      "title": "Maya",
+      "visible": "Maya: my crown cracked, who did yours? was it covered?",
+      "focused": "do you remember the name of the dentist? I'll find the bill",
+      "expect": [
+        "Downloads/EOB-Delta-Dental-2025-03.pdf"
+      ]
     }
   ],
   "negative": [
@@ -242,6 +303,59 @@
         "Jordan Reyes <jordan@northwind.example>"
       ],
       "visible": "System design round. Scorecard due by the end of the day.\n________________________________________________________________________________\nMicrosoft Teams meeting\nJoin on your computer, mobile app or room device\nClick here to join the meeting<https://teams.microsoft.com/l/meetup-join/19%3ameeting_demo%40thread.v2/0>\nMeeting ID: 245 550 199 012\nPasscode: 7Hq2Lp\nDownload Teams<https://www.microsoft.com/en-us/microsoft-teams/download-app> | Join on the web<https://www.microsoft.com/microsoft-teams/join-a-meeting>\nOr call in (audio only)\n+1 323-555-0142,,245550199#   United States, Los Angeles\nPhone Conference ID: 245 550 199#\nFind a local number<https://dialin.teams.microsoft.com/demo> | Reset PIN<https://dialin.teams.microsoft.com/usp/pstnconferencing>\nLearn More<https://aka.ms/JoinTeamsMeeting> | Meeting options<https://teams.microsoft.com/meetingOptions/>\n________________________________________________________________________________"
+    },
+    {
+      "name": "Not asking: what was I thinking",
+      "app": "Messages",
+      "title": "Sam",
+      "visible": "Sam: wait, you signed up for the marathon??",
+      "focused": "lol what was I thinking. 26 miles in July"
+    },
+    {
+      "name": "Asking, nothing to find: the weather again",
+      "app": "Messages",
+      "title": "Rosa",
+      "visible": "Rosa: still on for the picnic Saturday?",
+      "focused": "yes! what's the weather supposed to be this weekend again?"
+    },
+    {
+      "name": "Asking, nothing to find: a public fact",
+      "app": "Claude",
+      "title": "",
+      "focused": "What year did the Golden Gate Bridge open again?"
+    },
+    {
+      "name": "Asking, nothing to find: I'll send you the invite",
+      "app": "Mail",
+      "title": "Re: Coffee next week?",
+      "visible": "Jordan Lee: Free for coffee sometime next week?",
+      "focused": "Tuesday works for me. I'll send you the invite."
+    },
+    {
+      "name": "Asking, nothing to find: resend the login code",
+      "app": "Messages",
+      "title": "Sam",
+      "visible": "Sam: sent you the code for the streaming login",
+      "focused": "can you resend the code? it expired before I typed it"
+    },
+    {
+      "name": "Asking, nothing to find: where's that ramen place",
+      "app": "Messages",
+      "title": "Sam",
+      "visible": "Sam: craving noodles tonight",
+      "focused": "where's that ramen place we went to after the concert?"
+    },
+    {
+      "name": "A word in a screenshot, another sense: a quote for a toast",
+      "app": "Notes",
+      "title": "Toast for Sam's wedding",
+      "focused": "Open with a good quote about friendship, maybe from a poet. Then the story about the road trip."
+    },
+    {
+      "name": "A word in a photo, another context: changing a password",
+      "app": "Safari",
+      "title": "Change your password",
+      "visible": "Choose a new password. Use at least 12 characters with a mix of letters, numbers and symbols. You'll be signed out of other devices."
     }
   ]
 }

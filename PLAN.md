@@ -203,6 +203,7 @@ Fuse them with RRF, then roll units up to items: the best unit, plus a little ex
 - the top score's margin over the rest of this context's candidates;
 - whether the dense and sparse lists agree;
 - an entity hit;
+- whether what you're writing asks your own memory ("what was the wifi password again?", "I'll send you the itinerary"), which only adds to a match that already stands out;
 - the item's kind and age;
 - the app;
 - dwell time;

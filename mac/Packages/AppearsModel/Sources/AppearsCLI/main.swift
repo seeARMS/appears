@@ -119,7 +119,7 @@ struct Related: AsyncParsableCommand {
             print("\(index + 1). \(suggestion.item.title)  [\(suggestion.item.kind.label)]  confidence \(String(format: "%.2f", suggestion.confidence))")
             print("   \(suggestion.reason)")
             print("   \(suggestion.item.path)")
-            print("   cos \(String(format: "%.3f", f.cosine)) z \(String(format: "%.1f", f.zScore)) agree \(f.agreement) entity \(f.entityHit) days \(Int(f.daysSinceTouched)) forgotten \(String(format: "%.2f", f.forgotten)) novelty \(String(format: "%.2f", f.novelty))")
+            print("   cos \(String(format: "%.3f", f.cosine)) z \(String(format: "%.1f", f.zScore)) agree \(f.agreement) entity \(f.entityHit) intent \(f.recallIntent) days \(Int(f.daysSinceTouched)) forgotten \(String(format: "%.2f", f.forgotten)) novelty \(String(format: "%.2f", f.novelty))")
             if let line = suggestion.line {
                 print("   ⟶ \(line.text.replacingOccurrences(of: "\n", with: " / "))")
             } else if !suggestion.snippet.isEmpty {
@@ -260,7 +260,7 @@ struct Eval: AsyncParsableCommand {
         }
         func short(_ path: String) -> String { path.replacingOccurrences(of: home.path + "/", with: "") }
         func describe(_ f: Features) -> String {
-            "[cos \(String(format: "%.3f", f.cosine)) z \(String(format: "%.1f", f.zScore))\(f.agreement ? " agree" : "")\(f.entityHit ? " entity" : "")]"
+            "[cos \(String(format: "%.3f", f.cosine)) z \(String(format: "%.1f", f.zScore))\(f.agreement ? " agree" : "")\(f.entityHit ? " entity" : "")\(f.recallIntent ? " intent" : "")]"
         }
 
         var recallSum = 0.0, reciprocal = 0.0, ambientHits = 0, violations = 0

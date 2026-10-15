@@ -293,6 +293,24 @@ write(
     age=210,
 )
 
+pdf(
+    "Downloads/Fernway order FW-88310.pdf",
+    [
+        """
+        FERNWAY FURNITURE — ORDER CONFIRMATION
+        Order number: FW-88310   Ordered: 06/18/2024
+        Ship to: on file
+        Lift Pro standing desk, walnut top, 60 x 30 in.        $849.00
+        Dual-motor frame, black                                 included
+        Cable tray                                               $39.00
+        Total: $888.00   Paid by card ending 5521
+        Warranty: 7 years on motors and electronics, 2 years on the top.
+        Keep this receipt: warranty claims need the order number.
+        """
+    ],
+    age=480,
+)
+
 # ---------------------------------------------------------------- distractors
 
 topics = [

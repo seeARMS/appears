@@ -29,7 +29,7 @@ public struct Features: Sendable, Codable, Hashable {
     public var cosine: Double
     /// How far that cosine stands above this context's other candidates, in standard deviations.
     public var zScore: Double
-    /// Found by both the vector and full-text searches.
+    /// The same part of it was found by both the vector and full-text searches.
     public var agreement: Bool
     /// A person, organization or identifier from the context appears in it.
     public var entityHit: Bool
@@ -37,8 +37,11 @@ public struct Features: Sendable, Codable, Hashable {
     public var fused: Double
     public var forgotten: Double
     public var novelty: Double
+    /// The context asks your own memory for something ("what was the wifi password again?").
+    /// The same for every suggestion in a context.
+    public var recallIntent: Bool
 
-    public init(cosine: Double, zScore: Double, agreement: Bool, entityHit: Bool, daysSinceTouched: Double, fused: Double, forgotten: Double, novelty: Double) {
+    public init(cosine: Double, zScore: Double, agreement: Bool, entityHit: Bool, daysSinceTouched: Double, fused: Double, forgotten: Double, novelty: Double, recallIntent: Bool = false) {
         self.cosine = cosine
         self.zScore = zScore
         self.agreement = agreement
@@ -47,6 +50,19 @@ public struct Features: Sendable, Codable, Hashable {
         self.fused = fused
         self.forgotten = forgotten
         self.novelty = novelty
+        self.recallIntent = recallIntent
+    }
+
+    // Journal rows written before `recallIntent` existed don't have it.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            cosine: try c.decode(Double.self, forKey: .cosine), zScore: try c.decode(Double.self, forKey: .zScore),
+            agreement: try c.decode(Bool.self, forKey: .agreement), entityHit: try c.decode(Bool.self, forKey: .entityHit),
+            daysSinceTouched: try c.decode(Double.self, forKey: .daysSinceTouched), fused: try c.decode(Double.self, forKey: .fused),
+            forgotten: try c.decode(Double.self, forKey: .forgotten), novelty: try c.decode(Double.self, forKey: .novelty),
+            recallIntent: try c.decodeIfPresent(Bool.self, forKey: .recallIntent) ?? false
+        )
     }
 }
 
@@ -167,7 +183,6 @@ public struct Recall: Sendable {
         add(imageHits.map(\.id), weight: settings.imageWeight)
         add(fullTextHits.map(\.unitID), weight: settings.fullTextWeight)
         for hit in textHits + imageHits { cosine[hit.id] = Double(hit.score) }
-        let fullTextIDs = Set(fullTextHits.map(\.unitID))
         let vectorIDs = Set(textHits.map(\.id) + imageHits.map(\.id))
 
         // How unusual the best matches are for this context: z-scores within each list.
@@ -175,6 +190,10 @@ public struct Recall: Sendable {
         let imageStats = Stats(imageHits.map { Double($0.score) })
 
         let units = try store.units(ids: Array(fused.keys))
+        // Agreement counts per part (a chunk, a page, an image): an image's words are in the
+        // full-text index under its OCR text unit, at the same locator.
+        func part(_ unit: Unit) -> [String] { [String(unit.itemID), unit.locator.encoded] }
+        let fullTextParts = Set(fullTextHits.compactMap { units[$0.unitID].map(part) })
         let items = try store.items(ids: Array(Set(units.values.map(\.itemID))))
         let neverShow = try store.neverShown()
         let excluded = Set(request.exclude)
@@ -241,18 +260,23 @@ public struct Recall: Sendable {
             let features = Features(
                 cosine: unitCosine,
                 zScore: cosine[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
-                agreement: vectorIDs.contains(candidate.unit.id) && fullTextIDs.contains(candidate.unit.id),
+                agreement: vectorIDs.contains(candidate.unit.id) && fullTextParts.contains(part(candidate.unit)),
                 entityHit: strongMatch != nil,
                 daysSinceTouched: days,
                 fused: relevance,
                 forgotten: forgotten,
-                novelty: novelty
+                novelty: novelty,
+                recallIntent: query.recallIntent
             )
             // Rank fusion alone rewards whatever tops each list, however weak (the best image
             // match for a text-only context is usually noise), so weigh in how convincing it is.
-            var confidence = Confidence.estimate(features)
-            if recent, request.trigger == .ambient { confidence *= settings.recentAmbientConfidence }
-            let score = rankScore * (0.25 + confidence)
+            let recentFactor = recent && request.trigger == .ambient ? settings.recentAmbientConfidence : 1
+            let confidence = Confidence.estimate(features) * recentFactor
+            // Recall intent is about the context, not any one item: it makes Appears surer
+            // without ranking anything higher.
+            var unasked = features
+            unasked.recallIntent = false
+            let score = rankScore * (0.25 + Confidence.estimate(unasked) * recentFactor)
             scored.append((candidate, score, features, matched, confidence))
         }
         scored.sort { $0.score > $1.score }
@@ -373,6 +397,10 @@ public enum Confidence {
         logit += f.entityHit ? 1.0 : 0
         logit += 0.4 * (f.forgotten - 0.5)
         logit += f.novelty < 1 ? -0.6 : 0
+        // Asking your own memory makes a clear match more likely to be what you're after, but
+        // says nothing about whether you have it. So it only adds to a match that already stands
+        // out: nothing from z 4 down (negatives that ask peaked at 3.3), the full amount from z 5.
+        if f.recallIntent { logit += 1.0 * min(max(f.zScore - 4, 0), 1) }
         return 1 / (1 + exp(-logit))
     }
 }

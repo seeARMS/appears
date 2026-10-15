@@ -367,7 +367,11 @@ public struct MatchedLine: Sendable, Codable, Hashable {
 
     /// Compares words loosely: "brakes" and "brake", "Wi-Fi" and "wifi".
     static func key(_ word: String) -> String {
-        QueryBuilder.stem(word.lowercased().replacingOccurrences(of: "-", with: ""))
+        let word = word.lowercased().replacingOccurrences(of: "-", with: "")
+        for suffix in ["ing", "ed", "es", "s"] where word.count > suffix.count + 3 && word.hasSuffix(suffix) {
+            return String(word.dropLast(suffix.count))
+        }
+        return word
     }
 
     // MARK: - Segments

@@ -9,6 +9,8 @@ import GRDB
 public final class IndexStore: Sendable {
     public let url: URL
     private let pool: DatabasePool
+    /// Turns words into the terms the full-text index stores, with its own tokenizer.
+    private let stemmer: DatabaseQueue
 
     public init(url: URL) throws {
         self.url = url
@@ -24,9 +26,19 @@ public final class IndexStore: Sendable {
         pool = try DatabasePool(path: url.path, configuration: config)
         try Self.migrator.migrate(pool)
         Self.protect(url)
+        stemmer = try DatabaseQueue()
+        try stemmer.write { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE stem USING fts5(word, tokenize='\(Self.tokenizer)');
+                CREATE VIRTUAL TABLE stem_terms USING fts5vocab(stem, instance);
+                """)
+        }
     }
 
     // MARK: - Schema
+
+    /// Porter stems, so "quoted" matches "quote".
+    static let tokenizer = "porter unicode61 remove_diacritics 2"
 
     private static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
@@ -61,12 +73,22 @@ public final class IndexStore: Sendable {
                 );
                 CREATE INDEX unit_item ON unit(item_id);
                 CREATE VIRTUAL TABLE unit_fts USING fts5(
-                    title, text, tokenize='porter unicode61 remove_diacritics 2'
+                    title, text, tokenize='\(tokenizer)'
                 );
                 CREATE VIRTUAL TABLE unit_vocab USING fts5vocab(unit_fts, row);
                 CREATE TRIGGER unit_ad AFTER DELETE ON unit BEGIN
                     DELETE FROM unit_fts WHERE rowid = old.id;
                 END;
+                """)
+        }
+        // An image's OCR text was indexed twice when it was also a text unit.
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: """
+                DELETE FROM unit_fts WHERE rowid IN (
+                    SELECT image.id FROM unit image JOIN unit text
+                        ON text.item_id = image.item_id AND text.locator = image.locator AND text.text = image.text
+                    WHERE image.kind = 1 AND text.kind = 0
+                )
                 """)
         }
         return migrator
@@ -260,16 +282,21 @@ public final class IndexStore: Sendable {
             let removed = try Int64.fetchAll(db, sql: "SELECT id FROM unit WHERE item_id = ?", arguments: [itemID])
             try db.execute(sql: "DELETE FROM unit WHERE item_id = ?", arguments: [itemID])
             var added: [Unit] = []
+            // A screenshot's or scanned page's OCR text is often also a text unit. Its words go
+            // in the full-text index once, under the text unit, or they'd look twice as common.
+            let texts = Set(units.filter { $0.unit.kind == .text }.map { [$0.unit.locator.encoded, $0.unit.text] })
             for (unit, vector) in units {
                 try db.execute(
                     sql: "INSERT INTO unit (item_id, kind, locator, text, vector) VALUES (?, ?, ?, ?, ?)",
                     arguments: [itemID, unit.kind.rawValue, unit.locator.encoded, unit.text, Self.blob(vector)]
                 )
                 let id = db.lastInsertedRowID
-                try db.execute(
-                    sql: "INSERT INTO unit_fts (rowid, title, text) VALUES (?, ?, ?)",
-                    arguments: [id, title, unit.text]
-                )
+                if unit.kind == .text || !texts.contains([unit.locator.encoded, unit.text]) {
+                    try db.execute(
+                        sql: "INSERT INTO unit_fts (rowid, title, text) VALUES (?, ?, ?)",
+                        arguments: [id, title, unit.text]
+                    )
+                }
                 var stored = unit
                 stored.id = id
                 stored.itemID = itemID
@@ -341,20 +368,40 @@ public final class IndexStore: Sendable {
     }
 
     /// In how many units each term appears, for picking a context's rarest words.
-    public func documentFrequencies(_ terms: [String]) throws -> (counts: [String: Int], total: Int) {
-        try pool.read { db in
+    /// Keyed by the words as given. They're stemmed the way the index stems them, so "quote"
+    /// counts the units that say "quoted" (both are "quot").
+    public func documentFrequencies(_ words: [String]) throws -> (counts: [String: Int], total: Int) {
+        let words = Array(Set(words))
+        let terms = try stems(words)
+        return try pool.read { db in
             let total = try Int.fetchOne(db, sql: "SELECT count(*) FROM unit") ?? 0
             guard !terms.isEmpty else { return ([:], total) }
-            var counts: [String: Int] = [:]
-            for batch in terms.chunked(400) {
+            var byTerm: [String: Int] = [:]
+            for batch in Array(Set(terms.values)).chunked(400) {
                 let marks = Array(repeating: "?", count: batch.count).joined(separator: ",")
                 let rows = try Row.fetchAll(
                     db, sql: "SELECT term, doc FROM unit_vocab WHERE term IN (\(marks))",
                     arguments: StatementArguments(batch)
                 )
-                for row in rows { counts[row["term"]] = row["doc"] }
+                for row in rows { byTerm[row["term"]] = row["doc"] }
             }
-            return (counts, total)
+            return (terms.compactMapValues { byTerm[$0] }, total)
+        }
+    }
+
+    /// Each word's first term, from the index's tokenizer.
+    func stems(_ words: [String]) throws -> [String: String] {
+        guard !words.isEmpty else { return [:] }
+        return try stemmer.write { db in
+            try db.execute(sql: "DELETE FROM stem")
+            for (index, word) in words.enumerated() {
+                try db.execute(sql: "INSERT INTO stem (rowid, word) VALUES (?, ?)", arguments: [index + 1, word])
+            }
+            var stems: [String: String] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT term, doc FROM stem_terms WHERE offset = 0") {
+                stems[words[(row["doc"] as Int) - 1]] = row["term"]
+            }
+            return stems
         }
     }
 
