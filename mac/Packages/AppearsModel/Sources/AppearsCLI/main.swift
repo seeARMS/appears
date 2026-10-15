@@ -276,7 +276,7 @@ struct Eval: AsyncParsableCommand {
             MRR               \(String(format: "%.2f", reciprocal / n))
             ambient hits      \(ambientHits)/\(scenarios.scenarios.count) (top result right and confident at threshold \(String(format: "%.2f", threshold)))
             false surfaces    \(falseSurfaces)/\(scenarios.negative.count)
-            recent shown      \(violations) (must be 0)
+            open file shown   \(violations) (must be 0)
             median latency    \(Int(times.sorted()[times.count / 2])) ms
             """)
     }

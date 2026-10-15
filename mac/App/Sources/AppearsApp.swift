@@ -1,6 +1,7 @@
 import AppKit
 import AppearsContext
 import KeyboardShortcuts
+import os
 import SwiftUI
 
 @main
@@ -28,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.status?.togglePull() }
         }
         model.start()
+        Logger(subsystem: "rs.appea.appears", category: "app").info(
+            "Launched. Accessibility: \(ContextReader.isTrusted, privacy: .public), Full Disk Access: \(FullDiskAccessGuide.isGranted, privacy: .public)"
+        )
         if AppModel.scriptedAsk == nil, !model.settings.onboarded || !ContextReader.isTrusted {
             showOnboarding()
         }
@@ -58,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showOnboarding() {
         if onboardingWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 520, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
                 styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
             )
             window.titlebarAppearsTransparent = true

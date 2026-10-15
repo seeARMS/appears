@@ -77,7 +77,21 @@ let suggestions = [
     model.showForSnapshot(nil, status: status, trusted: false)
     render(PanelView(model: model, close: {}), "panel-setup", width: 400)
 
-    render(OnboardingView(model: model, done: {}), "onboarding", width: 520)
+    for step in 0..<4 {
+        UserDefaults.standard.set(step, forKey: "onboardingStep")
+        render(OnboardingView(model: model, done: {}), "onboarding-\(step)", width: 560)
+    }
+    UserDefaults.standard.removeObject(forKey: "onboardingStep")
+    let scenes: [(Illustration.Scene, String, [Double])] = [
+        (.moment, "moment", [1.5, 3.4, 5.5]), (.notice, "notice", [1.5, 4.0]),
+        (.gather, "gather", [1.0, 2.2, 4.5]), (.ready, "ready", [0.5, 4.0]),
+    ]
+    for (scene, name, times) in scenes {
+        for time in times {
+            render(Illustration(scene: scene, time: time).frame(width: 496), "illustration-\(name)-\(time)", width: 496)
+        }
+    }
+    render(FullDiskAccessCard(close: {}), "full-disk-access-card", width: 300)
     print("Wrote snapshots to \(out.path)")
 }
 

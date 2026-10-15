@@ -79,7 +79,7 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
 
     @Test func findsNamesAndNumbers() {
         let query = QueryBuilder.build(.text("Hi Dana Ruiz, about invoice INV-20431 for the kitchen at Ruiz & Daughters Builders. Call me at (415) 555-0142."))
-        #expect(query.entities.contains { $0.contains("Dana Ruiz") })
+        #expect((query.entities + query.contextEntities).contains { $0.contains("Dana Ruiz") })
         #expect(query.identifiers.contains("INV-20431"))
         #expect(query.fullText.contains("\"INV-20431\""))
     }
@@ -96,7 +96,7 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
 }
 
 @Suite struct RecallTests {
-    @Test func findsForgottenAndSkipsRecent() async throws {
+    @Test func ranksRecentLowerWithoutHidingIt() async throws {
         let (recall, _, _) = try await makeIndex([
             ("quote.txt", "Ruiz Builders quote for kitchen cabinets and countertops, $18,400", 400),
             ("notes-today.txt", "Kitchen cabinets countertops quote, Ruiz Builders, edited today", 0.5),
@@ -106,7 +106,15 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
             context: .text("Replying to Ruiz Builders about the kitchen cabinets and countertops quote"), trigger: .pull
         ))
         #expect(response.suggestions.first?.item.title == "quote.txt")
-        #expect(!response.suggestions.contains { $0.item.title == "notes-today.txt" })
+        // Recent things still show when you ask, just lower.
+        let recent = try #require(response.suggestions.first { $0.item.title == "notes-today.txt" })
+        #expect(recent.score < response.suggestions[0].score)
+        // On its own, Appears needs much more evidence for something you just touched.
+        let ambient = try await recall.run(RecallRequest(
+            context: .text("Replying to Ruiz Builders about the kitchen cabinets and countertops quote"), trigger: .ambient
+        ))
+        let ambientRecent = try #require(ambient.suggestions.first { $0.item.title == "notes-today.txt" })
+        #expect(ambientRecent.confidence <= recent.confidence * 0.5 + 1e-9)
     }
 
     @Test func skipsTheOpenDocument() async throws {
@@ -124,10 +132,16 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         let (recall, _, _) = try await makeIndex([
             ("contacts.txt", "Dana Ruiz, contractor, Ruiz & Daughters Builders", 500),
         ])
-        let response = try await recall.run(RecallRequest(context: .text("Email to Dana Ruiz about next week"), trigger: .pull))
+        // A name in what you're writing is strong evidence.
+        let writing = ContextSnapshot(appName: "Mail", focusedText: "Email to Dana Ruiz about next week")
+        let response = try await recall.run(RecallRequest(context: writing, trigger: .pull))
         let first = try #require(response.suggestions.first)
         #expect(first.reason.hasPrefix("Mentions Dana Ruiz"))
         #expect(first.features.entityHit)
+        // The same name only elsewhere in the window still explains the match, but counts for less.
+        let background = try #require(try await recall.run(RecallRequest(context: .text("Email to Dana Ruiz about next week"), trigger: .pull)).suggestions.first)
+        #expect(background.reason.hasPrefix("Mentions Dana Ruiz"))
+        #expect(!background.features.entityHit)
     }
 
     @Test func neverShowIsRespected() async throws {
@@ -216,5 +230,28 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
     @Test func spotsDataText() {
         #expect(Extractor.looksLikeData(String(repeating: "2024-01-02,131.2,133.9,130.1,132.5,10293\n", count: 40)))
         #expect(!Extractor.looksLikeData(String(repeating: "Dana said the outlet by the window has to move for code. ", count: 20)))
+    }
+}
+
+@Suite struct NameTests {
+    @Test func ignoresTheAppToolsAcronymsAndSentenceStarts() {
+        let text = "Ran Codex, Claude, and Gemini on the same PR. Two PRs merged. The API is fine.\nPriya Natarajan booked the offsite."
+        let names = QueryBuilder.entities(in: text, ignoring: QueryBuilder.ignoredNames(appName: "Claude"))
+        #expect(names.contains("Priya Natarajan"))
+        for wrong in ["Ran", "Codex", "Claude", "Gemini", "PR", "PRs", "API"] { #expect(!names.contains(wrong), "\(wrong)") }
+    }
+
+    @Test func keepsOneWordNamesSeenMidSentence() {
+        let names = QueryBuilder.entities(in: "Joan sent the code. Thanks again to Joan for the cabin.")
+        #expect(names.contains("Joan"))
+    }
+
+    @Test func splitsStrongAndContextNames() {
+        let context = ContextSnapshot(appName: "Claude", windowTitle: "Offsite planning", focusedText: "What did Priya Natarajan say about the venue?",
+                                      visibleText: "Earlier we talked with Marcus Bell about the budget.")
+        let query = QueryBuilder.build(context)
+        #expect(query.entities.contains("Priya Natarajan"))
+        #expect(query.contextEntities.contains("Marcus Bell"))
+        #expect(!query.entities.contains("Marcus Bell"))
     }
 }

@@ -16,6 +16,9 @@ options:
     macOS: "26.0"
   createIntermediateGroups: true
   developmentLanguage: en
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
 settings:
   base:
     MARKETING_VERSION: "0.1.0"
@@ -24,10 +27,9 @@ settings:
     ARCHS: arm64
     DEAD_CODE_STRIPPING: YES
     ENABLE_HARDENED_RUNTIME: YES
-    # Ad-hoc ("Sign to Run Locally") until a team is set. With ad-hoc signing macOS forgets
-    # Accessibility and Full Disk Access on every rebuild; set DEVELOPMENT_TEAM to keep them.
-    CODE_SIGN_STYLE: Manual
-    CODE_SIGN_IDENTITY: "-"
+    # Signing lives in Config/Base.xcconfig (ad-hoc by default), overridable in the git-ignored
+    # Config/Local.xcconfig. Ad-hoc signatures change every build, and macOS forgets
+    # Accessibility and Full Disk Access with them.
 packages:
   AppearsKit:
     path: Packages/AppearsKit

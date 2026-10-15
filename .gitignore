@@ -11,3 +11,4 @@ web/.astro/
 web/.wrangler/
 web/.data/
 *.profraw
+mac/Config/Local.xcconfig

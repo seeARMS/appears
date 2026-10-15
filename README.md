@@ -78,7 +78,7 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    cp -R mac/build/DerivedData/Build/Products/Release/Appears.app /Applications/ && open /Applications/Appears.app
    ```
 
-Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads) and Screen Recording (OCR on ask). Builds are ad-hoc signed until a team is set in `project.yml`. With ad-hoc signing macOS forgets Accessibility on every rebuild: remove Appears from the Accessibility list and add it again.
+Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
 
 The first index takes a while and pauses in Low Power Mode; the menu bar ring is open while it's working. Measured on 2026-10-15 on Colin's Mac (about 11,000 files after the skip rules):
 

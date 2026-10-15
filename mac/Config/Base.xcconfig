@@ -1,0 +1,16 @@
+// Signing. Ad-hoc ("-") by default, which works but has a catch: macOS ties Accessibility and
+// Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so
+// each rebuild loses both permissions. Put a stable identity in Config/Local.xcconfig
+// (git-ignored) to keep them, for example:
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   CODE_SIGN_IDENTITY = Apple Development
+//
+// or a self-signed code-signing certificate made in Keychain Access (Certificate Assistant →
+// Create a Certificate, type Code Signing):
+//
+//   CODE_SIGN_IDENTITY = Appears Dev
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+
+#include? "Local.xcconfig"

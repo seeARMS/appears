@@ -6,8 +6,11 @@ import NaturalLanguage
 /// embeddings are weakest: names, numbers, addresses).
 public struct Query: Sendable, Equatable {
     public var dense: String
-    /// People, organizations and places, as written.
+    /// People, organizations and places from what you're writing to or about: the selection,
+    /// the field you're typing in, the title and the recipients. Strong evidence.
     public var entities: [String]
+    /// Names found only elsewhere in the window (a chat's history, a page's sidebar). Weaker.
+    public var contextEntities: [String] = []
     /// Email addresses, phone numbers, street addresses, order and invoice numbers.
     public var identifiers: [String]
     /// Uncommon words in the index that appear in the context.
@@ -15,7 +18,7 @@ public struct Query: Sendable, Equatable {
 
     /// An FTS5 query that matches any of the entities, identifiers or rare terms.
     public var fullText: String {
-        let phrases = (entities + identifiers + rareTerms)
+        let phrases = (entities + contextEntities + identifiers + rareTerms)
             .map { $0.replacingOccurrences(of: "\"", with: " ").trimmingCharacters(in: .whitespaces) }
             .filter { $0.count >= 2 }
         return Array(Set(phrases)).sorted().map { "\"\($0)\"" }.joined(separator: " OR ")
@@ -24,6 +27,11 @@ public struct Query: Sendable, Equatable {
     /// Entities and identifiers, lowercased, for spotting them in a result.
     public var matchable: [String] {
         (entities + identifiers).map { $0.lowercased() }.filter { $0.count >= 3 }
+    }
+
+    /// Context-only names, lowercased.
+    public var contextMatchable: [String] {
+        contextEntities.map { $0.lowercased() }.filter { $0.count >= 3 }
     }
 }
 
@@ -54,16 +62,26 @@ public enum QueryBuilder {
 
         let entitySource = [selection, focused, title, context.recipients.joined(separator: ", "), String(visible.prefix(6_000))]
             .joined(separator: "\n")
-        let entities = Self.entities(in: entitySource) + context.recipients.flatMap(Self.names(inRecipient:))
+        // Names count for more when they're in what you're writing to or about than when they're
+        // somewhere else in the window. The app's own name and tool names never count.
+        let ignored = ignoredNames(appName: context.appName)
+        let strongSource = [selection, focused, title].joined(separator: "\n")
+        let strong = Self.entities(in: strongSource, ignoring: ignored) + context.recipients.flatMap(Self.names(inRecipient:))
+        let strongKeys = Set(strong.map { $0.lowercased() })
+        let weak = Self.entities(in: String(visible.prefix(6_000)), ignoring: ignored).filter { !strongKeys.contains($0.lowercased()) }
         let identifiers = Self.identifiers(in: entitySource)
         var rare: [String] = []
         if let frequencies {
-            rare = rareTerms(in: entitySource, frequencies: frequencies, excluding: Set(entities.map { $0.lowercased() }))
+            rare = rareTerms(in: entitySource, frequencies: frequencies, excluding: Set((strong + weak).map { $0.lowercased() }).union(ignored))
+        }
+        func unique(_ names: [String], _ limit: Int) -> [String] {
+            Array(NSOrderedSet(array: names).compactMap { $0 as? String }.prefix(limit))
         }
         return Query(
             dense: dense,
-            entities: Array(NSOrderedSet(array: entities).compactMap { $0 as? String }.prefix(12)),
-            identifiers: Array(NSOrderedSet(array: identifiers).compactMap { $0 as? String }.prefix(8)),
+            entities: unique(strong, 12),
+            contextEntities: unique(weak, 8),
+            identifiers: unique(identifiers, 8),
             rareTerms: rare
         )
     }
@@ -97,22 +115,71 @@ public enum QueryBuilder {
         return title.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Names of people, organizations and places.
-    public static func entities(in text: String) -> [String] {
+    /// Names of people, organizations and places, with the tagger's usual mistakes removed:
+    /// acronyms ("PRs", "API"), names in `ignoring` (the app's own name, tool names), and a
+    /// single capitalized word at the start of a sentence ("Ran the tests…") unless the same
+    /// word is also capitalized mid-sentence somewhere.
+    public static func entities(in text: String, ignoring ignored: Set<String> = []) -> [String] {
         guard !text.isEmpty else { return [] }
         let tagger = NLTagger(tagSchemes: [.nameType])
         tagger.string = text
-        var found: [String] = []
+        var found: [(name: String, sentenceStart: Bool)] = []
         let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace, .joinNames]
         tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType, options: options) { tag, range in
             if let tag, [.personalName, .organizationName, .placeName].contains(tag) {
                 let name = String(text[range]).trimmingCharacters(in: .punctuationCharacters)
-                if name.count >= 3, !commonWords.contains(name.lowercased()) { found.append(name) }
+                if isPlausibleName(name, ignoring: ignored) {
+                    found.append((name, startsSentence(text, at: range.lowerBound)))
+                }
             }
             return true
         }
-        return found
+        // A one-word name seen only at the starts of sentences is probably just a capitalized verb.
+        let midSentence = Set(found.filter { !$0.sentenceStart }.map { $0.name.lowercased() })
+        return found.compactMap { entry in
+            let oneWord = !entry.name.contains(" ")
+            if oneWord, entry.sentenceStart, !midSentence.contains(entry.name.lowercased()) { return nil }
+            return entry.name
+        }
     }
+
+    static func isPlausibleName(_ name: String, ignoring ignored: Set<String>) -> Bool {
+        let lower = name.lowercased()
+        guard name.count >= 3, !commonWords.contains(lower), !ignored.contains(lower), !toolNames.contains(lower) else { return false }
+        // Acronyms and their plurals: API, CLI, PRs, URLs.
+        let letters = name.filter(\.isLetter)
+        let capitals = letters.filter(\.isUppercase)
+        if !name.contains(" "), capitals.count >= 2, capitals.count >= letters.count - 1 { return false }
+        return true
+    }
+
+    /// Whether the word at `index` begins a sentence or a line.
+    static func startsSentence(_ text: String, at index: String.Index) -> Bool {
+        var cursor = index
+        while cursor > text.startIndex {
+            cursor = text.index(before: cursor)
+            let character = text[cursor]
+            if character == "\n" { return true }
+            if character.isWhitespace || "\"'“‘(*-•".contains(character) { continue }
+            return ".!?:".contains(character)
+        }
+        return true
+    }
+
+    /// The app's own name, in its parts ("Google Chrome" → "google chrome", "google", "chrome").
+    static func ignoredNames(appName: String) -> Set<String> {
+        let lower = appName.lowercased()
+        guard !lower.isEmpty else { return [] }
+        return Set([lower] + lower.split(separator: " ").map(String.init).filter { $0.count >= 3 })
+    }
+
+    /// Software the tagger often mistakes for people or companies, and that says nothing about
+    /// which of your files matter.
+    static let toolNames: Set<String> = [
+        "claude", "codex", "gemini", "chatgpt", "copilot", "cursor", "github", "gitlab", "xcode", "slack",
+        "figma", "linear", "jira", "vercel", "cloudflare", "docker", "npm", "swift", "python", "javascript",
+        "typescript", "react", "node", "terminal", "finder", "safari", "chrome", "firefox", "mail", "messages",
+    ]
 
     /// "Dana Ruiz <dana@ruizbuilders.example>" → ["Dana Ruiz", "dana@ruizbuilders.example"].
     static func names(inRecipient recipient: String) -> [String] {

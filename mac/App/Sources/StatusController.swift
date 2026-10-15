@@ -160,17 +160,27 @@ final class StatusController: NSObject {
         }
         menu.addItem(.separator())
         if let status = model.status {
-            let counts = status.counts
-            let line = status.progress.phase == .indexing
-                ? "Indexing \(status.progress.done) of \(status.progress.total)…"
-                : "\(counts.indexedTotal.formatted()) things indexed"
-            menu.addItem(withTitle: line, action: nil, keyEquivalent: "").isEnabled = false
+            menu.addItem(withTitle: Self.indexLine(status), action: nil, keyEquivalent: "").isEnabled = false
         }
         menu.addItem(withTitle: "Settings…", action: #selector(settingsFromMenu), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Quit Appears", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         item.button?.performClick(nil)
         item.menu = nil
+    }
+
+    /// "7,803 of 10,612 indexed · indexing…" while anything is waiting, else the total.
+    static func indexLine(_ status: EngineStatus) -> String {
+        let counts = status.counts
+        guard counts.waiting > 0 else { return "\(counts.indexedTotal.formatted()) things indexed" }
+        let total = counts.indexedTotal + counts.waiting
+        let state: String = switch status.progress.phase {
+        case .indexing: "indexing…"
+        case .scanning: "looking for files…"
+        case .paused: "paused: \(status.progress.pausedReason ?? "waiting")"
+        case .idle: "waiting to continue"
+        }
+        return "\(counts.indexedTotal.formatted()) of \(total.formatted()) indexed · \(state)"
     }
 
     @objc private func pullFromMenu() { Task { await model.pull() } }

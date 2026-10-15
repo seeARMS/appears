@@ -4,53 +4,75 @@ import AppearsCore
 import KeyboardShortcuts
 import SwiftUI
 
-/// Setup, one honest step at a time: what Appears reads, what it never keeps, and the
-/// permissions, each with its reason. Only Accessibility is required.
+/// Setup in four short pages, each led by an illustration of what you get. Only
+/// Accessibility is required; the rest is optional and can be changed in Settings.
 struct OnboardingView: View {
     @Bindable var model: AppModel
     let done: () -> Void
-    @State private var step = 0
+    /// Remembered, so a relaunch (System Settings asks for one after granting Full Disk
+    /// Access) comes back to the same page.
+    @AppStorage("onboardingStep") private var step = 0
     @State private var trusted = ContextReader.isTrusted
     @State private var screen = ScreenText.isAllowed
-    @State private var notes = NotesReader.isReadable
+    @State private var fullDisk = FullDiskAccessGuide.isGranted
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let pages = 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            mark.padding(.bottom, 22)
+            Illustration(scene: [.moment, .notice, .gather, .ready][min(step, pages - 1)])
+                .id(step)
+                .padding(.bottom, 24)
             Group {
                 switch step {
-                case 0: intro
+                case 0: welcome
                 case 1: accessibility
-                case 2: fullDisk
-                default: finish
+                case 2: yourStuff
+                default: ready
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 16)
-            HStack {
-                if step > 0 { Button("Back") { step -= 1 }.buttonStyle(OutlineButtonStyle()) }
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    ForEach(0..<pages, id: \.self) { i in
+                        Capsule()
+                            .fill(i == step ? Theme.foreground : Theme.border)
+                            .frame(width: i == step ? 18 : 6, height: 6)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: step)
                 Spacer()
-                Button(step == 3 ? "Start" : "Continue") { advance() }
+                if step > 0 { Button("Back") { step -= 1 }.buttonStyle(OutlineButtonStyle()) }
+                Button(primaryLabel) { advance() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(PrimaryButtonStyle())
                     .opacity(step == 1 && !trusted ? 0.5 : 1)
                     .disabled(step == 1 && !trusted)
             }
         }
-        .padding(36)
-        .frame(width: 520, height: 560)
+        .padding(32)
+        .frame(width: 560, height: 640)
         .background(Theme.background)
         .onReceive(timer) { _ in
             trusted = ContextReader.isTrusted
             screen = ScreenText.isAllowed
-            notes = NotesReader.isReadable
+            fullDisk = FullDiskAccessGuide.isGranted
+        }
+    }
+
+    private var primaryLabel: String {
+        switch step {
+        case 0: "Get started"
+        case 3: "Start using Appears"
+        default: "Continue"
         }
     }
 
     private func advance() {
-        if step == 3 {
+        if step >= pages - 1 {
             model.settings.onboarded = true
+            step = 0
             Task { await model.engine.send(.settings, model.engineSources); await model.engine.send(.rescan) }
             done()
         } else {
@@ -58,103 +80,115 @@ struct OnboardingView: View {
         }
     }
 
-    private var mark: some View {
-        HStack(spacing: 10) {
-            Mark(size: 36)
-            Text("appears").font(.system(size: 22, weight: .bold)).tracking(-0.8).foregroundStyle(Theme.foreground)
-        }
-    }
+    // MARK: - Pieces
 
     private func title(_ text: String) -> some View {
-        Text(text).font(.system(size: 22, weight: .semibold)).tracking(-0.4).foregroundStyle(Theme.foreground).padding(.bottom, 10)
+        Text(text).font(.system(size: 24, weight: .semibold)).tracking(-0.5).foregroundStyle(Theme.foreground).padding(.bottom, 8)
     }
 
-    private func body(_ text: String) -> some View {
-        Text(text).font(.system(size: 13)).foregroundStyle(Theme.mutedForeground).fixedSize(horizontal: false, vertical: true).padding(.bottom, 10)
+    private func paragraph(_ text: String) -> some View {
+        Text(text).font(.system(size: 13.5)).lineSpacing(2).foregroundStyle(Theme.mutedForeground)
+            .fixedSize(horizontal: false, vertical: true).padding(.bottom, 12)
     }
 
-    private var intro: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            title("What you already have, when it matters.")
-            body("Appears notices what you're working on and quietly shows related things you already have: an old screenshot, a photo of a quote, a PDF from two years ago.")
-            body("Most of the time it shows nothing. When it has something worth seeing, the ring in the menu bar gets a dot. Look when you like. Or press \(shortcutText) to ask.")
-            VStack(alignment: .leading, spacing: 8) {
-                promise("Reads the window you're in, in memory, and throws it away.")
-                promise("Keeps an index of your own files and notes, on this Mac.")
-                promise("The part that reads your files can't use the network: macOS blocks it. The menu bar app has no networking code, and it's open source so you can check.")
-            }
-            .padding(.top, 8)
+    private func highlight(_ symbol: String, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.foreground)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.muted))
+            Text(text).font(.system(size: 13)).foregroundStyle(Theme.foreground)
         }
     }
 
     private var shortcutText: String {
-        KeyboardShortcuts.getShortcut(for: .pull)?.description ?? "the shortcut"
+        KeyboardShortcuts.getShortcut(for: .pull)?.description ?? "your shortcut"
     }
 
-    private func promise(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.foreground)
-            Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.mutedForeground).fixedSize(horizontal: false, vertical: true)
+    // MARK: - Pages
+
+    private var welcome: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            title("The right file, right when you need it")
+            paragraph("Writing to your contractor? Appears brings back the photo of their quote. Planning a trip? There's the itinerary from last time. It finds what you already have, so you never have to go digging.")
+            VStack(alignment: .leading, spacing: 9) {
+                highlight("photo.on.rectangle.angled", "Finds photos, PDFs, screenshots and notes by what's in them")
+                highlight("moon.zzz", "Stays out of your way until it has something good")
+                highlight("command", "Ask anytime with \(shortcutText)")
+            }
         }
     }
 
     private var accessibility: some View {
         VStack(alignment: .leading, spacing: 0) {
-            title("Let Appears read the window you're in")
-            body("macOS calls this Accessibility. Appears uses it to read the title, the text and the selection of the frontmost window when it changes. It skips password fields, password managers and private browser windows.")
-            permission(granted: trusted, label: "Accessibility", button: "Open Settings") {
-                ContextReader.requestTrust()
-            }
+            title("Let Appears see what you're working on")
+            paragraph("To know what's related, Appears looks at the window in front of you, like the email you're writing or the page you're reading. It skips passwords and private windows, and nothing leaves your Mac.")
+            permission(
+                granted: trusted, label: "Accessibility", detail: "Lets Appears read the window you're in",
+                button: "Allow…", action: { ContextReader.requestTrust() }
+            )
             if !trusted {
-                Text("Turn on Appears in the list, then come back. If you rebuilt the app, remove the old entry and add it again.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground).padding(.top, 8)
+                Text("Turn on Appears in the list that opens, then come back here.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.mutedForeground).padding(.top, 8)
             }
         }
     }
 
-    private var fullDisk: some View {
+    private var yourStuff: some View {
         VStack(alignment: .leading, spacing: 0) {
-            title("Your files and notes")
-            body("Appears indexes what's in your home folder (Documents, Desktop, Downloads, iCloud Drive, screenshots) and skips app data, code and caches. You can include or exclude folders in Settings.")
-            body("Full Disk Access is optional. It lets Appears read Apple Notes, and saves you a permission prompt for each of Desktop, Documents and Downloads.")
-            permission(granted: notes, label: "Full Disk Access", button: "Open Settings") {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
-            }
-            .padding(.bottom, 14)
-            body("Screen Recording is optional too. When you ask and a window has no readable text (Google Docs, some apps), Appears reads the window's words with on-device OCR, then drops the image. macOS asks again about once a month.")
-            permission(granted: screen, label: "Screen Recording", button: "Allow") {
-                ScreenText.requestAccess()
+            title("Bring in more of your stuff")
+            paragraph("Appears already looks through the files in your home folder. These two are optional extras.")
+            VStack(spacing: 8) {
+                permission(
+                    granted: fullDisk, label: "Full Disk Access", detail: "Adds your Apple Notes, with fewer prompts along the way",
+                    button: "Add…", action: { FullDiskAccessGuide.open() }
+                )
+                permission(
+                    granted: screen, label: "Screen Recording", detail: "Helps in apps like Google Docs that hide their text",
+                    button: "Allow…", action: { FullDiskAccessGuide.openScreenRecording() }
+                )
             }
         }
     }
 
-    private var finish: some View {
+    private var ready: some View {
         VStack(alignment: .leading, spacing: 0) {
-            title("Ready")
-            body("Appears will read your files in the background. The first pass takes a while (images are the slow part) and pauses in Low Power Mode.")
-            HStack {
-                Text("Ask Appears").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
-                Spacer()
-                KeyboardShortcuts.Recorder(for: .pull)
-            }
-            .padding(.vertical, 8)
-            Toggle(isOn: Binding(get: { model.settings.ambientMode == .on }, set: { model.setAmbientMode($0 ? .on : .shadow) })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Suggest on its own").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
-                    Text("Only when it's confident, never more than a few times an hour, and only a dot in the menu bar.")
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
+            title("You're all set")
+            paragraph("Appears is getting to know your files now; the first pass takes a little while. Keep working, and when something useful turns up, a dot appears in the menu bar.")
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Ask anytime").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
+                    Spacer()
+                    KeyboardShortcuts.Recorder(for: .pull)
                 }
+                .padding(.vertical, 10)
+                Rectangle().fill(Theme.border).frame(height: 1)
+                Toggle(isOn: Binding(get: { model.settings.ambientMode == .on }, set: { model.setAmbientMode($0 ? .on : .shadow) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Suggest things on its own").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
+                        Text("Only when it's sure, and never more than a few times an hour.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                    }
+                }
+                .toggleStyle(.switch)
+                .padding(.vertical, 10)
             }
-            .toggleStyle(.switch)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
         }
     }
 
-    private func permission(granted: Bool, label: String, button: String, action: @escaping () -> Void) -> some View {
-        HStack {
+    private func permission(granted: Bool, label: String, detail: String, button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(granted ? Theme.accent : Theme.mutedForeground)
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
+                .font(.system(size: 16))
+                .foregroundStyle(granted ? Theme.accent : Theme.border)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
+                Text(granted ? "On" : detail).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+            }
             Spacer()
             if !granted { Button(button, action: action).buttonStyle(OutlineButtonStyle()) }
         }

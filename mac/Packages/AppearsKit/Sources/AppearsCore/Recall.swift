@@ -91,21 +91,31 @@ extension Query {
         public var denseCharacters: Int
     }
 
-    var summary: Summary { Summary(entities: entities + identifiers, rareTerms: rareTerms, denseCharacters: dense.count) }
+    var summary: Summary { Summary(entities: entities + contextEntities + identifiers, rareTerms: rareTerms, denseCharacters: dense.count) }
 }
 
 /// Tunable numbers for ranking. The defaults are starting points; the journal and the eval
 /// harness are how they get better.
 public struct RankingSettings: Sendable, Codable, Equatable {
-    /// Anything opened or changed this recently is something you remember.
+    /// Opened or changed this recently: probably something you remember, so it ranks lower (it
+    /// isn't hidden; sometimes it's exactly what you need). Ambient suggestions mostly skip it.
     public var recentDays = 3.0
+    /// The forgotten weight of something recent, and of something just past `recentDays`.
+    public var recentWeight = 0.35
+    public var olderWeight = 0.5
+    /// Ambient suggestions of recent things need twice the evidence.
+    public var recentAmbientConfidence = 0.5
     /// Where "forgotten" reaches full weight.
     public var forgottenDays = 90.0
     public var rrfK = 60.0
     public var textWeight = 1.0
     public var imageWeight = 0.9
     public var fullTextWeight = 0.8
+    /// A name you're writing to or about (selection, the field you're typing in, the title,
+    /// recipients) found in the item.
     public var entityBoost = 1.5
+    /// A name found only elsewhere in the window: weaker evidence.
+    public var contextEntityBoost = 1.15
     public var sameFolderPenalty = 0.6
     public var sameTitlePenalty = 0.5
     /// MMR: 1 is pure relevance, 0 pure variety.
@@ -191,12 +201,11 @@ public struct Recall: Sendable {
 
         let titleWords = Self.words(QueryBuilder.cleanTitle(context.windowTitle, app: context.appName))
         let documentFolder = context.documentPath.map { ($0 as NSString).deletingLastPathComponent }
-        let matchable = query.matchable
 
-        var scored: [(candidate: Candidate, score: Double, features: Features, matched: String?)] = []
+        var scored: [(candidate: Candidate, score: Double, features: Features, matched: String?, confidence: Double)] = []
         for var candidate in candidates.values {
             let item = candidate.item
-            // Hard filters: what's open, what you just touched, what you've ruled out.
+            // Hard filters: what's open and what you've ruled out.
             if item.path == context.documentPath || excluded.contains(item.id) || neverShow.contains(item.id) { continue }
             if item.source == .file, let spotlight = LastUsed.date(path: item.path),
                spotlight > (item.lastUsed ?? .distantPast) {
@@ -204,9 +213,10 @@ public struct Recall: Sendable {
                 try? store.touch(path: item.path, at: spotlight)
             }
             let days = max(0, now.timeIntervalSince(candidate.item.lastTouched) / 86_400)
-            if days < settings.recentDays { continue }
-
-            let forgotten = 0.25 + 0.75 * min(1, log(days / settings.recentDays) / log(settings.forgottenDays / settings.recentDays))
+            let recent = days < settings.recentDays
+            let forgotten = recent
+                ? settings.recentWeight
+                : settings.olderWeight + (1 - settings.olderWeight) * min(1, log(days / settings.recentDays) / log(settings.forgottenDays / settings.recentDays))
             var novelty = 1.0
             if let documentFolder, item.folder == documentFolder { novelty *= settings.sameFolderPenalty }
             let itemWords = Self.words((item.title as NSString).deletingPathExtension)
@@ -215,9 +225,12 @@ public struct Recall: Sendable {
                 novelty *= settings.sameTitlePenalty
             }
             let haystack = (candidate.unit.text + " " + item.title).lowercased()
-            let matched = matchable.first { haystack.contains($0) }
+            let strongMatch = query.matchable.first { haystack.contains($0) }
+            let contextMatch = strongMatch == nil ? query.contextMatchable.first { haystack.contains($0) } : nil
+            let matched = strongMatch ?? contextMatch
             let relevance = candidate.fused + min(candidate.extra, candidate.fused * 0.5)
-            let rankScore = relevance * forgotten * novelty * (matched != nil ? settings.entityBoost : 1)
+            let boost = strongMatch != nil ? settings.entityBoost : (contextMatch != nil ? settings.contextEntityBoost : 1)
+            let rankScore = relevance * forgotten * novelty * boost
 
             let unitCosine = cosine[candidate.unit.id] ?? 0
             let stats = candidate.unit.kind == .image ? imageStats : textStats
@@ -225,7 +238,7 @@ public struct Recall: Sendable {
                 cosine: unitCosine,
                 zScore: cosine[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
                 agreement: vectorIDs.contains(candidate.unit.id) && fullTextIDs.contains(candidate.unit.id),
-                entityHit: matched != nil,
+                entityHit: strongMatch != nil,
                 daysSinceTouched: days,
                 fused: relevance,
                 forgotten: forgotten,
@@ -233,8 +246,10 @@ public struct Recall: Sendable {
             )
             // Rank fusion alone rewards whatever tops each list, however weak (the best image
             // match for a text-only context is usually noise), so weigh in how convincing it is.
-            let score = rankScore * (0.25 + Confidence.estimate(features))
-            scored.append((candidate, score, features, matched))
+            var confidence = Confidence.estimate(features)
+            if recent, request.trigger == .ambient { confidence *= settings.recentAmbientConfidence }
+            let score = rankScore * (0.25 + confidence)
+            scored.append((candidate, score, features, matched, confidence))
         }
         scored.sort { $0.score > $1.score }
 
@@ -271,7 +286,7 @@ public struct Recall: Sendable {
                 reason: Self.reason(entry.candidate.item, unit: entry.candidate.unit, matched: entry.matched, query: query, now: now),
                 snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
                 score: entry.score,
-                confidence: Confidence.estimate(entry.features),
+                confidence: entry.confidence,
                 features: entry.features
             )
         }
@@ -288,7 +303,7 @@ public struct Recall: Sendable {
     static func reason(_ item: Item, unit: Unit, matched: String?, query: Query, now: Date) -> String {
         var parts: [String] = []
         if let matched {
-            let original = (query.entities + query.identifiers).first { $0.lowercased() == matched } ?? matched
+            let original = (query.entities + query.contextEntities + query.identifiers).first { $0.lowercased() == matched } ?? matched
             parts.append("Mentions \(original)")
         } else if let term = query.rareTerms.first(where: { (unit.text + item.title).lowercased().contains($0) }) {
             parts.append("Also about “\(term)”")

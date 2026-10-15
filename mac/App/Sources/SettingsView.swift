@@ -55,7 +55,7 @@ private struct GeneralPane: View {
             Section {
                 Toggle("Read the window with OCR when it has no readable text (on ask only)", isOn: $model.settings.ocrOnPull)
                 if !ScreenText.isAllowed {
-                    Button("Allow Screen Recording…") { ScreenText.requestAccess() }
+                    Button("Allow Screen Recording…") { FullDiskAccessGuide.openScreenRecording() }
                 }
                 Toggle("Suggest on its own in Safari", isOn: $model.settings.ambientInSafari)
                 Text("Safari can't say whether a window is private, so Appears only reads Safari when you ask, unless this is on.")
@@ -126,7 +126,7 @@ private struct SourcesPane: View {
                 if model.settings.sources.notes, model.status?.notesReadable == false {
                     HStack {
                         Text("Needs Full Disk Access.").font(.caption).foregroundStyle(.secondary)
-                        Button("Open Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!) }
+                        Button("Open Settings") { FullDiskAccessGuide.open() }
                     }
                 }
             }
