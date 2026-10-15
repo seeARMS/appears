@@ -1,23 +1,19 @@
 ---
-// The menu bar glyph's three states, as the app draws them (mac/App/Sources/Glyph.swift):
-// a ring when there's nothing to show, an open ring while indexing, and a ring
-// with a filled dot at its top when something's here. The ring takes the text
-// colour; the site colours the found dot with the accent (.glyph-dot).
+// Orbit's five monochrome template states, matching mac/App/Sources/Glyph.swift.
+import { ORBIT } from "../lib/orbit";
 interface Props {
-  state: "idle" | "indexing" | "found";
+  state: "idle" | "indexing" | "found" | "paused" | "setup";
   size?: number;
 }
 const { state, size = 16 } = Astro.props;
-// The ring's circumference is 2π·5.5 ≈ 34.6; indexing leaves a quarter of it open.
 ---
 
-<svg class="glyph" width={size} height={size} viewBox="0 0 18 18" fill="none" aria-hidden="true">
-  {
-    state === "indexing" ? (
-      <circle cx="9" cy="10" r="5.5" stroke="currentColor" stroke-width="1.7" stroke-dasharray="26 8.6" stroke-linecap="round" transform="rotate(-50 9 10)" />
-    ) : (
-      <circle cx="9" cy="10" r="5.5" stroke="currentColor" stroke-width="1.7" />
-    )
-  }
-  {state === "found" && <circle class="glyph-dot" cx="9" cy="4.6" r="2.6" fill="currentColor" />}
+<svg class="glyph" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d={state === "indexing" ? ORBIT.indexingArc : ORBIT.arc} stroke="currentColor" stroke-width={ORBIT.lineWidth} stroke-linecap="round" />
+  {state === "found" && <circle class="glyph-dot" cx={ORBIT.dot.x} cy={ORBIT.dot.y} r={ORBIT.dot.radius} fill="currentColor" />}
+  {state === "paused" && <path d="M 9.5 10.3 V 15.3 M 13.5 10.3 V 15.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />}
+  {state === "setup" && <>
+    <path d="M 11.5 9.1 V 12.3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+    <circle cx="11.5" cy="15.5" r="1" fill="currentColor" />
+  </>}
 </svg>

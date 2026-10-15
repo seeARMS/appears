@@ -1,5 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="#18181B"/>
-  <circle cx="512" cy="562" r="210" fill="none" stroke="#FAFAFA" stroke-width="64"/>
-  <circle cx="512" cy="300" r="92" fill="#2563EB"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <!-- Orbit, with the Mac app icon's transparent margin. -->
+  <g transform="translate(100 100) scale(17.166666666666668)">
+<rect width="48" height="48" rx="11.28" fill="#18181B"/>
+<g transform="translate(8.16 8.16) scale(1.32)">
+  <path d="M 18.886058 14.102361 A 7.5 7.5 0 1 1 11.5 5.3" fill="none" stroke="#FAFAFA" stroke-width="2.1" stroke-linecap="round"/>
+  <circle cx="17.5" cy="6.4" r="2.65" fill="#2563EB"/>
+</g>
+  </g>
 </svg>

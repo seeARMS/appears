@@ -237,7 +237,7 @@ This is the core of the product. There are three modes, and all three are in v0'
 **A design exploration comes before any UI code.** It produces two or three directions for the mark, the menu bar glyph, the app icon, type and colour, and the app and site share the result. The exploration has to meet these constraints:
 
 - **The menu bar glyph is the whole ambient UI.**
-  - **States:** idle; working (indexing), barely visible; something's here.
+  - **States:** idle; working (indexing), barely visible; something's here; paused; needs setup. The chosen Orbit mark uses an open ring, a shorter indexing arc, a detached discovery dot, and pause/setup symbols inside the ring.
   - **Legibility:** readable in light, dark and tinted menu bars, as a template image that doesn't rely on colour.
   - **Motion:** one quiet transition, no looping animation.
 - **The panel hangs from the menu bar item and never takes focus** from the app you're in. It's a non-activating panel, so your cursor stays in the email. Esc, clicking away or a context change closes it.
@@ -441,3 +441,4 @@ These are targets to measure in M0, not guesses to trust:
 8. **Name:** "Appears", capitalized.
 9. **Browsers:** Arc and Dia aren't supported targets.
 10. **Sources:** index as much as makes sense by default; Include and Exclude lists give control to anyone who wants it.
+11. **Logo:** Orbit, chosen on 2026-10-15. Keep the shadcn zinc/blue direction; use an open ring with a detached dot at the upper right, and monochrome menu bar states. See `brand/README.md` for geometry and regeneration.

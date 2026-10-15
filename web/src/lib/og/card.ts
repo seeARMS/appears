@@ -5,6 +5,7 @@
 // the app's panel on the right, as in the page's hero mock.
 
 import type { FontMetrics } from "./metrics";
+import { orbitMarkArtwork } from "../orbit";
 
 export const WIDTH = 1200;
 export const HEIGHT = 630;
@@ -78,7 +79,7 @@ function clip(m: FontMetrics, text: string, size: number, max: number): string {
 }
 
 function mark(x: number, y: number, size: number): string {
-  return `<g transform="translate(${x} ${y}) scale(${size / 48})"><rect width="48" height="48" rx="12" fill="${C.primary}"/><circle cx="24" cy="27.3" r="10.6" fill="none" stroke="#FAFAFA" stroke-width="3.3"/><circle cx="24" cy="12" r="4.9" fill="${C.accent}"/></g>`;
+  return `<g transform="translate(${x} ${y}) scale(${size / 48})">${orbitMarkArtwork()}</g>`;
 }
 
 function thumb(kind: Result["kind"], x: number, y: number, s: number): string {

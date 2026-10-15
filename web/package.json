@@ -18,7 +18,8 @@
     "cf:whoami": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler whoami",
     "deploy": "astro build && XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler deploy",
     "deploy:www": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler deploy --config redirect/wrangler.jsonc",
-    "og": "esbuild scripts/og.ts --bundle --platform=node --format=esm --outfile=.data/og.mjs --log-level=warning --external:@resvg/resvg-wasm && node .data/og.mjs"
+    "og": "esbuild scripts/og.ts --bundle --platform=node --format=esm --outfile=.data/og.mjs --log-level=warning --external:@resvg/resvg-wasm && node .data/og.mjs",
+    "brand": "esbuild scripts/brand.ts --bundle --platform=node --format=esm --outfile=.data/brand.mjs --log-level=warning --external:@resvg/resvg-wasm && node .data/brand.mjs"
   },
   "dependencies": {
     "astro": "^7.4.0"

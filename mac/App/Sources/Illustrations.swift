@@ -74,7 +74,7 @@ private struct MenuBarStrip: View {
                 Capsule().fill(Theme.mutedForeground.opacity(0.35)).frame(width: [22, 14, 16, 18][i] * scale, height: 4 * scale)
             }
             Spacer()
-            MenuGlyph(found: found).frame(width: 16 * scale, height: 16 * scale)
+            MenuGlyph(found: found, size: 16 * scale)
             Capsule().fill(Theme.mutedForeground.opacity(0.35)).frame(width: 26 * scale, height: 4 * scale)
         }
         .padding(.horizontal, 12 * scale)
@@ -87,20 +87,10 @@ private struct MenuBarStrip: View {
 /// The menu bar icon, with its "found" mark fading in.
 struct MenuGlyph: View {
     var found: Double
+    var size: CGFloat = 16
 
     var body: some View {
-        GeometryReader { geo in
-            let s = geo.size.width
-            ZStack {
-                Circle().stroke(Theme.foreground, lineWidth: s * 0.11).frame(width: s * 0.72, height: s * 0.72).offset(y: s * 0.08)
-                Circle().fill(Theme.accent)
-                    .frame(width: s * 0.36, height: s * 0.36)
-                    .offset(y: -s * 0.3)
-                    .scaleEffect(0.4 + 0.6 * found)
-                    .opacity(found)
-            }
-            .frame(width: s, height: s)
-        }
+        OrbitSymbol(size: size, found: found, accent: Theme.foreground)
     }
 }
 

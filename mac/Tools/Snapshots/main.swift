@@ -82,6 +82,27 @@ let weaker = [
 
 @MainActor func run() async {
     await thumbnails()
+    let glyphs: [(AppModel.Glyph, String)] = [
+        (.idle, "Idle"), (.working, "Indexing"), (.found, "Found"),
+        (.paused, "Paused"), (.needsSetup, "Needs setup"),
+    ]
+    render(VStack(spacing: 24) {
+        Mark(size: 88)
+        HStack(spacing: 24) {
+            ForEach(Array(glyphs.enumerated()), id: \.offset) { _, entry in
+                VStack(spacing: 12) {
+                    Image(nsImage: GlyphImage.image(for: entry.0))
+                        .renderingMode(.template)
+                        .foregroundStyle(Theme.foreground)
+                        .frame(width: 18, height: 18)
+                    Text(entry.1).font(.system(size: 11)).foregroundStyle(Theme.foreground)
+                        .frame(height: 28)
+                }
+                .frame(width: 64)
+            }
+        }
+        MenuGlyph(found: 1, size: 48)
+    }, "orbit", width: 440)
     let model = AppModel()
     var status = EngineStatus()
     status.ready = true

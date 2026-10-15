@@ -1,6 +1,7 @@
 /* Appears' tokens, type and shape, from brand/README.md at the repo root:
    shadcn/ui's zinc palette, Inter, hairline borders, small radii. One accent
-   (blue), used for the found dot, links and focus rings, and nothing else. */
+   (blue), used for the brand mark's dot, links and focus rings. Menu bar glyphs
+   stay monochrome. */
 
 :root {
   --background: #ffffff;
@@ -43,10 +44,6 @@
       radial-gradient(90% 80% at 0% 100%, rgb(63 63 70 / 0.5), transparent 60%), #111113;
     --shadow-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
     --shadow-window: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
-  }
-  /* The mark's tile is zinc-900, the same as a dark card: give it an edge. */
-  .mark-tile {
-    stroke: #3f3f46;
   }
 }
 
@@ -155,9 +152,6 @@ code {
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-}
-.badge-status .glyph-dot {
-  fill: var(--accent);
 }
 
 .button {
@@ -374,7 +368,6 @@ h1 {
 .mb-glyph .glyph-dot,
 .glyph-chip.is-found .glyph-dot,
 .scene .glyph-dot {
-  fill: var(--accent);
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -1353,14 +1346,6 @@ h3 {
   height: 28px;
   border-radius: var(--radius-sm);
   background: var(--muted);
-}
-/* The whole glyph turns, about the ring's centre (9, 10 in its 18-unit box). */
-.glyph-chip.is-indexing .glyph {
-  transform-origin: 50% 55.6%;
-  animation: spin 1.6s linear infinite;
-}
-.glyph-chip.is-found .glyph-dot {
-  animation: beat 2.8s ease-in-out infinite;
 }
 .glyph-label {
   flex: 1;

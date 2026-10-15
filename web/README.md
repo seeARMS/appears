@@ -14,7 +14,7 @@ Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.tx
 | The page and its JSON-LD | `src/pages/index.astro`, `src/layouts/Base.astro` |
 | Palette, type and layout | `src/styles/global.css` (shadcn zinc tokens from `../brand/README.md`); fonts are set in `astro.config.mjs` |
 | The hero mock (Mail reply + Appears panel), in HTML and CSS | `src/components/Mock.astro`. Everything in it is made up. |
-| Mark and menu bar glyph | `src/components/Mark.astro`, `src/components/Glyph.astro`; favicon `public/favicon.svg` |
+| Orbit mark and five menu bar states | `src/lib/orbit.ts`, `src/components/Mark.astro`, `src/components/Glyph.astro`; `scripts/brand.ts` generates the SVGs, favicon and Mac icon sizes |
 | Markdown for agents | `src/pages/index.md.ts` → `/index.md`; `src/worker.ts` also serves it at `/` when the Accept header prefers `text/markdown` (`src/lib/negotiate.ts`) |
 | `llms.txt` | `src/pages/llms.txt.ts` |
 | Sparkle update feed | `public/appcast.xml` (no items yet; `public/_headers` gives it a 5-minute cache) |
@@ -31,6 +31,7 @@ npm install
 npm run dev          # astro dev; from the repo root, the "web" config in .claude/launch.json runs it on port 4341
 npm run check        # type-check
 npm run build        # dist/
+npm run brand        # regenerate Orbit's SVGs, favicon and all Mac app icon sizes
 npm run og           # re-render public/og.png after changing HEADLINE, CARD or MOCK_RESULTS in src/site.ts
 ```
 
