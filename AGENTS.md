@@ -21,9 +21,10 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 - **Code:** `Theme.swift` holds the app's tokens, button styles, `Kbd`, `Badge` and `Mark`; the web uses the same values in `web/src/styles`.
 - **Type:** the system font in the app, Inter on the site.
 - **The panel:** it hangs from the menu bar ring and never activates the app, so focus stays where it was.
-  - **Header:** "Related" with a "N found" badge.
+  - **Header:** one line: "Related", then the front app's icon and the window's title, muted (for a meeting, a calendar glyph and "2:00 PM · title"). No count badge.
   - **Rows:** each has a thumbnail, a name, and a reason whose "why" is in the foreground colour, with when and where muted.
-  - **Selection:** the selected row gets the muted background, a ↩ key and its snippet.
+  - **Selection:** the selected row gets the muted background and its snippet, or the quoted line that answers. Pictures show no snippet: OCR text reads as noise.
+  - **Footer:** at most three keys on one line (↩ open, ␣ preview or ⌥⌘C copy, ⌫ hide at the far end), and gone when there's no list.
 - **Wordmark:** the mark (a zinc tile, a white ring, a blue dot) plus lowercase "appears" in a bold weight. In sentences the name is "Appears", capitalized. The domain is appea.rs.
 
 ## Layout
