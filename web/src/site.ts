@@ -36,9 +36,12 @@ export const LICENSE_URL = "https://opensource.org/license/mit";
 
 export const HEADLINE = "What you already have, before you think to look for it.";
 export const LEDE =
-  "Appears is a Mac menu bar app that notices what you're working on and quietly shows related things you already have and probably forgot: an old screenshot, a photo of a quote, a PDF from two years ago. You never type a query.";
-export const STATUS = "In private testing";
-export const STATUS_TEXT = `${STATUS}. There's no download yet. Free and open source (${LICENSE}), for a ${HARDWARE} running ${OPERATING_SYSTEM}.`;
+  "Appears lives in your menu bar and follows along while you work. When you already have something that helps, like an old screenshot, a photo of a quote or a PDF from two years ago, it shows up. No searching, no typing.";
+export const STATUS = "Free for Mac";
+/** Where the Download buttons go. The release script puts the latest build here. */
+export const DOWNLOAD_URL = "/Appears.dmg";
+export const DOWNLOAD_LABEL = "Download for Mac";
+export const REQUIREMENTS = `Free and open source. Needs a ${HARDWARE} running ${OPERATING_SYSTEM}.`;
 
 /** Under the hero mock. Everything in the mock is made up. */
 export const MOCK_CAPTION =
@@ -69,64 +72,75 @@ export const MOCK_RESULTS = [
 
 // --- How it works ------------------------------------------------------------------
 
-export const HOW_HEADING = "It reads the window you're in, then lets it go.";
+export const HOW_HEADING = "It does the remembering, so you don't have to.";
+/** Each card's `scene` names its illustration in src/components/Scene.astro. */
 export const HOW = [
   {
-    title: "It looks where you look",
-    text: "Through the macOS Accessibility API, Appears reads the window in front of you: the email you're replying to, the doc you're editing, the page you're reading. It reads only when something changes, keeps the text in memory, and throws it away.",
+    scene: "notice",
+    title: "It follows what you're doing",
+    text: "Writing an email, reading a doc, planning a trip: Appears picks up on what's in front of you and looks for anything related. It doesn't keep a copy.",
   },
   {
-    title: "It already knows your files",
-    text: "It indexes the files in your home folder and your Apple Notes with Google's EmbeddingGemma 2, running on the Mac, alongside ordinary full-text search. Text, screenshots and photos share one index, so a photo of a handwritten quote can match an email about it.",
+    scene: "gather",
+    title: "It knows your files, photos included",
+    text: "It understands what's inside your documents, notes, screenshots and photos, not just their names. So a photo of a handwritten quote can turn up next to the email about it.",
   },
   {
-    title: "It leans toward what you've forgotten",
-    text: "Ranking weighs how long it's been since you last opened something, not only how similar it is. The note you wrote yesterday isn't news. The quote from two years ago is.",
+    scene: "forgot",
+    title: "It finds what you forgot",
+    text: "It favours things you haven't opened in a while. The note you wrote yesterday isn't news. The quote from two years ago is.",
   },
   {
-    title: "It shows its reasons",
-    text: "At most three things at a time, each with a one-line reason, like “mentions Dana Ruiz · last opened March 2024 · page 3”. Open one, Quick Look it, or drag it straight into the email you're writing.",
+    scene: "reason",
+    title: "It tells you why",
+    text: "Up to three things at a time, each with a short reason, like “mentions Dana Ruiz · page 3”. Open one, preview it, or drag it straight into what you're writing.",
   },
 ] as const;
 
 // --- Quiet -------------------------------------------------------------------------
 
-export const QUIET_HEADING = "It doesn't interrupt.";
+export const QUIET_HEADING = "It never interrupts.";
 export const QUIET =
-  "No notifications, no sounds, no pop-ups. When Appears has something worth seeing, its menu bar glyph changes, and you look when you want to. A hotkey asks it directly, any time.";
+  "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot. Glance at it when you're ready, or press a shortcut to ask any time.";
 /** The menu bar glyph's states (drawn in mac/App/Sources/Glyph.swift; src/components/Glyph.astro on the site). */
 export const GLYPHS = [
   { state: "idle", label: "Nothing to show" },
-  { state: "indexing", label: "Indexing" },
+  { state: "indexing", label: "Getting to know your files" },
   { state: "found", label: "Something's here" },
 ] as const;
 
 // --- Privacy -----------------------------------------------------------------------
 
-export const PRIVACY_HEADING = "Nothing leaves your Mac. Here's how that's enforced.";
+export const PRIVACY_HEADING = "Your stuff stays on your Mac.";
+export const PRIVACY_TEXT = "Appears sees a lot of what you do, so it's built to keep all of it to itself.";
+/** Each row's `icon` names an icon in src/components/Icon.astro. */
 export const PRIVACY = [
   {
-    label: "The engine",
-    text: "Reading your files, running the model and holding the index happen in a separate process inside the App Sandbox, with no network entitlement, so macOS blocks it from connecting anywhere. You can check it yourself with `codesign -d --entitlements -`.",
+    icon: "laptop",
+    label: "Everything happens on your Mac",
+    text: "Appears does all its work on your Mac. No account, no cloud, nothing uploaded.",
   },
   {
-    label: "The menu bar app",
-    text: "Reading the screen needs the Accessibility API, which Apple doesn't allow inside the sandbox. So the app that reads it isn't sandboxed. It contains no networking code, a check in the build fails if it ever imports a networking API, and the source is open for you to read.",
+    icon: "eye-off",
+    label: "It forgets what it sees",
+    text: "It reads what you're working on, uses it, and lets it go. The only thing it remembers is which suggestions you found useful.",
   },
   {
-    label: "What it keeps",
-    text: "Nothing about what you looked at. The only log is which suggestions you opened or dismissed, without the text of what you were doing.",
+    icon: "lock",
+    label: "It skips private things",
+    text: "Password managers, password fields and private browser windows are off limits. Pause it from the menu bar whenever you like.",
   },
   {
-    label: "What it skips",
-    text: "Password managers, secure text fields and private browser windows, by default. A pause switch stops it altogether.",
+    icon: "code",
+    label: "Anyone can check",
+    text: `It's open source under the ${LICENSE} license, so these promises aren't just promises.`,
   },
 ] as const;
 
-// --- Status ------------------------------------------------------------------------
+// --- Get it ------------------------------------------------------------------------
 
-export const NOW_HEADING = "Where it is now";
-export const NOW = `Appears is in private testing, and there's no download yet. When it's ready it will be free and open source under the ${LICENSE} license, for a ${HARDWARE} running ${OPERATING_SYSTEM}.`;
+export const GET_HEADING = "Try it on your Mac.";
+export const GET_TEXT = "Download Appears, give it a few minutes to get to know your files, and get back to work. It'll speak up when it has something.";
 
 // --- Share card --------------------------------------------------------------------
 
