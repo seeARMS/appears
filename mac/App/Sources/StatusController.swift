@@ -133,9 +133,20 @@ final class StatusController: NSObject {
             if let selected = model.selected { model.act(.dismissed, on: selected) }
             return true
         default:
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if modifiers == [.command, .option], event.charactersIgnoringModifiers == "c" { copyLine(); return true }
             if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "," { openSettings?(); return true }
             return false
         }
+    }
+
+    /// ⌥⌘C: copy the selected result's matched line, then close, so ⌘V lands in the app you're
+    /// in. (⌘C is left free.)
+    func copyLine() {
+        guard let selected = model.selected, let line = selected.line else { return }
+        line.copyToPasteboard()
+        model.act(.copiedLine, on: selected)
+        close()
     }
 
     func quickLook() {
