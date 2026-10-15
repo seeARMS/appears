@@ -3,7 +3,7 @@
 // file; public/_headers gives it its charset.
 
 import type { APIRoute } from "astro";
-import { AUTHOR, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, SITE, SUMMARY } from "../site";
+import { AUTHOR, DOWNLOAD_URL, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, SITE, SUMMARY } from "../site";
 
 export const prerender = true;
 
@@ -14,8 +14,9 @@ const LLMS = `${[
   "It reads the window in front of you through the macOS Accessibility API, only when something changes, keeps that text in memory and throws it away. It indexes files in the home folder and Apple Notes with Google's EmbeddingGemma 2, running on the Mac, plus full-text search, and ranks for what you haven't opened in a long time, not only for what's similar. It shows at most three things, each with a one-line reason; you can open one, Quick Look it, or drag it into what you're writing.",
   QUIET,
   ["How it keeps everything on the Mac:", "", ...PRIVACY.map((row) => `- ${row.label}: ${row.text}`)].join("\n"),
+  "In detail: reading files, running the model and holding the index happen in a separate engine process inside the App Sandbox with no network entitlement. The menu bar app, which reads the screen through the Accessibility API and so can't be sandboxed, contains no networking code, and a build check fails if it ever imports a networking API. The only log is which suggestions were opened or dismissed, without the text of what was on screen.",
   ["Requirements:", "", `- A ${HARDWARE}`, `- ${OPERATING_SYSTEM}`].join("\n"),
-  `Status: in private testing. There's no download yet. It's free and open source under the ${LICENSE} license (${LICENSE_URL}).`,
+  `It's free and open source under the ${LICENSE} license (${LICENSE_URL}). Download: ${new URL(DOWNLOAD_URL, SITE).href}`,
   `Appears is made by ${AUTHOR.name} (${AUTHOR.url}), the founder and CEO of Paragraph.`,
   `This page has a Markdown version at ${SITE}/index.md, and ${SITE}/ returns Markdown when a request's Accept header prefers text/markdown.`,
   "## Docs",

@@ -3,12 +3,18 @@
 // (index.md.ts) and llms.txt read too.
 import Base from "../layouts/Base.astro";
 import Glyph from "../components/Glyph.astro";
+import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import Mock from "../components/Mock.astro";
+import Scene from "../components/Scene.astro";
 import { inline } from "../lib/inline";
 import {
   AUTHOR,
   DESCRIPTION,
+  DOWNLOAD_LABEL,
+  DOWNLOAD_URL,
+  GET_HEADING,
+  GET_TEXT,
   GLYPHS,
   HEADLINE,
   HOW,
@@ -17,16 +23,15 @@ import {
   LICENSE,
   LICENSE_URL,
   NAME,
-  NOW,
-  NOW_HEADING,
   OPERATING_SYSTEM,
   PRIVACY,
   PRIVACY_HEADING,
+  PRIVACY_TEXT,
   QUIET,
   QUIET_HEADING,
+  REQUIREMENTS,
   SITE,
   STATUS,
-  STATUS_TEXT,
   SUMMARY,
   TITLE,
 } from "../site";
@@ -52,6 +57,7 @@ const schema = [
     operatingSystem: OPERATING_SYSTEM,
     applicationCategory: "UtilitiesApplication",
     isAccessibleForFree: true,
+    downloadUrl: new URL(DOWNLOAD_URL, SITE).href,
     license: LICENSE_URL,
     image: `${SITE}/og.png`,
     author: { "@id": AUTHOR.id },
@@ -78,36 +84,40 @@ const schema = [
       <nav class="top-nav" aria-label="On this page">
         <a href="#how">How it works</a>
         <a href="#privacy">Privacy</a>
+        <a class="top-get" href={DOWNLOAD_URL}>Download</a>
       </nav>
     </div>
   </header>
 
   <main>
     <section class="hero wrap">
-      <span class="badge badge-status"><span class="badge-dot" aria-hidden="true"></span>{STATUS}</span>
-      <h1>{HEADLINE}</h1>
-      <p class="lede">{LEDE}</p>
-      <div class="actions">
-        <a class="button button-primary" href="#how">How it works</a>
-        <a class="button button-outline" href="#privacy">Privacy</a>
+      <span class="badge badge-status rise" style="--d: 0">
+        <Glyph state="found" size={14} />
+        {STATUS}
+      </span>
+      <h1 class="rise" style="--d: 1">{HEADLINE}</h1>
+      <p class="lede rise" style="--d: 2">{LEDE}</p>
+      <div class="actions rise" style="--d: 3">
+        <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
+        <a class="button button-outline" href="#how">See how it works<Icon name="arrow-down" size={15} /></a>
       </div>
-      <p class="note">{STATUS_TEXT}</p>
+      <p class="note rise" style="--d: 4">{REQUIREMENTS}</p>
     </section>
 
-    <div class="wrap">
+    <div class="wrap rise" style="--d: 5">
       <Mock />
     </div>
 
     <section class="part wrap" aria-labelledby="how">
-      <div class="part-head">
+      <div class="part-head reveal">
         <p class="eyebrow">How it works</p>
         <h2 id="how">{HOW_HEADING}</h2>
       </div>
       <ol class="cards">
         {
           HOW.map((item, i) => (
-            <li class="card">
-              <span class="card-num" aria-hidden="true">{i + 1}</span>
+            <li class="card card-scene reveal" style={`--d: ${i}`}>
+              <Scene scene={item.scene} />
               <h3>{item.title}</h3>
               <p set:html={inline(item.text)} />
             </li>
@@ -118,12 +128,12 @@ const schema = [
 
     <section class="part wrap" aria-labelledby="quiet">
       <div class="split">
-        <div class="part-head">
-          <p class="eyebrow">Attention</p>
+        <div class="part-head reveal">
+          <p class="eyebrow">Quiet by design</p>
           <h2 id="quiet">{QUIET_HEADING}</h2>
           <p class="part-text">{QUIET}</p>
         </div>
-        <figure class="card glyphs">
+        <figure class="card glyphs reveal" style="--d: 1">
           <ul>
             {
               GLYPHS.map((g) => (
@@ -132,25 +142,28 @@ const schema = [
                     <Glyph state={g.state} size={20} />
                   </span>
                   <span class="glyph-label">{g.label}</span>
-                  <span class="glyph-state">{g.state}</span>
                 </li>
               ))
             }
           </ul>
-          <figcaption>The menu bar glyph, in each of its states.</figcaption>
+          <figcaption>The little ring in your menu bar, and what it's telling you.</figcaption>
         </figure>
       </div>
     </section>
 
     <section class="part wrap" aria-labelledby="privacy">
-      <div class="part-head">
+      <div class="part-head reveal">
         <p class="eyebrow">Privacy</p>
         <h2 id="privacy">{PRIVACY_HEADING}</h2>
+        <p class="part-text">{PRIVACY_TEXT}</p>
       </div>
-      <dl class="cards">
+      <dl class="cards cards-4">
         {
-          PRIVACY.map((row) => (
-            <div class="card">
+          PRIVACY.map((row, i) => (
+            <div class="card reveal" style={`--d: ${i}`}>
+              <span class="card-icon">
+                <Icon name={row.icon} size={18} />
+              </span>
               <dt>{row.label}</dt>
               <dd set:html={inline(row.text)} />
             </div>
@@ -159,13 +172,15 @@ const schema = [
       </dl>
     </section>
 
-    <section class="part wrap" aria-labelledby="now">
-      <div class="card now">
-        <div>
-          <p class="eyebrow">Status</p>
-          <h2 id="now">{NOW_HEADING}</h2>
-          <p class="part-text">{NOW}</p>
+    <section class="part wrap" aria-labelledby="get">
+      <div class="card get reveal">
+        <span class="get-mark"><Mark size={56} /></span>
+        <h2 id="get">{GET_HEADING}</h2>
+        <p class="part-text">{GET_TEXT}</p>
+        <div class="actions">
+          <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
         </div>
+        <p class="note">{REQUIREMENTS}</p>
       </div>
     </section>
   </main>
@@ -181,4 +196,24 @@ const schema = [
       </p>
     </div>
   </footer>
+
+  <script>
+    // Fades each section in as it scrolls into view. Without JavaScript, or
+    // with reduced motion, everything is simply there.
+    const items = document.querySelectorAll(".reveal");
+    if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      document.documentElement.classList.add("reveals");
+      const seen = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            e.target.classList.add("in");
+            seen.unobserve(e.target);
+          }
+        },
+        { rootMargin: "0px 0px -8% 0px" },
+      );
+      items.forEach((el) => seen.observe(el));
+    }
+  </script>
 </Base>

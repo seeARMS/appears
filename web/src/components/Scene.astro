@@ -1,0 +1,114 @@
+---
+// The small looping illustrations on the "How it works" cards, in HTML and
+// CSS (styles under "Scenes" in global.css). They follow the onboarding scenes
+// in mac/App/Sources/Illustrations.swift, and hold a finished frame when the
+// visitor asks for reduced motion. Every file name here is made up.
+import Glyph from "./Glyph.astro";
+import Mark from "./Mark.astro";
+
+interface Props {
+  scene: "notice" | "gather" | "forgot" | "reason";
+}
+const { scene } = Astro.props;
+---
+
+<div class:list={["scene", `scene-${scene}`]} aria-hidden="true">
+  {
+    scene === "notice" && (
+      <>
+        <div class="n-bar">
+          <span class="n-glyph">
+            <Glyph state="found" size={14} />
+          </span>
+        </div>
+        <div class="n-window">
+          <span class="n-lights">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span class="n-lines">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          <span class="n-scan" />
+        </div>
+      </>
+    )
+  }
+  {
+    scene === "gather" && (
+      <>
+        <span class="g-hub">
+          <Mark size={36} />
+        </span>
+        <span class="thumb thumb-photo g-tile g-1">
+          <span class="paper">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+        </span>
+        <span class="thumb thumb-pdf g-tile g-2">
+          <span class="page">
+            <i />
+          </span>
+        </span>
+        <span class="thumb thumb-note g-tile g-3">
+          <span class="sticky" />
+        </span>
+        <span class="thumb thumb-shot g-tile g-4">
+          <span class="shot" />
+        </span>
+      </>
+    )
+  }
+  {
+    scene === "forgot" && (
+      <div class="f-row">
+        <span class="f-item">
+          <span class="thumb thumb-note">
+            <span class="sticky" />
+          </span>
+          <span class="f-when">Yesterday</span>
+        </span>
+        <span class="f-item">
+          <span class="thumb thumb-shot">
+            <span class="shot" />
+          </span>
+          <span class="f-when">Last month</span>
+        </span>
+        <span class="f-item f-old">
+          <span class="thumb thumb-photo">
+            <span class="paper">
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          </span>
+          <span class="f-when">2 years ago</span>
+        </span>
+      </div>
+    )
+  }
+  {
+    scene === "reason" && (
+      <div class="r-row">
+        <span class="thumb thumb-pdf">
+          <span class="page">
+            <i />
+          </span>
+        </span>
+        <span class="r-text">
+          <span class="r-title">permit-BLD-2024-0457.pdf</span>
+          <span class="r-reason">Page 3: scope of work</span>
+        </span>
+        <kbd class="r-kbd">↩</kbd>
+      </div>
+    )
+  }
+</div>

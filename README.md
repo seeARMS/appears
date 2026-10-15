@@ -2,7 +2,7 @@
 
 A Mac menu bar app that notices what you're looking at (the email you're replying to, the doc you're editing, the page you're reading) and quietly shows related things you already have and probably forgot: an old screenshot, a photo of a quote, a PDF from two years ago. You never type a query. Everything runs on the Mac.
 
-Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing. The plan and the reasoning behind it are in [PLAN.md](PLAN.md).
+Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the reasoning behind it are in [PLAN.md](PLAN.md).
 
 ## How it works
 
