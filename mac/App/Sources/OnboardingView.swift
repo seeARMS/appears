@@ -15,6 +15,7 @@ struct OnboardingView: View {
     @State private var trusted = ContextReader.isTrusted
     @State private var screen = ScreenText.isAllowed
     @State private var fullDisk = FullDiskAccessGuide.isGranted
+    @State private var calendar = CalendarWatcher.access
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let pages = 4
 
@@ -58,6 +59,7 @@ struct OnboardingView: View {
             trusted = ContextReader.isTrusted
             screen = ScreenText.isAllowed
             fullDisk = FullDiskAccessGuide.isGranted
+            calendar = CalendarWatcher.access
         }
     }
 
@@ -138,11 +140,21 @@ struct OnboardingView: View {
     private var yourStuff: some View {
         VStack(alignment: .leading, spacing: 0) {
             title("Bring in more of your stuff")
-            paragraph("Appears already looks through the files in your home folder. These two are optional extras.")
+            paragraph("Appears already looks through the files in your home folder. These are optional extras.")
             VStack(spacing: 8) {
                 permission(
                     granted: fullDisk, label: "Full Disk Access", detail: "Adds your Apple Notes, with fewer prompts along the way",
                     button: "Add…", action: { FullDiskAccessGuide.open() }
+                )
+                permission(
+                    granted: calendar == .granted, label: "Calendar", detail: "Brings up what you have for a meeting just before it starts",
+                    button: "Allow…", action: {
+                        Task {
+                            await CalendarWatcher.requestAccess()
+                            calendar = CalendarWatcher.access
+                            model.startCalendar()
+                        }
+                    }
                 )
                 permission(
                     granted: screen, label: "Screen Recording", detail: "Helps in apps like Google Docs that hide their text",

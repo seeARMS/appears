@@ -2,8 +2,8 @@ import AppKit
 import AppearsCore
 import SwiftUI
 
-// appears-snapshots: renders the panel (pull and ambient), its empty and setup states, and
-// onboarding, in light and dark, to PNGs in mac/build/snapshots. Uses demo/files for the
+// appears-snapshots: renders the panel (pull, ambient and before a meeting), its empty and setup
+// states, onboarding and Settings' General pane, in light and dark, to PNGs in mac/build/snapshots. Uses demo/files for the
 // thumbnails. No permissions needed. Run from the repository root.
 
 let root = URL(filePath: FileManager.default.currentDirectoryPath)
@@ -103,6 +103,14 @@ let weaker = [
                                 suggestions: [invoice], weaker: weaker), status: status)
     render(PanelView(model: model, close: {}), "panel-line-invoice", width: 400)
 
+    // Shortly before a made-up meeting at 2:00 PM today.
+    let start = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: Date())!
+    let meeting = CalendarEvent(id: "demo", title: "Kitchen walkthrough with Dana Ruiz", start: start, end: start.addingTimeInterval(1_800),
+                                attendees: [.init(name: "Dana Ruiz", email: "dana@ruizdaughters.example")])
+    model.showForSnapshot(.init(mode: .ambient, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: meeting.title,
+                                fingerprint: "x", suggestions: Array(suggestions.prefix(2)), weaker: [], meeting: meeting), status: status)
+    render(PanelView(model: model, close: {}), "panel-meeting", width: 400)
+
     model.showForSnapshot(.init(mode: .pull, appName: "Safari", windowTitle: "NASA rover finds evidence of ancient lakebeds", fingerprint: "x",
                                 suggestions: [], weaker: [suggestions[2]]), status: status)
     render(PanelView(model: model, close: {}), "panel-empty", width: 400)
@@ -115,6 +123,8 @@ let weaker = [
         render(OnboardingView(model: model, done: {}), "onboarding-\(step)", width: 560)
     }
     UserDefaults.standard.removeObject(forKey: "onboardingStep")
+    // The General pane alone: a TabView doesn't draw its tab bar offscreen.
+    render(GeneralPane(model: model).frame(width: 560, height: 600), "settings-general", width: 560)
     let scenes: [(Illustration.Scene, String, [Double])] = [
         (.moment, "moment", [1.5, 3.4, 5.5]), (.notice, "notice", [1.5, 4.0]),
         (.gather, "gather", [1.0, 2.2, 4.5]), (.ready, "ready", [0.5, 4.0]),
