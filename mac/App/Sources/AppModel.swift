@@ -2,6 +2,7 @@ import AppKit
 import AppearsContext
 import AppearsCore
 import Foundation
+import os
 
 /// Everything the menu bar item and the panel show, and the loop that decides when to look.
 ///
@@ -14,6 +15,7 @@ final class AppModel {
     var settings = AppSettings()
     let engine = EngineClient()
     @ObservationIgnored let reader = ContextReader()
+    @ObservationIgnored let calendar = CalendarWatcher()
     @ObservationIgnored private var policy = SurfacePolicy()
 
     enum Glyph: Equatable {
@@ -33,6 +35,8 @@ final class AppModel {
         var weaker: [Suggestion]
         var interacted = false
         var at = Date()
+        /// Set when this is for an upcoming meeting rather than a window. In memory only.
+        var meeting: CalendarEvent?
     }
 
     private(set) var glyph: Glyph = .idle
@@ -55,6 +59,7 @@ final class AppModel {
     @ObservationIgnored private var statusTask: Task<Void, Never>?
     @ObservationIgnored private var topic: String?
     @ObservationIgnored private var topicSince = Date()
+    @ObservationIgnored private var meetingExpiry: Task<Void, Never>?
 
     /// Called when the panel should open or update (the status item owns the panel).
     @ObservationIgnored var onShow: ((_ makeKey: Bool) -> Void)?
@@ -91,6 +96,9 @@ final class AppModel {
         policy = SurfacePolicy(settings: settings.policySettings)
         reader.onChange = { [weak self] in self?.contextChanged() }
         reader.start()
+        calendar.lead = settings.calendarLead
+        calendar.onDue = { [weak self] event in Task { await self?.meetingCheck(event) } }
+        startCalendar()
         statusTask = Task { [weak self] in
             // Settings first, so the engine loads with them.
             if let self { await self.engine.send(.settings, self.engineSources) }
@@ -109,6 +117,8 @@ final class AppModel {
     func refreshStatus() async {
         accessibilityTrusted = ContextReader.isTrusted
         if accessibilityTrusted { reader.start() }
+        // Calendar access granted in System Settings since launch.
+        if settings.calendarContext, !calendar.isRunning, Self.demoFolder == nil, CalendarWatcher.access == .granted { startCalendar() }
         status = await engine.status()
         updateGlyph()
     }
@@ -149,9 +159,11 @@ final class AppModel {
         guard snapshot.topic != topic else { return }
         topic = snapshot.topic
         topicSince = Date()
-        // A suggestion for the old context is stale now.
-        if let waiting, !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
-        waiting = nil
+        // A suggestion for the old context is stale now. One for a meeting waits for the meeting.
+        if let waiting, waiting.meeting == nil {
+            if !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
+            self.waiting = nil
+        }
         updateGlyph()
         scheduleAmbient()
     }
@@ -169,7 +181,7 @@ final class AppModel {
 
     /// You've stayed in one context long enough: look, quietly.
     private func ambientCheck() async {
-        guard settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted,
+        guard settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted, waiting?.meeting == nil,
               let captured = reader.capture(includeBrowserURL: true) else { return }
         if let reason = Exclusions.reason(for: captured, excludedApps: Set(settings.excludedApps), allowUnknownPrivacy: settings.ambientInSafari) {
             skippedReason = reason
@@ -198,6 +210,79 @@ final class AppModel {
             updateGlyph()
         }
     }
+
+    // MARK: - Meetings
+
+    /// A meeting is coming up: look for what you already have about it, quietly. The same
+    /// policy as a window (the threshold, the hourly budget, the backoff), minus the dwell: the
+    /// lead time is the moment. Its suggestion waits behind the glyph until shortly after the
+    /// meeting starts, whatever window you're in.
+    private func meetingCheck(_ event: CalendarEvent) async {
+        guard settings.calendarContext, settings.ambientMode != .off, !settings.isPaused,
+              settings.onboarded || CalendarWatcher.isInjecting else { return }
+        let snapshot = event.snapshot()
+        let fingerprint = snapshot.fingerprint(salt: settings.salt)
+        policy.settings = settings.policySettings
+        let decision = policy.mayLook(dwell: .infinity, fingerprint: fingerprint)
+        guard decision == .show else {
+            if case .wait(let reason) = decision { Self.log.info("Meeting coming up; not looking (\(reason, privacy: .public))") }
+            return
+        }
+        guard let response = try? await engine.related(RecallRequest(context: snapshot, trigger: .ambient, limit: 3)) else { return }
+        let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
+        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
+        guard !confident.isEmpty, event.start > Date() else { return }
+
+        let mode: JournalEntry.Mode = settings.ambientMode == .on ? .ambient : .shadow
+        var entry = Shown(
+            mode: mode, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: event.title,
+            fingerprint: fingerprint, suggestions: confident, weaker: [], meeting: event
+        )
+        entry.entryID = await engine.log(journalEntry(entry, dwell: 0, context: snapshot))
+        policy.didSurface(fingerprint: fingerprint)
+        guard mode == .ambient else { return }
+        if let waiting, !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
+        waiting = entry
+        updateGlyph()
+        Self.log.info("Something for the meeting is waiting behind the glyph (\(String(describing: self.glyph), privacy: .public))")
+        expireMeeting(entry, at: min(event.end, event.start.addingTimeInterval(10 * 60)))
+    }
+
+    /// A meeting's suggestion fades shortly after the meeting starts.
+    private func expireMeeting(_ entry: Shown, at date: Date) {
+        meetingExpiry?.cancel()
+        meetingExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, date.timeIntervalSinceNow)))
+            guard !Task.isCancelled, let self, let waiting = self.waiting, waiting.fingerprint == entry.fingerprint,
+                  self.shown?.fingerprint != entry.fingerprint else { return }
+            if !waiting.interacted { self.record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
+            self.waiting = nil
+            self.updateGlyph()
+        }
+    }
+
+    /// Looks ahead to meetings when that's on and Calendar access is granted. `-event` stands in
+    /// for the calendar, and `-demo` never reads it.
+    func startCalendar() {
+        guard settings.calendarContext else { calendar.stop(); return }
+        calendar.start(injected: CalendarWatcher.injectedEvent(lead: settings.calendarLead), readCalendar: Self.demoFolder == nil)
+    }
+
+    func setCalendarContext(_ on: Bool) {
+        settings.calendarContext = on
+        startCalendar()
+        if !on, waiting?.meeting != nil {
+            waiting = nil
+            updateGlyph()
+        }
+    }
+
+    func setCalendarLead(_ lead: TimeInterval) {
+        settings.calendarLead = lead
+        calendar.lead = lead
+    }
+
+    private static let log = Logger(subsystem: "rs.appea.appears", category: "calendar")
 
     // MARK: - Pull
 
@@ -298,7 +383,12 @@ final class AppModel {
             shown?.weaker.removeAll { $0 == suggestion }
         case .muted:
             let bundle = current.bundleID
-            if !bundle.isEmpty, !settings.excludedApps.contains(bundle) { settings.excludedApps.append(bundle) }
+            if bundle == CalendarEvent.bundleID {
+                // "Not before meetings"
+                setCalendarContext(false)
+            } else if !bundle.isEmpty, !settings.excludedApps.contains(bundle) {
+                settings.excludedApps.append(bundle)
+            }
             shown?.suggestions.removeAll()
             shown?.weaker.removeAll()
         default:

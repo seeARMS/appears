@@ -170,6 +170,8 @@ struct Eval: AsyncParsableCommand {
             var app: String
             var title: String
             var recipients: [String]?
+            /// Calendar scenarios: the event's location.
+            var location: String?
             var focused: String?
             var visible: String?
             var document: String?
@@ -226,6 +228,23 @@ struct Eval: AsyncParsableCommand {
         policy.sensitivity = sensitivity
         let threshold = policy.threshold
 
+        // A "Calendar" scenario is an upcoming event (title, attendees as recipients, location,
+        // notes as visible), made into a context the way the app does it. Events the app wouldn't
+        // look at (nobody else, no notes) find nothing.
+        func event(_ s: Scenarios.Scenario) -> CalendarEvent? {
+            guard s.app == CalendarEvent.appName else { return nil }
+            return CalendarEvent(
+                id: s.name, title: s.title, start: Date().addingTimeInterval(600), end: Date().addingTimeInterval(2_400),
+                attendees: (s.recipients ?? []).map(CalendarEvent.Attendee.init(recipient:)),
+                location: s.location ?? "", notes: s.visible ?? ""
+            )
+        }
+        func related(_ s: Scenarios.Scenario, trigger: Trigger, limit: Int) async throws -> RecallResponse {
+            if let event = event(s) {
+                return try await recall.run(RecallRequest(context: event.isWorthLooking ? event.snapshot() : .text(""), trigger: .ambient, limit: limit))
+            }
+            return try await recall.run(RecallRequest(context: context(s), trigger: trigger, limit: limit))
+        }
         func context(_ s: Scenarios.Scenario) -> ContextSnapshot {
             ContextSnapshot(
                 appName: s.app, bundleID: "eval.\(s.app)", windowTitle: s.title,
@@ -241,7 +260,7 @@ struct Eval: AsyncParsableCommand {
         var recallSum = 0.0, reciprocal = 0.0, ambientHits = 0, violations = 0
         var times: [Double] = []
         for scenario in scenarios.scenarios where only.map({ scenario.name.localizedCaseInsensitiveContains($0) }) ?? true {
-            let response = try await recall.run(RecallRequest(context: context(scenario), trigger: .pull, limit: max(limit, 3)))
+            let response = try await related(scenario, trigger: .pull, limit: max(limit, 3))
             times.append(response.milliseconds)
             let paths = response.suggestions.prefix(3).map { short($0.item.path) }
             let expected = scenario.expect ?? []
@@ -261,10 +280,11 @@ struct Eval: AsyncParsableCommand {
         var falseSurfaces = 0
         print("")
         for scenario in scenarios.negative {
-            let response = try await recall.run(RecallRequest(context: context(scenario), trigger: .ambient, limit: 3))
+            let response = try await related(scenario, trigger: .ambient, limit: 3)
             let surfaced = response.confidence >= threshold
             if surfaced { falseSurfaces += 1 }
-            print("\(surfaced ? "✗" : "✓") (negative) \(scenario.name): top confidence \(String(format: "%.2f", response.confidence))\(surfaced ? " — would interrupt" : "")")
+            let skipped = event(scenario).map { !$0.isWorthLooking } ?? false
+            print("\(surfaced ? "✗" : "✓") (negative) \(scenario.name): \(skipped ? "not looked at (nobody else, no notes)" : "top confidence \(String(format: "%.2f", response.confidence))")\(surfaced ? " — would interrupt" : "")")
             if verbose || surfaced {
                 for s in response.suggestions { print("    \(short(s.item.path))  \(String(format: "%.2f", s.confidence))  \(s.reason)  \(describe(s.features))") }
             }

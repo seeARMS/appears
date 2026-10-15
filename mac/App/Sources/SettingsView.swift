@@ -14,13 +14,14 @@ struct SettingsView: View {
             PrivacyPane(model: model).tabItem { Label("Privacy", systemImage: "lock") }
             StatsPane(model: model).tabItem { Label("Stats", systemImage: "chart.bar") }
         }
-        .frame(width: 560, height: 520)
+        .frame(width: 560, height: 620)
         .padding(.top, 8)
     }
 }
 
-private struct GeneralPane: View {
+struct GeneralPane: View {
     @Bindable var model: AppModel
+    @State private var calendarAccess = CalendarWatcher.access
 
     var body: some View {
         Form {
@@ -62,6 +63,37 @@ private struct GeneralPane: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Picker("Look ahead to meetings", selection: Binding(
+                    get: { model.settings.calendarContext ? model.settings.calendarLead : 0 },
+                    set: { lead in
+                        if lead > 0 { model.setCalendarLead(lead) }
+                        model.setCalendarContext(lead > 0)
+                    }
+                )) {
+                    Text("Off").tag(0.0)
+                    Text("5 minutes before").tag(300.0)
+                    Text("10 minutes before").tag(600.0)
+                    Text("15 minutes before").tag(900.0)
+                    Text("30 minutes before").tag(1_800.0)
+                }
+                if model.settings.calendarContext, calendarAccess != .granted {
+                    HStack {
+                        Text("Needs access to your calendar.").foregroundStyle(.secondary)
+                        Spacer()
+                        Button(calendarAccess == .notAsked ? "Allow…" : "Open Settings…") {
+                            Task {
+                                await CalendarWatcher.requestAccess()
+                                calendarAccess = CalendarWatcher.access
+                                model.startCalendar()
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text("Before a meeting with other people, Appears looks for what you already have about it, by the same rules as everything else. Events are read in memory and never stored.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 HStack {
                     if model.settings.isPaused {
                         Text("Paused until \(model.settings.pausedUntil!.formatted(date: .omitted, time: .shortened))")
@@ -76,6 +108,9 @@ private struct GeneralPane: View {
             }
         }
         .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            calendarAccess = CalendarWatcher.access
+        }
     }
 }
 
@@ -267,6 +302,7 @@ private struct StatsPane: View {
                     row("Asked (pulls)", "\(stats.pulls)")
                     row("Suggested on its own", "\(stats.ambient)")
                     row("Logged only (shadow)", "\(stats.shadow)")
+                    row("Before meetings", "\(stats.calendar)")
                     row("Opened, previewed or dragged", "\(stats.useful)")
                     row("Dismissed", "\(stats.dismissed)")
                     row("Ignored", "\(stats.ignored)")
@@ -276,6 +312,7 @@ private struct StatsPane: View {
                     row("Any result used, when asked", percent(stats.pullPrecisionAt3))
                     row("Used, when suggested", percent(stats.ambientPrecision))
                     row("Shadow pick matched a later ask", percent(stats.shadowPrecision))
+                    row("Used, before meetings", percent(stats.calendarPrecision))
                 }
             } else {
                 Text("No numbers yet.").foregroundStyle(.secondary)

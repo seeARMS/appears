@@ -43,6 +43,15 @@ final class AppSettings {
     var pausedUntil: Date? {
         didSet { defaults.set(pausedUntil, forKey: "pausedUntil") }
     }
+    /// Look ahead to meetings: shortly before one, look for what you already have about it.
+    /// Needs Calendar access too.
+    var calendarContext: Bool {
+        didSet { defaults.set(calendarContext, forKey: "calendarContext") }
+    }
+    /// How long before a meeting to look, in seconds.
+    var calendarLead: Double {
+        didSet { defaults.set(calendarLead, forKey: "calendarLead") }
+    }
     /// Development builds can keep context snippets in the journal for labelling (14 days).
     var keepDebugContext: Bool {
         didSet { defaults.set(keepDebugContext, forKey: "keepDebugContext") }
@@ -61,6 +70,8 @@ final class AppSettings {
         ocrOnPull = defaults.object(forKey: "ocrOnPull") as? Bool ?? true
         onboarded = defaults.bool(forKey: "onboarded")
         pausedUntil = defaults.object(forKey: "pausedUntil") as? Date
+        calendarContext = defaults.object(forKey: "calendarContext") as? Bool ?? true
+        calendarLead = defaults.object(forKey: "calendarLead") as? Double ?? 600
         keepDebugContext = defaults.bool(forKey: "keepDebugContext")
         if let salt = defaults.string(forKey: "salt") {
             self.salt = salt
