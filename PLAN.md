@@ -273,6 +273,7 @@ This is the core of the product. There are three modes, and all three are in v0'
   - **Home folder:** one click on an open panel that's already pointed at it.
   - **Full Disk Access:** optional, for Notes.
   - **Automation, for Safari and Chrome:** optional, for URLs.
+  - **Calendar:** optional, for looking ahead to meetings (added 2026-10-15).
   - **Screen Recording:** optional, for OCR on pull.
 
 ### 7. Permissions and the two-process split
@@ -412,7 +413,7 @@ These are targets to measure in M0, not guesses to trust:
 - **More sources:** Mail (emlx, Full Disk Access), Photos (PhotoKit), video (frames and audio).
 - **iMessage through whosaid's index:** a shared app group, the same model, so the vectors are compatible.
 - **screenpipe:** read its SQLite file, never its local HTTP API, which would need the network.
-- **Calendar as context:** "you're about to meet Dana" is a context too.
+- **Calendar as context:** "you're about to meet Dana" is a context too. Built early, on 2026-10-15 (see README.md's "Meetings").
 
 ## Risks
 

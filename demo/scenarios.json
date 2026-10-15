@@ -1,5 +1,5 @@
 {
-  "about": "Contexts for `appears eval`: what's on screen, and what Appears should find (paths under demo/files). Negative scenarios should surface nothing confidently.",
+  "about": "Contexts for `appears eval`: what's on screen, and what Appears should find (paths under demo/files). Negative scenarios should surface nothing confidently. Scenarios with app \"Calendar\" are upcoming meetings, read the way the app reads an event: title, recipients (the attendees), location, and visible (the notes, conferencing boilerplate and all).",
   "scenarios": [
     {
       "name": "Replying to the contractor",
@@ -97,6 +97,67 @@
       ]
     },
     {
+      "name": "Meeting: kitchen walkthrough with the contractor",
+      "app": "Calendar",
+      "title": "Kitchen walkthrough with Dana Ruiz",
+      "recipients": [
+        "Dana Ruiz <dana@ruizdaughters.example>"
+      ],
+      "location": "2214 Alcatraz Ave, Oakland CA 94609",
+      "visible": "Walk through the cabinet layout and where the new outlets go before demo starts.",
+      "expect": [
+        "Documents/House/Kitchen/IMG_4471.jpg",
+        "Documents/House/Kitchen/permit-BLD-2024-0457.pdf"
+      ]
+    },
+    {
+      "name": "Meeting: picking the offsite venue",
+      "app": "Calendar",
+      "title": "Spring offsite: pick a venue",
+      "recipients": [
+        "Priya Natarajan <priya@northwind.example>",
+        "Sam Okoro <sam@northwind.example>"
+      ],
+      "visible": "Decide between the places Priya called, so she can release the holds.\n\nJoin Zoom Meeting\nhttps://northwind.zoom.us/j/81234567890?pwd=bm90IGEgcmVhbCBsaW5r\n\nMeeting ID: 812 3456 7890\nPasscode: 4417\n\n---\n\nOne tap mobile\n+16695550100,,81234567890#,,,,*4417# US (San Jose)\n\nDial by your location\n• +1 669 555 0100 US (San Jose)\n• +1 646 555 0117 US (New York)\n\nFind your local number: https://northwind.zoom.us/u/kdemo",
+      "expect": [
+        "Documents/Work/Offsite/offsite-venues.md"
+      ]
+    },
+    {
+      "name": "Meeting: going over the tax return",
+      "app": "Calendar",
+      "title": "2024 taxes with Morgan",
+      "recipients": [
+        "Morgan Hale <morgan@halecpa.example>"
+      ],
+      "visible": "Bring the 1099s: brokerage, and interest from the credit union.\n\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-\nJoin with Google Meet: https://meet.google.com/abc-defg-hij\nOr dial: (US) +1 650-555-0123 PIN: 482913775#\nMore phone numbers: https://tel.meet/abc-defg-hij?pin=482913775\nLearn more about Meet at: https://support.google.com/a/users/answer/9282720\nPlease do not edit this section.\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-",
+      "expect": [
+        "Documents/Taxes/2024/1099-INT-Harbor-Credit-Union.pdf"
+      ]
+    },
+    {
+      "name": "Meeting: Biscuit's dental cleaning, on your own",
+      "app": "Calendar",
+      "title": "Biscuit: dental cleaning",
+      "location": "Rockridge Animal Hospital",
+      "visible": "Drop him off by 8. Ask Dr. Patel whether the quote still stands.",
+      "expect": [
+        "Desktop/Screenshot 2024-11-02 at 4.31.10 PM.png"
+      ]
+    },
+    {
+      "name": "Meeting: appealing the dental claim, on Teams",
+      "app": "Calendar",
+      "title": "Crown claim appeal",
+      "recipients": [
+        "Delta Dental claims <claims@deltadental.example>"
+      ],
+      "visible": "Appeal for the porcelain crown from Bayside Family Dentistry: only half was covered.\n________________________________________________________________________________\nMicrosoft Teams meeting\nJoin on your computer, mobile app or room device\nClick here to join the meeting<https://teams.microsoft.com/l/meetup-join/19%3ameeting_demo%40thread.v2/0>\nMeeting ID: 245 550 199 012\nPasscode: 7Hq2Lp\nDownload Teams<https://www.microsoft.com/en-us/microsoft-teams/download-app> | Join on the web<https://www.microsoft.com/microsoft-teams/join-a-meeting>\nOr call in (audio only)\n+1 323-555-0142,,245550199#   United States, Los Angeles\nPhone Conference ID: 245 550 199#\nFind a local number<https://dialin.teams.microsoft.com/demo> | Reset PIN<https://dialin.teams.microsoft.com/usp/pstnconferencing>\nLearn More<https://aka.ms/JoinTeamsMeeting> | Meeting options<https://teams.microsoft.com/meetingOptions/>\n________________________________________________________________________________",
+      "expect": [
+        "Downloads/EOB-Delta-Dental-2025-03.pdf"
+      ]
+    },
+    {
       "name": "Asking: the cabin wifi, no names",
       "app": "Messages",
       "title": "Sam",
@@ -188,6 +249,57 @@
       "title": "",
       "focused": "Can you rerun the tests and push?",
       "visible": "Ran Codex, Claude, and Gemini on the same PR. Two PRs merged. The CLI output looked fine and the API latency is down. Claude summarized the diff and opened a draft."
+    },
+    {
+      "name": "Meeting: a bare dentist appointment",
+      "app": "Calendar",
+      "title": "Dentist"
+    },
+    {
+      "name": "Meeting: the weekly 1:1",
+      "app": "Calendar",
+      "title": "1:1 with Jordan",
+      "recipients": [
+        "Jordan Reyes <jordan@northwind.example>"
+      ],
+      "visible": "Weekly. Running notes in our 1:1 doc.\n\nJoin Zoom Meeting\nhttps://northwind.zoom.us/j/9876543210?pwd=bm90IGEgcmVhbCBsaW5r\n\nMeeting ID: 987 654 3210\nPasscode: 1on1\n\n---\n\nOne tap mobile\n+16695550100,,9876543210#,,,,*1on1# US (San Jose)\n\nDial by your location\n• +1 669 555 0100 US (San Jose)\n• +1 646 555 0117 US (New York)\n\nFind your local number: https://northwind.zoom.us/u/kdemo"
+    },
+    {
+      "name": "Meeting: focus time",
+      "app": "Calendar",
+      "title": "Focus time",
+      "visible": "Blocked automatically to protect your focus time. Please don't book over this."
+    },
+    {
+      "name": "Meeting: team standup",
+      "app": "Calendar",
+      "title": "Team standup",
+      "recipients": [
+        "Jordan Reyes <jordan@northwind.example>",
+        "Priya Natarajan <priya@northwind.example>",
+        "Sam Okoro <sam@northwind.example>",
+        "Riley Chen <riley@northwind.example>"
+      ],
+      "visible": "-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-\nJoin with Google Meet: https://meet.google.com/abc-defg-hij\nOr dial: (US) +1 650-555-0123 PIN: 482913775#\nMore phone numbers: https://tel.meet/abc-defg-hij?pin=482913775\nLearn more about Meet at: https://support.google.com/a/users/answer/9282720\nPlease do not edit this section.\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-"
+    },
+    {
+      "name": "Meeting: lunch at a place with old receipts",
+      "app": "Calendar",
+      "title": "Lunch with Sam",
+      "recipients": [
+        "Sam Okoro <sam@northwind.example>"
+      ],
+      "location": "Elm St Cafe"
+    },
+    {
+      "name": "Meeting: an interview loop",
+      "app": "Calendar",
+      "title": "Interview: senior iOS engineer, system design",
+      "recipients": [
+        "Avery Lindgren <avery.lindgren@candidates.example>",
+        "Jordan Reyes <jordan@northwind.example>"
+      ],
+      "visible": "System design round. Scorecard due by the end of the day.\n________________________________________________________________________________\nMicrosoft Teams meeting\nJoin on your computer, mobile app or room device\nClick here to join the meeting<https://teams.microsoft.com/l/meetup-join/19%3ameeting_demo%40thread.v2/0>\nMeeting ID: 245 550 199 012\nPasscode: 7Hq2Lp\nDownload Teams<https://www.microsoft.com/en-us/microsoft-teams/download-app> | Join on the web<https://www.microsoft.com/microsoft-teams/join-a-meeting>\nOr call in (audio only)\n+1 323-555-0142,,245550199#   United States, Los Angeles\nPhone Conference ID: 245 550 199#\nFind a local number<https://dialin.teams.microsoft.com/demo> | Reset PIN<https://dialin.teams.microsoft.com/usp/pstnconferencing>\nLearn More<https://aka.ms/JoinTeamsMeeting> | Meeting options<https://teams.microsoft.com/meetingOptions/>\n________________________________________________________________________________"
     },
     {
       "name": "Not asking: what was I thinking",

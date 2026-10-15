@@ -18,6 +18,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing
   - **New:** what's in the same folder or repeats the window title counts less.
   - **Varied:** results are diversified, so you don't get three near-copies.
 - **Confidence:** each result gets a 0–1 score built from how far it stands above the context's other candidates. A clear match counts for more when what you're writing asks for something you had ("what was the wifi password again?"). `appears eval` measures it.
+- **Meetings:** with Calendar access (optional), Appears also looks once before each meeting, 10 minutes ahead by default. The event stands in for a window: its title, the people invited, and its location and notes, minus the join links, dial-ins and passcodes. All-day events, ones you declined, and blocks with nobody else and nothing written in them are skipped. One timer waits for the next meeting; nothing polls. The lead time replaces the dwell, everything else below applies as is, and the panel says which meeting it's for ("For Kitchen walkthrough at 2:00 PM").
 - **When to show something:** you can always ask, with ⇧⌘Space or a click on the menu bar ring. On its own, Appears looks only after you've stayed in one context for 15 seconds. It changes the ring (a dot appears) only when a result is confident and the budget allows: a few per hour, with backoff after each ignored or dismissed suggestion. It never sends notifications or makes sounds. "Log only" mode records what it would have shown, without showing it.
 - **Measuring:** a journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). It holds item ids and scores, and a salted fingerprint of the context, never its text. Settings → Stats and `appears stats` turn it into precision numbers.
 
@@ -36,7 +37,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing
   ```
 
   It can't sandbox itself either. A self-applied `sandbox_init` profile, even one that allows everything except IP networking, makes macOS refuse the process Accessibility, and on macOS 27 the built-in named `no-network` profile kills the process outright. Both found 2026-10-15.
-- **Nothing about what was on screen is stored.** Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
+- **Nothing about what was on screen is stored,** and the same goes for calendar events, which are read through EventKit in memory and never logged. Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
 
 ## Repository
 
@@ -78,7 +79,7 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    cp -R mac/build/DerivedData/Build/Products/Release/Appears.app /Applications/ && open /Applications/Appears.app
    ```
 
-Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
+Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
 
 The first index takes a while and pauses in Low Power Mode; the menu bar ring is open while it's working. Measured on 2026-10-15 on Colin's Mac (about 11,000 files after the skip rules):
 
@@ -108,6 +109,12 @@ open -n /Applications/Appears.app --args -demo "$PWD/demo/files"
 
 `-demo` keeps a separate index. Add `-ask "<text>"` to run one ask with scripted text once indexing finishes, which also works without the Accessibility permission. Then open, say, a text file in TextEdit containing "Hi Dana, can you confirm the quote covers moving the outlet?" and press ⇧⌘Space.
 
+`-event "<title>"` stands in a made-up meeting for your calendar, which is then never read (nor is it with `-demo`). It starts 30 seconds after the lead time, so the ring gets its dot about half a minute after launch if the result is confident. Add `-event-with "Name <email>; …"`, `-event-location`, `-event-notes` and `-event-in <seconds>`:
+
+```bash
+open -n /Applications/Appears.app --args -demo "$PWD/demo/files" -event "Kitchen walkthrough with Dana Ruiz" -event-with "Dana Ruiz <dana@ruizdaughters.example>"
+```
+
 ## Tests and the eval
 
 ```bash
@@ -122,7 +129,7 @@ cd mac/Packages/AppearsModel && xcodebuild -scheme appears -destination 'platfor
 mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 ```
 
-`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15 (15 scenarios, 13 negatives): recall@3 0.98, MRR 1.00, ambient hits 15/15, false surfaces 0/13, median 48 ms. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
+`appears eval` indexes `demo/files` in a temporary folder and scores `demo/scenarios.json`. It reports recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (contexts where the right answer is silence), and whether anything recent was shown. Baseline on 2026-10-15, with the meeting and asking scenarios (20 + 19): recall@3 0.98, MRR 1.00, ambient hits 20/20, false surfaces 0/19, median 53 ms. Scenarios whose app is "Calendar" are made into a context the way the app reads an event. The confidence weights were fitted to these same scenarios, so add scenarios before trusting the numbers.
 
 Other commands:
 
