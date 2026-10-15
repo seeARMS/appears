@@ -1,0 +1,93 @@
+{
+  "about": "Contexts for `appears eval`: what's on screen, and what Appears should find (paths under demo/files). Negative scenarios should surface nothing confidently.",
+  "scenarios": [
+    {
+      "name": "Replying to the contractor",
+      "app": "Mail",
+      "title": "Re: Kitchen — can you start on the 14th?",
+      "recipients": ["Dana Ruiz <dana@ruizdaughters.example>"],
+      "focused": "Hi Dana,\n\nThe 14th works. Before you start, can you confirm the quote still covers moving the outlet by the window and the quartz counters? Also, do we need the city inspection before the cabinets go in?\n\nThanks",
+      "visible": "Dana Ruiz: We can start the kitchen on the 14th if the permit is still good. Cabinets are in.",
+      "document": "Documents/House/Kitchen/email-draft-to-dana.txt",
+      "expect": ["Documents/House/Kitchen/IMG_4471.jpg", "Documents/House/Kitchen/permit-BLD-2024-0457.pdf", "Documents/House/Kitchen measurements.md"],
+      "never": ["Documents/House/Kitchen/email-draft-to-dana.txt"]
+    },
+    {
+      "name": "Arguing with the dental insurer",
+      "app": "Mail",
+      "title": "Claim appeal — crown, March 2025",
+      "focused": "Hello, I'd like to appeal the claim for the porcelain crown from Bayside Family Dentistry in March. Only half was covered and I was told it would be 80%.",
+      "visible": "",
+      "expect": ["Downloads/EOB-Delta-Dental-2025-03.pdf"]
+    },
+    {
+      "name": "Planning another Lisbon trip",
+      "app": "Safari",
+      "title": "Things to do in Lisbon — travel guide",
+      "visible": "Lisbon travel guide. Ride the historic tram 28 through Alfama, visit São Jorge castle, take a day trip to Sintra and Pena Palace, eat pastéis de nata.",
+      "expect": ["Documents/Travel/Lisbon 2023/itinerary.md", "Desktop/Screenshot 2023-05-11 at 9.12.44 AM.png"]
+    },
+    {
+      "name": "The accountant asks for interest forms",
+      "app": "Mail",
+      "title": "2024 return — missing documents",
+      "visible": "Hi, to finish your 2024 return I still need any 1099-INT forms for interest you earned, for example from your credit union savings account.",
+      "expect": ["Documents/Taxes/2024/1099-INT-Harbor-Credit-Union.pdf"]
+    },
+    {
+      "name": "Booking the cabin again",
+      "app": "Messages",
+      "title": "Joan (Pine Hollow)",
+      "visible": "Joan: Great, the cabin is yours for the long weekend again. Same wifi as last time!",
+      "focused": "Thanks Joan! What was the wifi password again?",
+      "expect": ["Desktop/IMG_2031.jpg"]
+    },
+    {
+      "name": "Car making a grinding noise",
+      "app": "Notes",
+      "title": "Car",
+      "focused": "CR-V brakes grinding when stopping. When were the brakes last looked at? Call Eastshore Honda.",
+      "expect": ["Documents/Car/Honda service invoice 2023-08.pdf"]
+    },
+    {
+      "name": "Baking for Easter",
+      "app": "Messages",
+      "title": "Family",
+      "visible": "Mom: Can someone make Grandma Ruth's lemon cake for Easter this year? I can't find the recipe.",
+      "expect": ["Documents/Recipes/Grandma's lemon cake.txt"]
+    },
+    {
+      "name": "Calling the vet",
+      "app": "Safari",
+      "title": "Rockridge Animal Hospital — Dental care for pets",
+      "visible": "Pet dental cleanings at Rockridge Animal Hospital. Book an appointment online or call us.",
+      "expect": ["Desktop/Screenshot 2024-11-02 at 4.31.10 PM.png"]
+    }
+  ],
+  "negative": [
+    {
+      "name": "Reading about Mars",
+      "app": "Safari",
+      "title": "NASA rover finds new evidence of ancient lakebeds on Mars",
+      "visible": "The rover's instruments detected layered sediments in Jezero crater, suggesting a lake that persisted for thousands of years. Scientists will cache the samples for a future return mission."
+    },
+    {
+      "name": "Writing a performance review",
+      "app": "Pages",
+      "title": "Self review H2",
+      "focused": "This half I led the migration of our analytics pipeline to the new warehouse, mentored two new engineers, and reduced on-call pages by a third."
+    },
+    {
+      "name": "A sourdough recipe",
+      "app": "Safari",
+      "title": "Beginner sourdough bread",
+      "visible": "Feed your starter the night before. Mix 500g bread flour with 350g water, rest 1 hour, add 100g starter and 10g salt, stretch and fold every 30 minutes."
+    },
+    {
+      "name": "Checking the weather",
+      "app": "Weather",
+      "title": "Weather",
+      "visible": "Today: partly cloudy, high 68, low 54. Wind west 10 mph. Tomorrow: chance of showers."
+    }
+  ]
+}

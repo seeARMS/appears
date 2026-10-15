@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Appears' update feed for Sparkle. The release script will write this file on each release; don't edit it by hand.
+     No releases yet. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Appears</title>
+    <link>https://appea.rs/</link>
+    <description>Updates for Appears, the Mac menu bar app that shows related files you already have.</description>
+    <language>en</language>
+  </channel>
+</rss>

@@ -1,0 +1,13 @@
+.DS_Store
+mac/Models/
+mac/build/
+mac/*.xcodeproj
+.build/
+.swiftpm/
+DerivedData/
+web/node_modules/
+web/dist/
+web/.astro/
+web/.wrangler/
+web/.data/
+*.profraw

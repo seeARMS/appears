@@ -1,0 +1,36 @@
+{
+  "name": "appears-web",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The landing site for Appears at appea.rs.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro build && XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler dev",
+    "check": "astro check",
+    "astro": "astro",
+    "cf": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler",
+    "cf:login": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler login",
+    "cf:whoami": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler whoami",
+    "deploy": "astro build && XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler deploy",
+    "deploy:www": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler deploy --config redirect/wrangler.jsonc",
+    "og": "esbuild scripts/og.ts --bundle --platform=node --format=esm --outfile=.data/og.mjs --log-level=warning --external:@resvg/resvg-wasm && node .data/og.mjs"
+  },
+  "dependencies": {
+    "astro": "^7.4.0"
+  },
+  "allowScripts": {
+    "esbuild": true
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.151.0"
+  }
+}

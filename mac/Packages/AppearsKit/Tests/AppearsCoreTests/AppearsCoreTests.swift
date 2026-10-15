@@ -1,0 +1,197 @@
+import Foundation
+import Testing
+
+@testable import AppearsCore
+
+private func temporaryFolder() throws -> URL {
+    let url = FileManager.default.temporaryDirectory.appending(path: "appears-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+private let day: TimeInterval = 86_400
+
+/// An index of a few made-up files, built with the hashing embedder.
+private func makeIndex(_ files: [(name: String, text: String, age: Double)], now: Date = Date()) async throws -> (Recall, IndexStore, URL) {
+    let folder = try temporaryFolder()
+    let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+    let embedder = HashingEmbedder()
+    let vectors = VectorIndex(dimension: embedder.dimension)
+    let indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: SourceSettings())
+    for file in files {
+        let date = now.addingTimeInterval(-file.age * day)
+        let item = Item(source: .file, path: folder.appending(path: file.name).path, kind: .document, title: file.name,
+                        size: Int64(file.text.count), created: date, modified: date, lastUsed: nil)
+        try file.text.write(toFile: item.path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: item.path)
+        let (id, _) = try store.record(item, signature: "x")
+        var stored = item
+        stored.id = id
+        try await indexer.index(stored)
+    }
+    return (Recall(store: store, vectors: vectors, embedder: embedder), store, folder)
+}
+
+@Suite struct ExtractorTests {
+    @Test func chunksAtParagraphs() {
+        let paragraph = String(repeating: "word ", count: 100)
+        let chunks = Extractor.chunks(Array(repeating: paragraph, count: 10).joined(separator: "\n\n"), size: 1_100)
+        #expect(chunks.count == 5)
+        #expect(chunks.allSatisfy { $0.count <= 1_100 })
+    }
+
+    @Test func splitsOneLongParagraph() {
+        let text = String(repeating: "A sentence goes here. ", count: 300)
+        let chunks = Extractor.chunks(text, size: 500)
+        #expect(chunks.count > 5)
+        #expect(chunks.allSatisfy { $0.count <= 500 })
+    }
+
+    @Test func stripsHTML() {
+        let text = Extractor.stripHTML("<html><style>p{}</style><p>Hello &amp; welcome</p><script>x()</script></html>")
+        #expect(text.trimmingCharacters(in: .whitespaces) == "Hello & welcome")
+    }
+}
+
+@Suite struct NotesTests {
+    @Test func decodesNoteProtobuf() throws {
+        // NoteStoreProto { document (2) { note (3) { note_text (2): "Kitchen measurements" } } }
+        func field(_ number: UInt8, _ payload: [UInt8]) -> [UInt8] { [number << 3 | 2, UInt8(payload.count)] + payload }
+        let text = Array("Kitchen measurements".utf8)
+        let proto = field(2, [0x08, 0x01] + field(3, [0x08, 0x00] + field(2, text)))
+        #expect(NotesReader.noteText(Data(proto)) == "Kitchen measurements")
+    }
+
+    @Test func gunzips() throws {
+        // `printf 'hello' | gzip | xxd -i`
+        let gz: [UInt8] = [0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x07,
+                           0x00, 0x86, 0xa6, 0x10, 0x36, 0x05, 0x00, 0x00, 0x00]
+        let out = try #require(NotesReader.gunzip(Data(gz)))
+        #expect(String(decoding: out, as: UTF8.self) == "hello")
+    }
+}
+
+@Suite struct QueryTests {
+    @Test func dropsQuotedReplies() {
+        let text = "Sounds good, Thursday works.\n\nOn Mon, Oct 13, 2026 at 9:14 AM Dana Ruiz wrote:\n> Can we meet?"
+        #expect(QueryBuilder.clean(text) == "Sounds good, Thursday works.")
+    }
+
+    @Test func findsNamesAndNumbers() {
+        let query = QueryBuilder.build(.text("Hi Dana Ruiz, about invoice INV-20431 for the kitchen at Ruiz & Daughters Builders. Call me at (415) 555-0142."))
+        #expect(query.entities.contains { $0.contains("Dana Ruiz") })
+        #expect(query.identifiers.contains("INV-20431"))
+        #expect(query.fullText.contains("\"INV-20431\""))
+    }
+
+    @Test func fingerprintIgnoresWhitespaceButNotTopic() {
+        let a = ContextSnapshot(bundleID: "com.apple.mail", windowTitle: "Re: Kitchen", focusedText: "Hello  there")
+        var b = a
+        b.focusedText = "Hello there"
+        var c = a
+        c.windowTitle = "Re: Taxes"
+        #expect(a.fingerprint(salt: "s") == b.fingerprint(salt: "s"))
+        #expect(a.fingerprint(salt: "s") != c.fingerprint(salt: "s"))
+    }
+}
+
+@Suite struct RecallTests {
+    @Test func findsForgottenAndSkipsRecent() async throws {
+        let (recall, _, _) = try await makeIndex([
+            ("quote.txt", "Ruiz Builders quote for kitchen cabinets and countertops, $18,400", 400),
+            ("notes-today.txt", "Kitchen cabinets countertops quote, Ruiz Builders, edited today", 0.5),
+            ("hiking.txt", "Zion hiking itinerary for three days, Angels Landing permit", 300),
+        ])
+        let response = try await recall.run(RecallRequest(
+            context: .text("Replying to Ruiz Builders about the kitchen cabinets and countertops quote"), trigger: .pull
+        ))
+        #expect(response.suggestions.first?.item.title == "quote.txt")
+        #expect(!response.suggestions.contains { $0.item.title == "notes-today.txt" })
+    }
+
+    @Test func skipsTheOpenDocument() async throws {
+        let (recall, _, folder) = try await makeIndex([
+            ("a.txt", "Permit application for the kitchen remodel, city of Oakland", 100),
+            ("b.txt", "Permit for kitchen remodel approved, Oakland building department", 200),
+        ])
+        var context = ContextSnapshot.text("Oakland kitchen remodel permit")
+        context.documentPath = folder.appending(path: "a.txt").path
+        let response = try await recall.run(RecallRequest(context: context, trigger: .pull))
+        #expect(response.suggestions.map(\.item.title) == ["b.txt"])
+    }
+
+    @Test func explainsEntityMatches() async throws {
+        let (recall, _, _) = try await makeIndex([
+            ("contacts.txt", "Dana Ruiz, contractor, Ruiz & Daughters Builders", 500),
+        ])
+        let response = try await recall.run(RecallRequest(context: .text("Email to Dana Ruiz about next week"), trigger: .pull))
+        let first = try #require(response.suggestions.first)
+        #expect(first.reason.hasPrefix("Mentions Dana Ruiz"))
+        #expect(first.features.entityHit)
+    }
+
+    @Test func neverShowIsRespected() async throws {
+        let (recall, store, _) = try await makeIndex([("x.txt", "Solar panel installation estimate from Sunrun", 100)])
+        let first = try #require(try await recall.run(RecallRequest(context: .text("solar panel estimate"), trigger: .pull)).suggestions.first)
+        try store.setNeverShow(itemID: first.item.id)
+        #expect(try await recall.run(RecallRequest(context: .text("solar panel estimate"), trigger: .pull)).suggestions.isEmpty)
+    }
+}
+
+@Suite struct PolicyTests {
+    @Test func waitsForDwellAndBacksOff() {
+        var policy = SurfacePolicy()
+        let now = Date()
+        #expect(policy.mayLook(dwell: 5, fingerprint: "a", now: now) == .wait("dwell"))
+        #expect(policy.mayLook(dwell: 20, fingerprint: "a", now: now) == .show)
+        policy.didSurface(fingerprint: "a", at: now)
+        #expect(policy.mayLook(dwell: 20, fingerprint: "a", now: now) == .wait("already shown here"))
+        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(60)) == .wait("backoff"))
+        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(400)) == .show)
+        policy.record(.dismissed)
+        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(400)) == .wait("backoff"))
+    }
+
+    @Test func sensitivityMovesThreshold() {
+        var settings = SurfacePolicy.Settings()
+        settings.sensitivity = 0
+        let strict = settings.threshold
+        settings.sensitivity = 1
+        #expect(settings.threshold < strict)
+    }
+}
+
+@Suite struct JournalTests {
+    @Test func computesPrecision() throws {
+        let journal = try Journal(url: try temporaryFolder().appending(path: "journal.sqlite"))
+        let pull = try journal.log(JournalEntry(mode: .pull, bundleID: "x", fingerprint: "f", dwellSeconds: 0, suggestions: []))
+        try journal.record(.opened, entryID: pull, itemID: 1, position: 0)
+        let other = try journal.log(JournalEntry(mode: .pull, bundleID: "x", fingerprint: "g", dwellSeconds: 0, suggestions: []))
+        try journal.record(.dismissed, entryID: other, itemID: 2, position: 0)
+        let stats = try journal.stats(days: 7)
+        #expect(stats.pulls == 2)
+        #expect(stats.pullPrecisionAt1 == 0.5)
+        #expect(stats.useful == 1)
+    }
+}
+
+@Suite struct ScannerTests {
+    @Test func skipsCodeAndLibrary() throws {
+        let home = URL(filePath: String(cString: realpath(try temporaryFolder().path, nil)))
+        let fm = FileManager.default
+        for path in ["Documents/plan.md", "Library/Caches/x.txt", "src/repo/.git/HEAD", "src/repo/README.md",
+                     "Documents/node_modules/pkg/readme.md", "Desktop/Screenshot.png", "Documents/notes.xyz"] {
+            let url = home.appending(path: path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "content".write(to: url, atomically: true, encoding: .utf8)
+        }
+        var found: [String] = []
+        FileScanner(settings: SourceSettings(), home: home.path).scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        #expect(Set(found) == ["Documents/plan.md", "Desktop/Screenshot.png"])
+
+        var withRepo: [String] = []
+        let settings = SourceSettings(includes: [home.appending(path: "src/repo").path], excludes: [home.appending(path: "Desktop").path])
+        FileScanner(settings: settings, home: home.path).scan { withRepo.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        #expect(Set(withRepo) == ["Documents/plan.md", "src/repo/README.md"])
+    }
+}

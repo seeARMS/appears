@@ -1,0 +1,10 @@
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "appears-www",
+	// Colin Personal, same as the main Worker.
+	"account_id": "68d615b353a7fe2663d3e7154366864a",
+	"main": "index.js",
+	"compatibility_date": "2026-10-13",
+	"workers_dev": false,
+	"routes": [{ "pattern": "www.appea.rs", "custom_domain": true }]
+}

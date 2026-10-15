@@ -1,0 +1,24 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "appears",
+	// Colin Personal. Pinned so a deploy can never land on another account.
+	"account_id": "68d615b353a7fe2663d3e7154366864a",
+	// src/worker.ts serves the page's Markdown to agents that ask for it.
+	"main": "./src/worker.ts",
+	"compatibility_date": "2026-10-13",
+	"compatibility_flags": ["global_fetch_strictly_public"],
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		// Only the page and its Markdown go through the Worker, which picks
+		// between them by Accept header. Keep asset folders out: everything
+		// else (appcast.xml, og.png, /_astro/) is served straight from the files.
+		"run_worker_first": ["/", "/index.md"]
+	},
+	"routes": [{ "pattern": "appea.rs", "custom_domain": true }],
+	// Keep the workers.dev URL too; handy for checking a deploy before DNS catches up.
+	"workers_dev": true,
+	"observability": {
+		"enabled": true
+	}
+}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Appears' mark: a field of view (the ring) with something surfacing at its top edge (the dot). -->
+  <circle cx="32" cy="34" r="22" stroke="currentColor" stroke-width="5"/>
+  <circle cx="32" cy="17" r="8" fill="#E0531F"/>
+</svg>

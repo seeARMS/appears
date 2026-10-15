@@ -1,0 +1,81 @@
+import AppearsCore
+import Foundation
+import KeyboardShortcuts
+
+extension KeyboardShortcuts.Name {
+    /// "What do I already have about this?"
+    static let pull = Self("pull", default: .init(.space, modifiers: [.command, .shift]))
+}
+
+/// Preferences, in UserDefaults. Only settings live here; nothing about what was on screen.
+@MainActor @Observable
+final class AppSettings {
+    private let defaults = UserDefaults.standard
+
+    var ambientMode: AmbientMode {
+        didSet { defaults.set(ambientMode.rawValue, forKey: "ambientMode") }
+    }
+    var sensitivity: Double {
+        didSet { defaults.set(sensitivity, forKey: "sensitivity") }
+    }
+    var dwell: Double {
+        didSet { defaults.set(dwell, forKey: "dwell") }
+    }
+    /// Apps Appears never reads, beyond the built-in list.
+    var excludedApps: [String] {
+        didSet { defaults.set(excludedApps, forKey: "excludedApps") }
+    }
+    var sources: SourceSettings {
+        didSet { defaults.set(try? JSONEncoder().encode(sources), forKey: "sources") }
+    }
+    /// Safari can't say whether a window is private, so ambient mode skips Safari unless this is on.
+    var ambientInSafari: Bool {
+        didSet { defaults.set(ambientInSafari, forKey: "ambientInSafari") }
+    }
+    /// Read the window with OCR on pull when Accessibility returns almost nothing.
+    var ocrOnPull: Bool {
+        didSet { defaults.set(ocrOnPull, forKey: "ocrOnPull") }
+    }
+    var onboarded: Bool {
+        didSet { defaults.set(onboarded, forKey: "onboarded") }
+    }
+    /// Pause until this time.
+    var pausedUntil: Date? {
+        didSet { defaults.set(pausedUntil, forKey: "pausedUntil") }
+    }
+    /// Development builds can keep context snippets in the journal for labelling (14 days).
+    var keepDebugContext: Bool {
+        didSet { defaults.set(keepDebugContext, forKey: "keepDebugContext") }
+    }
+
+    /// Per-install salt for context fingerprints, so they can't be matched across Macs or reversed.
+    let salt: String
+
+    init() {
+        ambientMode = AmbientMode(rawValue: defaults.string(forKey: "ambientMode") ?? "") ?? .on
+        sensitivity = defaults.object(forKey: "sensitivity") as? Double ?? 0.5
+        dwell = defaults.object(forKey: "dwell") as? Double ?? 15
+        excludedApps = defaults.stringArray(forKey: "excludedApps") ?? []
+        sources = (defaults.data(forKey: "sources")).flatMap { try? JSONDecoder().decode(SourceSettings.self, from: $0) } ?? SourceSettings()
+        ambientInSafari = defaults.bool(forKey: "ambientInSafari")
+        ocrOnPull = defaults.object(forKey: "ocrOnPull") as? Bool ?? true
+        onboarded = defaults.bool(forKey: "onboarded")
+        pausedUntil = defaults.object(forKey: "pausedUntil") as? Date
+        keepDebugContext = defaults.bool(forKey: "keepDebugContext")
+        if let salt = defaults.string(forKey: "salt") {
+            self.salt = salt
+        } else {
+            salt = UUID().uuidString
+            defaults.set(salt, forKey: "salt")
+        }
+    }
+
+    var isPaused: Bool { (pausedUntil ?? .distantPast) > Date() }
+
+    var policySettings: SurfacePolicy.Settings {
+        var settings = SurfacePolicy.Settings()
+        settings.sensitivity = sensitivity
+        settings.dwell = dwell
+        return settings
+    }
+}

@@ -1,0 +1,162 @@
+---
+// The one page. Its copy is in src/site.ts, which the Markdown version
+// (index.md.ts) and llms.txt read too.
+import Base from "../layouts/Base.astro";
+import Glyph from "../components/Glyph.astro";
+import Mark from "../components/Mark.astro";
+import Mock from "../components/Mock.astro";
+import { inline } from "../lib/inline";
+import {
+  AUTHOR,
+  DESCRIPTION,
+  GLYPHS,
+  HEADLINE,
+  HOW,
+  HOW_HEADING,
+  LEDE,
+  LICENSE,
+  LICENSE_URL,
+  NAME,
+  NOW,
+  NOW_HEADING,
+  OPERATING_SYSTEM,
+  PRIVACY,
+  PRIVACY_HEADING,
+  QUIET,
+  QUIET_HEADING,
+  SITE,
+  STATUS,
+  STATUS_TEXT,
+  SUMMARY,
+  TITLE,
+} from "../site";
+
+// The headline's second clause is set in italic, and its full stop is the mark's dot.
+const [first, rest] = HEADLINE.replace(/\.$/, "").split(/,\s*/, 2);
+
+const schema = [
+  {
+    "@type": "WebSite",
+    "@id": `${SITE}/#website`,
+    url: `${SITE}/`,
+    name: NAME,
+    description: DESCRIPTION,
+    inLanguage: "en",
+    about: { "@id": `${SITE}/#app` },
+    publisher: { "@id": AUTHOR.id },
+  },
+  {
+    "@type": "SoftwareApplication",
+    "@id": `${SITE}/#app`,
+    name: NAME,
+    url: `${SITE}/`,
+    description: DESCRIPTION,
+    disambiguatingDescription: SUMMARY,
+    operatingSystem: OPERATING_SYSTEM,
+    applicationCategory: "UtilitiesApplication",
+    isAccessibleForFree: true,
+    license: LICENSE_URL,
+    image: `${SITE}/og.png`,
+    author: { "@id": AUTHOR.id },
+    creator: { "@id": AUTHOR.id },
+  },
+  {
+    "@type": "Person",
+    "@id": AUTHOR.id,
+    name: AUTHOR.name,
+    url: AUTHOR.url,
+    disambiguatingDescription: AUTHOR.disambiguation,
+    sameAs: AUTHOR.sameAs,
+  },
+];
+---
+
+<Base title={TITLE} path="/" markdown="/index.md" schema={schema}>
+  <header class="top wrap">
+    <a class="brand" href="/" aria-label="Appears, home">
+      <Mark size={26} />
+      <span class="brand-name">{NAME}</span>
+    </a>
+    <span class="status"><span class="status-dot" aria-hidden="true"></span>{STATUS}</span>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <h1>{first},<br class="hero-break" /> <em>{rest}</em><span class="stop" aria-hidden="true">.</span></h1>
+      <div class="hero-text">
+        <p class="lede">{LEDE}</p>
+        <p class="note">{STATUS_TEXT}</p>
+      </div>
+    </section>
+
+    <div class="wrap wrap-wide">
+      <Mock />
+    </div>
+
+    <section class="part wrap" aria-labelledby="how">
+      <h2 id="how">{HOW_HEADING}</h2>
+      <div class="part-body">
+        {
+          HOW.map((item) => (
+            <div class="point">
+              <h3>{item.title}</h3>
+              <p set:html={inline(item.text)} />
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="part wrap" aria-labelledby="quiet">
+      <h2 id="quiet">{QUIET_HEADING}</h2>
+      <div class="part-body">
+        <p class="big">{QUIET}</p>
+        <figure class="glyphs">
+          <ul>
+            {
+              GLYPHS.map((g) => (
+                <li>
+                  <span class:list={["glyph-chip", { "is-found": g.state === "found" }]}>
+                    <Glyph state={g.state} size={22} />
+                  </span>
+                  <span class="glyph-label">{g.label}</span>
+                </li>
+              ))
+            }
+          </ul>
+          <figcaption>The menu bar glyph, in each of its states.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="part wrap" aria-labelledby="privacy">
+      <h2 id="privacy">{PRIVACY_HEADING}</h2>
+      <div class="part-body">
+        <dl class="facts">
+          {
+            PRIVACY.map((row) => (
+              <div class="fact">
+                <dt>{row.label}</dt>
+                <dd set:html={inline(row.text)} />
+              </div>
+            ))
+          }
+        </dl>
+      </div>
+    </section>
+
+    <section class="part wrap" aria-labelledby="now">
+      <h2 id="now">{NOW_HEADING}</h2>
+      <div class="part-body">
+        <p class="big">{NOW}</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <Mark size={20} />
+    <p>
+      {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>.
+    </p>
+  </footer>
+</Base>

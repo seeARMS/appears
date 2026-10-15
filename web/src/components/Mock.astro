@@ -1,0 +1,88 @@
+---
+// The hero's mock, in HTML and CSS rather than an image: a Mail reply to Dana
+// Ruiz, and Appears' panel hanging from its menu bar glyph with three things
+// you already had. Every name, file and number here is made up. The results
+// come from MOCK_RESULTS in src/site.ts; the email is written here.
+import Glyph from "./Glyph.astro";
+import { MOCK_CAPTION, MOCK_NOTE, MOCK_RESULTS } from "../site";
+---
+
+<figure class="mock">
+  <div class="desk" aria-hidden="true">
+    <div class="menubar">
+      <span class="mb-app">Mail</span>
+      <span class="mb-item">File</span>
+      <span class="mb-item">Edit</span>
+      <span class="mb-item">View</span>
+      <span class="mb-item">Message</span>
+      <span class="mb-item">Format</span>
+      <span class="mb-spacer"></span>
+      <span class="mb-glyph"><Glyph state="found" /></span>
+      <span class="mb-clock">Thu 10:42</span>
+    </div>
+
+    <div class="stage">
+      <div class="compose">
+        <div class="titlebar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="titlebar-name">Re: Kitchen remodel</span>
+        </div>
+        <div class="field"><span class="field-label">To:</span> <span class="token">Dana Ruiz</span></div>
+        <div class="field"><span class="field-label">Subject:</span> Re: Kitchen remodel</div>
+        <div class="body">
+          <p>Hi Dana,</p>
+          <p>
+            Thanks for walking through the kitchen with us on Saturday. Before we order the cabinets, can you confirm the
+            numbers from your original quote? I also want to be sure the permit covers moving the sink to the island<span
+              class="caret"></span>
+          </p>
+          <div class="quoted">
+            <p class="quoted-head">On Oct 13, 2026, at 4:18 PM, Dana Ruiz wrote:</p>
+            <p>Happy to start the week of the 2nd if the permit is still good. Let me know about the cabinets.</p>
+            <p>Dana<br />Ruiz &amp; Daughters Builders</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-head">From your reply to Dana Ruiz</p>
+        <ol class="results">
+          {
+            MOCK_RESULTS.map((r, i) => (
+              <li class:list={["result", { "is-selected": i === 0 }]}>
+                <span class:list={["thumb", `thumb-${r.kind}`]}>
+                  {r.kind === "photo" && (
+                    <span class="paper">
+                      <span>Ruiz &amp; Daughters</span>
+                      <span>Kitchen, Ellery St</span>
+                      <span>cabinets 9,200</span>
+                      <span>labor 6,800</span>
+                      <span>total 18,400 &nbsp;D.R.</span>
+                    </span>
+                  )}
+                  {r.kind === "pdf" && (
+                    <span class="page">
+                      <span class="page-mark" />
+                      <span class="page-num">3</span>
+                    </span>
+                  )}
+                  {r.kind === "note" && (
+                    <span class="notepage">
+                      <span class="note-title" />
+                    </span>
+                  )}
+                </span>
+                <span class="result-text">
+                  <span class="result-title">{r.title}</span>
+                  <span class="result-reason">{r.reason}</span>
+                </span>
+              </li>
+            ))
+          }
+        </ol>
+        <p class="panel-foot"><span><kbd>Space</kbd> Quick Look</span><span>Drag into your reply</span></p>
+      </div>
+    </div>
+  </div>
+  <figcaption>{MOCK_CAPTION} <span class="mock-note">{MOCK_NOTE}</span></figcaption>
+</figure>
