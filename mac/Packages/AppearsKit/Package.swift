@@ -8,6 +8,8 @@ import PackageDescription
 //   journal, and the messages the app and the engine exchange. Runs in the sandboxed engine.
 // - AppearsContext: reading what's on screen through the Accessibility API, browser URLs,
 //   exclusions and the OCR fallback. Runs in the (unsandboxed) app.
+// - AppearsMCP: `appears mcp`, a Model Context Protocol server over stdio that lets local
+//   agents search the index. Runs in the CLI, never in the app or the engine.
 //
 // Privacy rule for every target here: no networking code.
 
@@ -17,6 +19,7 @@ let package = Package(
     products: [
         .library(name: "AppearsCore", targets: ["AppearsCore"]),
         .library(name: "AppearsContext", targets: ["AppearsContext"]),
+        .library(name: "AppearsMCP", targets: ["AppearsMCP"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.11.1"),
@@ -30,9 +33,17 @@ let package = Package(
             name: "AppearsContext",
             dependencies: ["AppearsCore"]
         ),
+        .target(
+            name: "AppearsMCP",
+            dependencies: ["AppearsCore"]
+        ),
         .testTarget(
             name: "AppearsCoreTests",
             dependencies: ["AppearsCore", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
+        .testTarget(
+            name: "AppearsMCPTests",
+            dependencies: ["AppearsMCP", "AppearsCore"]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -10,8 +10,26 @@ public final class IndexStore: Sendable {
     public let url: URL
     private let pool: DatabasePool
 
-    public init(url: URL) throws {
+    /// `readOnly` opens an index another process owns (the engine), for `appears mcp`: no
+    /// folder, no migration, no permission changes, and every write throws. WAL lets it read
+    /// alongside the engine's writes.
+    public init(url: URL, readOnly: Bool = false) throws {
         self.url = url
+        if readOnly {
+            // A read-only connection can't create the WAL and shared-memory files, and can't
+            // open a WAL database without them. macOS's SQLite keeps both after closing, so
+            // they're missing only from a copied index; empty ones are what SQLite would make.
+            if FileManager.default.fileExists(atPath: url.path) {
+                for suffix in ["-wal", "-shm"] where !FileManager.default.fileExists(atPath: url.path + suffix) {
+                    FileManager.default.createFile(atPath: url.path + suffix, contents: nil, attributes: [.posixPermissions: 0o600])
+                }
+            }
+            var config = Configuration()
+            config.label = "index.sqlite (read-only)"
+            config.readonly = true
+            pool = try DatabasePool(path: url.path, configuration: config)
+            return
+        }
         let folder = url.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: folder.path) {
             try FileManager.default.createDirectory(
@@ -225,6 +243,16 @@ public final class IndexStore: Sendable {
         }
     }
 
+    public func itemIDs(kinds: Set<ItemKind>) throws -> [Int64] {
+        guard !kinds.isEmpty else { return [] }
+        return try pool.read { db in
+            let marks = Array(repeating: "?", count: kinds.count).joined(separator: ",")
+            return try Int64.fetchAll(
+                db, sql: "SELECT id FROM item WHERE kind IN (\(marks))", arguments: StatementArguments(kinds.map(\.rawValue))
+            )
+        }
+    }
+
     public func markFailed(itemID: Int64) throws {
         try pool.write { db in try db.execute(sql: "UPDATE item SET state = 2 WHERE id = ?", arguments: [itemID]) }
     }
@@ -300,6 +328,37 @@ public final class IndexStore: Sendable {
                 guard halves.count == index.dimension else { continue }
                 index.upsert(id: row["id"], kind: UnitKind(rawValue: row["kind"]) ?? .text, halves: halves)
             }
+        }
+    }
+
+    /// One item's units, in order, with their stored vectors.
+    public func units(itemID: Int64) throws -> [(unit: Unit, vector: [Float])] {
+        try pool.read { db in
+            try Row.fetchAll(
+                db, sql: "SELECT id, item_id, kind, locator, text, vector FROM unit WHERE item_id = ? ORDER BY id",
+                arguments: [itemID]
+            ).map { row in
+                let data: Data = row["vector"]
+                return (Self.unit(row), data.withUnsafeBytes { $0.bindMemory(to: Float16.self).map(Float.init) })
+            }
+        }
+    }
+
+    /// Changes whenever units are added or removed or an item is re-indexed, so a reader in
+    /// another process (`appears mcp`) knows when its copy of the vectors is stale. Re-indexing
+    /// can reuse the unit ids it deleted, so item dates and sizes count too.
+    public func contentStamp() throws -> String {
+        try pool.read { db in
+            let units = try Row.fetchOne(db, sql: "SELECT count(*) AS n, coalesce(max(id), 0) AS last FROM unit")
+            let items = try Row.fetchOne(
+                db, sql: "SELECT count(*) AS n, total(modified) AS modified, total(size) AS size FROM item WHERE state = 1"
+            )
+            let unitCount: Int = units?["n"] ?? 0
+            let lastUnit: Int64 = units?["last"] ?? 0
+            let itemCount: Int = items?["n"] ?? 0
+            let modified: Double = items?["modified"] ?? 0
+            let size: Double = items?["size"] ?? 0
+            return "\(unitCount)/\(lastUnit)/\(itemCount)/\(modified)/\(size)"
         }
     }
 

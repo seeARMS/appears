@@ -9,8 +9,8 @@ import GemmaEmbedder
 struct Appears: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "appears",
-        abstract: "Appears from the terminal: build an index, find what relates to some text, run the eval.",
-        subcommands: [Index.self, Related.self, Eval.self, Stats.self]
+        abstract: "Appears from the terminal: build an index, find what relates to some text, run the eval, serve agents.",
+        subcommands: [Index.self, Related.self, Eval.self, Stats.self, MCP.self]
     )
 }
 
@@ -27,7 +27,11 @@ struct Common: ParsableArguments {
         return try await GemmaEmbedder.load(from: try modelFolder())
     }
 
-    func modelFolder() throws -> URL {
+    func modelFolder() throws -> URL { try Self.modelFolder(model) }
+
+    /// `--model`, then `APPEARS_MODEL`, then `mac/Models/appears-model` above the current folder
+    /// or this binary, then the model inside an installed Appears.app.
+    static func modelFolder(_ model: String?) throws -> URL {
         if let model { return URL(filePath: model) }
         if let path = ProcessInfo.processInfo.environment["APPEARS_MODEL"] { return URL(filePath: path) }
         for start in [FileManager.default.currentDirectoryPath, CommandLine.arguments[0]] {
@@ -39,6 +43,10 @@ struct Common: ParsableArguments {
                 }
                 url.deleteLastPathComponent()
             }
+        }
+        for applications in ["/Applications", FileScanner.realHome + "/Applications"] {
+            let folder = URL(filePath: applications + "/Appears.app/Contents/XPCServices/AppearsEngine.xpc/Contents/Resources/appears-model")
+            if FileManager.default.fileExists(atPath: folder.appending(path: "model.safetensors").path) { return folder }
         }
         throw ValidationError("No model found. Run mac/scripts/fetch-model.sh, or pass --model.")
     }
