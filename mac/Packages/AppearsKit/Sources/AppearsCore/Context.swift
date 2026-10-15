@@ -5,7 +5,8 @@ import Foundation
 /// only: neither process stores it. The journal keeps a salted fingerprint, never the text.
 public struct ContextSnapshot: Sendable, Codable, Equatable {
     public enum Origin: String, Sendable, Codable {
-        case accessibility, ocr, text
+        /// `calendar`: an upcoming event (`CalendarEvent`), not a window.
+        case accessibility, ocr, text, calendar
     }
 
     public var appName: String

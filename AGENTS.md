@@ -8,7 +8,7 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 
 - **The engine never gets the network.** `mac/project.yml` gives `AppearsEngine` the App Sandbox with no `com.apple.security.network.client` or `network.server`. Never add them, and never add networking code, analytics or crash reporting anywhere in `mac/`.
 - **The app has no networking code.** It can't be sandboxed (Accessibility isn't allowed in the sandbox), and it can't sandbox itself: any self-applied `sandbox_init` profile makes macOS refuse it Accessibility (found 2026-10-15). So `mac/scripts/check-no-network.sh` is the guard: run it on every build you hand over, and keep it passing. Don't link Network.framework, URLSession or sockets into the app or `AppearsContext`.
-- **Nothing about the screen is stored.** Context text lives in memory only. The journal keeps item ids, scores, outcomes and a salted fingerprint. The one exception is `debugContext`, behind a Debug-build setting that dogfooding uses, kept for 14 days. Don't log context text, even with `NSLog`.
+- **Nothing about the screen is stored.** Context text lives in memory only, and calendar events are context too. The journal keeps item ids, scores, outcomes and a salted fingerprint. The one exception is `debugContext`, behind a Debug-build setting that dogfooding uses, kept for 14 days. Don't log context text, even with `NSLog`.
 - **Silence is the default.** No notifications, sounds or pop-ups. Ambient suggestions only change the menu bar glyph, behind `SurfacePolicy` (dwell, confidence, budget, backoff). Don't loosen these without checking `appears eval`'s false-surface rate.
 - **Exclusions stay on:** password managers and secure fields (`Exclusions.swift`), private windows, Safari in ambient mode unless the setting allows.
 - **No real data** in the repo, tests, screenshots or the site. Use `demo/` (made by `demo/make-demo.py`; phone numbers in 555-01xx).
@@ -33,7 +33,8 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
     - `Sources` (`FileScanner`, skip rules), `Extractors`, `NotesReader` (gzipped protobuf);
     - `IndexStore` (GRDB, FTS5, float16 vectors), `VectorIndex` (brute force), `Indexer`;
     - `QueryBuilder`, `Recall` (ranking and `Confidence`), `Journal`, `SurfacePolicy`;
-    - `Engine` (the engine's logic and XPC protocol, also used in-process by the CLI).
+    - `Engine` (the engine's logic and XPC protocol, also used in-process by the CLI);
+    - `CalendarEvent` (an upcoming meeting as a context, conferencing boilerplate stripped) and `CalendarSchedule` (when to look).
   - `AppearsContext`: `ContextReader` (AX), `Browsers`, `Exclusions`, `ScreenText` (OCR fallback).
   - `AppearsMCP`: `appears mcp`, an MCP server over stdio (`MCPServer`, `Tools`) and `AgentIndex`, which reads an index read-only. It never journals, and its stderr log never gets query text, results or file content.
 - **`mac/Packages/AppearsModel`:** needs Xcode, since MLX compiles Metal shaders.
@@ -41,7 +42,7 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
   - `GemmaEmbedder`: loads the vision tower lazily and unloads it after indexing.
   - `AppearsCLI`: the `appears` command.
 - **`mac/Engine/main.swift`:** the XPC service. It loads the model once and keeps a separate index for `-demo`.
-- **`mac/App`:** `AppModel` (the context loop, pull, ambient, feedback), `StatusController` (the menu bar item and the non-activating panel), `PanelView`, `SettingsView`, `OnboardingView`, `Glyph`.
+- **`mac/App`:** `AppModel` (the context loop, pull, ambient, meetings, feedback), `CalendarWatcher` (EventKit, one timer for the next meeting), `StatusController` (the menu bar item and the non-activating panel), `PanelView`, `SettingsView`, `OnboardingView`, `Glyph`.
 
 ## Embedding prompts
 
