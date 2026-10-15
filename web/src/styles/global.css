@@ -1,37 +1,53 @@
-/* Appears' palette and type, from brand/README.md at the repo root. One
-   accent (signal), used for the mark's dot and almost nothing else. */
+/* Appears' tokens, type and shape, from brand/README.md at the repo root:
+   shadcn/ui's zinc palette, Inter, hairline borders, small radii. One accent
+   (blue), used for the found dot, links and focus rings, and nothing else. */
 
 :root {
-  --paper: #f4f1ea;
-  --paper-2: #ebe6db;
-  --surface: #fbf9f4;
-  --ink: #17150f;
-  --muted: #6b655a;
-  --rule: #dcd6ca;
-  --signal: #e0531f;
-  --signal-tint: rgb(224 83 31 / 0.11);
-  --shadow: 0 1px 2px rgb(23 21 15 / 0.06), 0 12px 32px -8px rgb(23 21 15 / 0.16);
-  --shadow-lift: 0 1px 2px rgb(23 21 15 / 0.08), 0 24px 48px -12px rgb(23 21 15 / 0.28);
+  --background: #ffffff;
+  --card: #ffffff;
+  --muted: #f4f4f5;
+  --border: #e4e4e7;
+  --muted-foreground: #71717a;
+  --foreground: #09090b;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --accent: #2563eb;
+  /* The mock's desktop, behind its windows. */
+  --desk: #f4f4f5;
+  --shadow-float: 0 1px 2px rgb(9 9 11 / 0.05), 0 16px 40px -12px rgb(9 9 11 / 0.22);
+  --shadow-window: 0 1px 2px rgb(9 9 11 / 0.04), 0 8px 24px -12px rgb(9 9 11 / 0.12);
 
-  --display: var(--font-display), ui-serif, Georgia, serif;
-  --text: var(--font-text), ui-sans-serif, system-ui, sans-serif;
-
-  --gutter: clamp(1rem, 4vw, 3rem);
+  --sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --gutter: clamp(1rem, 4vw, 2rem);
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121110;
-    --paper-2: #1a1816;
-    --surface: #1f1d1a;
-    --ink: #ede8de;
-    --muted: #9a9387;
-    --rule: #2a2723;
-    --signal: #ff6a33;
-    --signal-tint: rgb(255 106 51 / 0.14);
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -8px rgb(0 0 0 / 0.6);
-    --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.5), 0 24px 48px -12px rgb(0 0 0 / 0.75);
+    --background: #09090b;
+    --card: #18181b;
+    --muted: #27272a;
+    --border: #27272a;
+    --muted-foreground: #a1a1aa;
+    --foreground: #fafafa;
+    --primary: #fafafa;
+    --primary-foreground: #18181b;
+    --accent: #3b82f6;
+    --desk: #111113;
+    --shadow-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+    --shadow-window: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  }
+  /* The mark's tile is zinc-900, the same as a dark card: give it an edge. */
+  .mark-tile {
+    stroke: #3f3f46;
+  }
+  /* A filled zinc-800 block is too loud on black: a card instead. */
+  .now {
+    background: var(--card);
+    border-color: var(--border);
   }
 }
 
@@ -48,14 +64,14 @@ html {
 
 body {
   margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--text);
-  font-size: 1.0625rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--sans);
+  font-size: 1rem;
   line-height: 1.6;
-  font-feature-settings: "kern", "liga";
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1,
@@ -70,142 +86,232 @@ ul {
   margin: 0;
 }
 
+/* Room for the sticky header and the eyebrow above each section's heading. */
+[id] {
+  scroll-margin-top: 6.5rem;
+}
+
 a {
-  color: inherit;
-  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
 }
 a:hover {
-  text-decoration-color: var(--signal);
+  text-decoration-color: currentColor;
 }
 :focus-visible {
-  outline: 2px solid var(--signal);
-  outline-offset: 3px;
-  border-radius: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.86em;
-  padding: 0.1em 0.35em;
+  padding: 0.12em 0.35em;
   border-radius: 4px;
-  background: var(--paper-2);
-  white-space: nowrap;
+  background: var(--muted);
+  color: var(--foreground);
+  overflow-wrap: anywhere;
 }
 
 .wrap {
   width: 100%;
-  max-width: 68rem;
+  max-width: calc(1100px + 2 * var(--gutter));
   margin-inline: auto;
   padding-inline: var(--gutter);
 }
-.wrap-wide {
-  max-width: 76rem;
+
+/* --- Small parts ------------------------------------------------------------------ */
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.mark {
+  flex: none;
+}
+.wordmark {
+  font-weight: 700;
+  font-size: 1.125rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 1.625rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+/* An idle ring: nothing to download yet. */
+.badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted-foreground);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
+}
+.button-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.button-primary:hover {
+  opacity: 0.9;
+}
+.button-outline {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--foreground);
+}
+.button-outline:hover {
+  background: var(--muted);
+}
+
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--muted-foreground);
 }
 
 /* --- Top -------------------------------------------------------------------------- */
 
 .top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+.top-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-block: 1.5rem;
+  height: 3.5rem;
 }
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  text-decoration: none;
-}
-.brand-name {
-  font-family: var(--display);
-  font-size: 1.65rem;
-  line-height: 1;
-  letter-spacing: -0.005em;
-}
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+.top-nav {
+  display: flex;
+  gap: 1.25rem;
   font-size: 0.875rem;
-  color: var(--muted);
 }
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--muted);
+.top-nav a {
+  color: var(--muted-foreground);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.top-nav a:hover {
+  color: var(--foreground);
 }
 
 /* --- Hero ------------------------------------------------------------------------- */
 
 .hero {
-  padding-top: clamp(3rem, 9vw, 7.5rem);
-  padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: clamp(3.5rem, 9vw, 6.5rem);
 }
 h1 {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(2.6rem, 6.6vw, 5.75rem);
-  line-height: 0.98;
-  letter-spacing: -0.018em;
-  max-width: 11.5em;
+  margin-top: 1.5rem;
+  max-width: 15em;
+  font-weight: 600;
+  font-size: clamp(2.25rem, 1.35rem + 4vw, 4rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
   text-wrap: balance;
 }
-h1 em {
-  font-style: italic;
-  color: color-mix(in srgb, var(--ink) 82%, var(--paper));
-}
-.stop {
-  color: var(--signal);
-}
-.hero-text {
-  margin-top: clamp(1.75rem, 4vw, 2.75rem);
-  margin-left: clamp(0rem, 18vw, 15rem);
-  max-width: 34rem;
-}
 .lede {
-  font-size: clamp(1.125rem, 1.6vw, 1.3rem);
-  line-height: 1.55;
+  max-width: 40rem;
+  margin-top: 1.25rem;
+  font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  line-height: 1.6;
+  color: var(--muted-foreground);
   text-wrap: pretty;
 }
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
 .note {
-  margin-top: 1.1rem;
-  font-size: 0.9375rem;
-  color: var(--muted);
+  max-width: 34rem;
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
   text-wrap: pretty;
 }
 
 /* --- Mock ------------------------------------------------------------------------- */
 
 .mock {
-  margin-bottom: clamp(4rem, 10vw, 8rem);
+  margin-block: clamp(3rem, 7vw, 4.5rem) clamp(3rem, 7vw, 5rem);
 }
 .desk {
   position: relative;
-  border-radius: 14px;
-  background:
-    radial-gradient(120% 90% at 85% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 60%),
-    var(--paper-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--desk);
   overflow: hidden;
   font-size: 13px;
   line-height: 1.45;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
 }
 .menubar {
   display: flex;
   align-items: center;
-  gap: 1.15rem;
-  height: 30px;
-  padding: 0 0.9rem;
-  font-size: 13px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--ink) 7%, transparent);
+  gap: 1.1rem;
+  height: 28px;
+  padding: 0 0.85rem;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--background) 75%, transparent);
+  border-bottom: 1px solid var(--border);
 }
 .mb-app {
-  font-weight: 650;
+  font-weight: 600;
 }
 .mb-spacer {
   flex: 1;
@@ -213,10 +319,14 @@ h1 em {
 .mb-glyph {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 22px;
+  width: 28px;
+  height: 20px;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.mb-glyph .glyph-dot,
+.glyph-chip.is-found .glyph-dot {
+  fill: var(--accent);
 }
 .mb-clock {
   font-variant-numeric: tabular-nums;
@@ -224,15 +334,16 @@ h1 em {
 
 .stage {
   position: relative;
-  min-height: 27rem;
-  padding: 2.25rem 0 2.75rem 2.5rem;
+  min-height: 29rem;
+  padding: 2.25rem 0 2.5rem 2.5rem;
 }
 
 .compose {
-  width: min(62%, 40rem);
-  border-radius: 11px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  width: min(58%, 38rem);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-window);
   overflow: hidden;
 }
 .titlebar {
@@ -240,42 +351,52 @@ h1 em {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 38px;
-  border-bottom: 1px solid var(--rule);
+  height: 36px;
+  padding: 0 4.75rem;
+  border-bottom: 1px solid var(--border);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12.5px;
+}
+.titlebar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lights {
   position: absolute;
-  left: 14px;
+  left: 13px;
   display: flex;
-  gap: 8px;
+  gap: 7px;
 }
 .lights i {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--ink) 16%, transparent);
+  background: var(--border);
 }
 .field {
-  padding: 0.5rem 1.1rem;
-  border-bottom: 1px solid var(--rule);
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .field-label {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .token {
-  padding: 0.05rem 0.45rem;
+  padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  background: var(--muted);
+  font-weight: 500;
 }
 .body {
-  padding: 1.1rem 1.1rem 1.5rem;
-  font-size: 14px;
-  line-height: 1.55;
+  padding: 1rem 1rem 1.5rem;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 .body p + p {
-  margin-top: 0.8em;
+  margin-top: 0.75em;
 }
 .caret {
   display: inline-block;
@@ -283,35 +404,71 @@ h1 em {
   height: 1.1em;
   margin-left: 1px;
   vertical-align: -0.15em;
-  background: var(--ink);
+  background: var(--accent);
   animation: blink 1.1s steps(1) infinite;
 }
 .quoted {
-  margin-top: 1.4rem;
-  padding-left: 0.9rem;
-  border-left: 2px solid var(--rule);
-  color: var(--muted);
+  margin-top: 1.25rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border);
+  color: var(--muted-foreground);
 }
 .quoted p + p {
   margin-top: 0.5em;
 }
 
+/* The panel hangs from the menu bar glyph. It's visible from the first frame:
+   the drop-in animation only moves it, never fades it in. */
 .panel {
   position: absolute;
   top: 6px;
-  right: 76px;
-  width: 21.5rem;
-  padding: 0.45rem;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface) 94%, var(--paper-2));
-  box-shadow: var(--shadow-lift), 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent);
+  right: 58px;
   z-index: 2;
-  animation: surface 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) 0.7s both;
+  width: 22.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-float);
+  animation: drop 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s backwards;
 }
 .panel-head {
-  padding: 0.35rem 0.6rem 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.panel-sub {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
+}
+.panel .badge {
+  height: 1.375rem;
+  padding: 0 0.55rem;
+  font-size: 11.5px;
+  gap: 0.35rem;
+}
+.panel .badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.group {
+  padding: 0.35rem 0.35rem 0.4rem;
+}
+.group-label {
+  padding: 0.3rem 0.5rem 0.25rem;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 .results {
   list-style: none;
@@ -319,45 +476,54 @@ h1 em {
 }
 .result {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.65rem;
   align-items: center;
-  padding: 0.5rem;
-  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
 }
 .result.is-selected {
-  background: var(--signal-tint);
+  background: var(--muted);
 }
 .result-text {
   display: grid;
+  flex: 1;
   min-width: 0;
 }
-.result-title {
-  font-weight: 600;
+.result-title,
+.result-reason {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.result-title {
+  font-weight: 500;
+}
 .result-reason {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--muted);
+  color: var(--muted-foreground);
+}
+.result-kbd {
+  flex: none;
+}
+.sep {
+  height: 1px;
+  margin-inline: 0.35rem;
+  background: var(--border);
 }
 .panel-foot {
   display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.55rem 0.6rem 0.3rem;
-  margin-top: 0.25rem;
-  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  padding: 0.55rem 0.85rem;
+  border-top: 1px solid var(--border);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
-kbd {
-  font-family: inherit;
-  font-size: 10.5px;
-  padding: 0.05rem 0.35rem;
-  border-radius: 4px;
-  border: 1px solid var(--rule);
+.panel-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* Thumbnails, drawn rather than photographed. Their own colours stay the same
@@ -365,108 +531,98 @@ kbd {
 .thumb {
   position: relative;
   flex: none;
-  width: 58px;
-  height: 58px;
-  border-radius: 7px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgb(23 21 15 / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(9 9 11 / 0.08);
 }
+/* A phone photo of a handwritten paper quote on a table. */
 .thumb-photo {
-  background: linear-gradient(160deg, #8a6a4c, #5e4632);
+  background: linear-gradient(155deg, #a8a29e, #6b6560);
 }
 .paper {
   position: absolute;
-  inset: 6px 7px 4px 9px;
+  inset: 5px 6px 3px 7px;
   display: grid;
   align-content: start;
-  gap: 1px;
-  padding: 4px 4px;
-  background: #f7f1e3;
-  transform: rotate(-5deg);
-  box-shadow: 0 2px 3px rgb(0 0 0 / 0.3);
-  font-family: var(--display);
-  font-style: italic;
-  font-size: 5.6px;
-  line-height: 1.15;
-  color: #2b3a66;
-  white-space: nowrap;
+  gap: 3px;
+  padding: 5px 4px;
+  background: #fafaf9;
+  transform: rotate(-6deg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
 }
-.paper span:first-child {
-  font-size: 6.2px;
-  margin-bottom: 1px;
+.paper i {
+  height: 1.5px;
+  border-radius: 1px;
+  background: #1e3a8a;
+  opacity: 0.75;
 }
-.paper span:last-child {
-  border-top: 0.5px solid #2b3a66;
-  margin-top: 1px;
+.paper i:nth-child(1) {
+  width: 70%;
+  height: 2px;
 }
+.paper i:nth-child(2) {
+  width: 90%;
+}
+.paper i:nth-child(3) {
+  width: 55%;
+}
+.paper i:nth-child(4) {
+  width: 80%;
+  margin-top: 3px;
+}
+/* A PDF page with lines of text, one highlighted. */
 .thumb-pdf {
-  background: #dcd6ca;
+  background: #e4e4e7;
 }
 .page {
   position: absolute;
-  inset: 6px 10px 0;
+  inset: 5px 7px 0;
   background:
-    repeating-linear-gradient(to bottom, transparent 0 4px, #c9c3b7 4px 5px) 6px 9px / calc(100% - 12px) 70% no-repeat,
-    #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+    repeating-linear-gradient(to bottom, #d4d4d8 0 1.5px, transparent 1.5px 4.5px) 4px 6px / calc(100% - 8px) 75% no-repeat,
+    #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
-.page-mark {
+.page i {
   position: absolute;
-  left: 4px;
-  right: 4px;
-  top: 22px;
-  height: 7px;
-  background: rgb(224 83 31 / 0.35);
+  left: 3px;
+  right: 3px;
+  top: 14px;
+  height: 6px;
+  background: rgb(250 204 21 / 0.55);
 }
-.page-num {
-  position: absolute;
-  right: 4px;
-  bottom: 2px;
-  font-size: 7px;
-  font-weight: 600;
-  color: #6b655a;
-}
+/* A yellow note. */
 .thumb-note {
-  background: #efe9da;
+  background:
+    repeating-linear-gradient(to bottom, #b45309 0 1.5px, transparent 1.5px 5px) 7px 15px / 24px 18px no-repeat,
+    #fde68a;
 }
-.notepage {
+.sticky {
   position: absolute;
-  inset: 0;
-}
-.note-title {
-  position: absolute;
-  left: 8px;
-  top: 9px;
-  width: 30px;
-  height: 5px;
-  border-radius: 2px;
-  background: #17150f;
-}
-.notepage::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 20px;
-  bottom: 8px;
-  background: repeating-linear-gradient(to bottom, #b8b1a3 0 2px, transparent 2px 6px);
+  left: 7px;
+  top: 8px;
+  width: 18px;
+  height: 3px;
+  border-radius: 1px;
+  background: #78350f;
 }
 
 .mock figcaption {
-  max-width: 40rem;
-  margin-top: 1.1rem;
-  font-size: 0.9375rem;
-  color: var(--muted);
+  max-width: 44rem;
+  margin: 1.25rem auto 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
   text-wrap: pretty;
 }
 .mock-note {
-  font-style: italic;
+  color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
 }
 
-@keyframes surface {
+@keyframes drop {
   from {
-    opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 @keyframes blink {
@@ -474,151 +630,190 @@ kbd {
     opacity: 0;
   }
 }
-.mb-glyph .glyph-dot {
-  transform-origin: 9px 4.6px;
-  animation: dot 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) 0.4s both;
-}
-@keyframes dot {
-  from {
-    transform: scale(0);
-  }
-}
 
-/* --- Parts ------------------------------------------------------------------------ */
+/* --- Sections --------------------------------------------------------------------- */
 
 .part {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 2rem clamp(2rem, 6vw, 5rem);
-  padding-block: clamp(3rem, 7vw, 5.5rem);
+  padding-block: clamp(2.5rem, 6vw, 4rem);
 }
-/* Rules between parts line up with the text, not the padded box. */
-.part + .part,
-.foot {
-  background: linear-gradient(var(--rule), var(--rule)) center top / calc(100% - 2 * var(--gutter)) 1px no-repeat;
+.part-head {
+  max-width: 42rem;
+  margin-bottom: 2.25rem;
 }
-@media (min-width: 721px) {
-  .part h2 {
-    position: sticky;
-    top: 2rem;
-    align-self: start;
-  }
+.eyebrow {
+  margin-bottom: 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 h2 {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(2rem, 3.6vw, 3rem);
-  line-height: 1.04;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  font-size: clamp(1.75rem, 1.3rem + 1.8vw, 2.5rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
-.part-body {
-  display: grid;
-  gap: 2.25rem;
-  max-width: 36rem;
-  padding-top: 0.4rem;
-}
-h3 {
-  font-family: var(--display);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 1.6rem;
-  line-height: 1.15;
-  margin-bottom: 0.45rem;
-}
-.point p {
-  text-wrap: pretty;
-}
-.big {
-  font-size: clamp(1.125rem, 1.6vw, 1.3rem);
-  line-height: 1.55;
+.part-text {
+  margin-top: 1rem;
+  font-size: 1.0625rem;
+  color: var(--muted-foreground);
   text-wrap: pretty;
 }
 
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 1.5rem;
+}
+.card-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+h3 {
+  margin: 1rem 0 0.4rem;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+.card p,
+.card dd {
+  font-size: 0.9375rem;
+  color: var(--muted-foreground);
+  text-wrap: pretty;
+}
+.card dt {
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2rem clamp(2rem, 6vw, 5rem);
+  align-items: center;
+}
+.split .part-head {
+  margin-bottom: 0;
+}
+
+.glyphs {
+  padding: 0.5rem 1.5rem 1.25rem;
+}
 .glyphs ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.25rem 2.25rem;
   padding: 0;
   list-style: none;
 }
 .glyphs li {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  font-size: 0.9375rem;
+  gap: 0.85rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
 }
 .glyph-chip {
   display: inline-grid;
   place-items: center;
-  width: 44px;
-  height: 32px;
-  border-radius: 7px;
-  background: var(--paper-2);
+  flex: none;
+  width: 40px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
 }
-.glyph-chip.is-found {
-  box-shadow: inset 0 0 0 1.5px var(--signal);
+.glyph-label {
+  flex: 1;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.glyph-state {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 .glyphs figcaption {
   margin-top: 1rem;
-  font-size: 0.875rem;
-  color: var(--muted);
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
 }
 
-.facts {
-  display: grid;
-  gap: 1.75rem;
+.now {
+  padding: clamp(1.5rem, 5vw, 2.75rem);
 }
-.fact dt {
-  font-weight: 600;
-  margin-bottom: 0.3rem;
+@media (prefers-color-scheme: light) {
+  .now {
+    background: var(--muted);
+    border-color: transparent;
+  }
 }
-.fact dd {
-  text-wrap: pretty;
+.now .part-text {
+  max-width: 42rem;
 }
 
 /* --- Foot ------------------------------------------------------------------------- */
 
 .foot {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding-block: 2.5rem 3.5rem;
-  font-size: 0.9375rem;
-  color: var(--muted);
+  margin-top: clamp(1rem, 4vw, 2.5rem);
+  border-top: 1px solid var(--border);
 }
-.foot .mark {
-  color: var(--ink);
-  flex: none;
+.foot-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-block: 1.75rem 2.5rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+.foot .wordmark {
+  font-size: 1rem;
+}
+.foot p a {
+  color: var(--foreground);
 }
 
 /* --- Narrow ----------------------------------------------------------------------- */
 
 @media (max-width: 900px) {
+  .mb-extra {
+    display: none;
+  }
   .compose {
-    width: 74%;
+    width: 66%;
   }
 }
 
 @media (max-width: 720px) {
-  .hero-text {
-    margin-left: 0;
-  }
-  .hero-break {
-    display: none;
-  }
-  .part {
+  .cards,
+  .split {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .mb-item {
     display: none;
   }
+  /* The panel comes first, still under the glyph; the email sits below it, faded out. */
   .stage {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 6px 10px 1.25rem;
+    padding: 6px 10px 1rem;
   }
   .panel {
     position: relative;
@@ -626,24 +821,28 @@ h3 {
     right: auto;
     order: -1;
     align-self: flex-end;
-    width: min(100%, 21.5rem);
-    margin-right: 62px;
+    width: min(100%, 22.5rem);
+    margin-right: 48px;
   }
   .compose {
     width: 100%;
-    margin-top: -2.5rem;
-    max-height: 15rem;
-    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
-    mask-image: linear-gradient(to bottom, #000 70%, transparent);
+    margin-top: 1rem;
+    max-height: 12rem;
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   .panel {
     margin-right: 0;
+    width: 100%;
   }
-  .panel-foot span:last-child {
+  .compose {
     display: none;
+  }
+  .top-nav {
+    gap: 1rem;
   }
 }
 
@@ -652,5 +851,6 @@ h3 {
   *::before,
   *::after {
     animation: none !important;
+    transition: none !important;
   }
 }

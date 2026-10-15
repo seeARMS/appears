@@ -19,9 +19,11 @@ public struct Extraction: Sendable {
 public enum Extractor {
     /// About 400 tokens.
     public static let chunkCharacters = 1_600
-    /// Long documents are indexed from the start: enough to recognize them by.
-    public static let maxChunks = 40
-    static let maxPages = 60
+    /// Long documents are indexed from the start (about 5,000 tokens): enough to recognize
+    /// them by. Every chunk is a pass through the model, so this bounds the cost of a file.
+    public static let maxChunks = 12
+    static let maxPages = 24
+    static let chunksPerPage = 2
 
     /// Reads a file's content. Returns nil if it can't be read.
     public static func extract(_ item: Item) async -> Extraction? {
@@ -35,6 +37,11 @@ public enum Extractor {
         case .document:
             guard let text = readText(url) else { return nil }
             var extraction = Extraction()
+            // Numbers and punctuation (CSV, logs, exported data): index by name only.
+            if looksLikeData(text) {
+                extraction.texts = [(.whole, metadataText(item))]
+                return extraction
+            }
             extraction.texts = chunks(text).enumerated().map { (.chunk($0.offset), $0.element) }
             if extraction.texts.isEmpty { extraction.texts = [(.whole, metadataText(item))] }
             return extraction
@@ -59,6 +66,16 @@ public enum Extractor {
         extraction.texts = chunks(noteText).enumerated().map { (.chunk($0.offset), $0.element) }
         if extraction.texts.isEmpty { extraction.texts = [(.whole, title)] }
         return extraction
+    }
+
+    /// Whether text is mostly not words: fewer than half its visible characters are letters.
+    static func looksLikeData(_ text: String) -> Bool {
+        var letters = 0, visible = 0
+        for character in text.prefix(4_000) where !character.isWhitespace {
+            visible += 1
+            if character.isLetter { letters += 1 }
+        }
+        return visible > 200 && Double(letters) / Double(visible) < 0.5
     }
 
     static func metadataText(_ item: Item) -> String {
@@ -155,7 +172,7 @@ public enum Extractor {
             let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let number = index + 1
             if text.count >= 200 {
-                for chunk in chunks(text, limit: 4) { extraction.texts.append((.page(number), chunk)) }
+                for chunk in chunks(text, limit: chunksPerPage) { extraction.texts.append((.page(number), chunk)) }
             } else if let image = render(page) {
                 // A scan, or a page that's mostly a picture.
                 let ocr = await recognizeText(in: image)

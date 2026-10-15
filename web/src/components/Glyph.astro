@@ -1,7 +1,8 @@
 ---
 // The menu bar glyph's three states, as the app draws them (mac/App/Sources/Glyph.swift):
-// a ring when there's nothing to show, a ring with a gap while indexing, and a
-// ring with a filled dot when something's here. Monochrome, like a template image.
+// a ring when there's nothing to show, an open ring while indexing, and a ring
+// with a filled dot at its top when something's here. The ring takes the text
+// colour; the site colours the found dot with the accent (.glyph-dot).
 interface Props {
   state: "idle" | "indexing" | "found";
   size?: number;

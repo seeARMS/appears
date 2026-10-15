@@ -45,22 +45,25 @@ export const MOCK_CAPTION =
   "You're replying to Dana about her kitchen. Appears finds the photo you took of her handwritten quote last year, the city permit (page 3 has the scope of work), and your measurements note. You didn't ask for any of it.";
 export const MOCK_NOTE = "A made-up example.";
 
-/** The three results in the hero mock, in the order the panel shows them. */
+/** The three results in the hero mock, in the order the panel shows them, under their group labels. */
 export const MOCK_RESULTS = [
   {
     kind: "photo",
+    group: "Files",
     title: "IMG_4471.jpg",
-    reason: "Mentions Dana Ruiz · from May 2025",
+    reason: "Mentions Dana Ruiz · May 2025",
   },
   {
     kind: "pdf",
+    group: "Files",
     title: "permit-BLD-2024-0457.pdf",
-    reason: "Also about “countertops” · from May 2025 · page 3",
+    reason: "Page 3: scope of work · May 2025",
   },
   {
     kind: "note",
+    group: "Notes",
     title: "Kitchen measurements",
-    reason: "Mentions Dana · last edited April 2025",
+    reason: "Mentions Dana · April 2025",
   },
 ] as const;
 

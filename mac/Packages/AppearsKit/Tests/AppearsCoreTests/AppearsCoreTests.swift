@@ -195,3 +195,26 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         #expect(Set(withRepo) == ["Documents/plan.md", "src/repo/README.md"])
     }
 }
+
+@Suite struct ScopeTests {
+    @Test func skipsDataDumpFolders() throws {
+        let home = URL(filePath: String(cString: realpath(FileManager.default.temporaryDirectory.path, nil))).appending(path: "appears-scope-\(UUID().uuidString)")
+        let fm = FileManager.default
+        let dump = home.appending(path: "Documents/StockData")
+        try fm.createDirectory(at: dump, withIntermediateDirectories: true)
+        for i in 0...FileScanner.dataFolderThreshold { try "1,2,3".write(to: dump.appending(path: "t\(i).txt"), atomically: true, encoding: .utf8) }
+        try "chart".write(to: dump.appending(path: "chart.png"), atomically: true, encoding: .utf8)
+        try "my notes".write(to: home.appending(path: "Documents/notes.md"), atomically: true, encoding: .utf8)
+        try fm.createDirectory(at: home.appending(path: "conductor/x"), withIntermediateDirectories: true)
+        try "agent".write(to: home.appending(path: "conductor/x/plan.md"), atomically: true, encoding: .utf8)
+        var found: [String] = []
+        FileScanner(settings: SourceSettings(), home: home.path).scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        #expect(Set(found) == ["Documents/notes.md", "Documents/StockData/chart.png"])
+        #expect(FileScanner(settings: SourceSettings(), home: home.path).item(at: dump.appending(path: "t1.txt")) == nil)
+    }
+
+    @Test func spotsDataText() {
+        #expect(Extractor.looksLikeData(String(repeating: "2024-01-02,131.2,133.9,130.1,132.5,10293\n", count: 40)))
+        #expect(!Extractor.looksLikeData(String(repeating: "Dana said the outlet by the window has to move for code. ", count: 20)))
+    }
+}

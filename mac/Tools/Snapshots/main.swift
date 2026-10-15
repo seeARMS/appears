@@ -23,7 +23,7 @@ let suggestions = [
                reason: "Mentions Dana Ruiz · from May 2025", snippet: "Ruiz & Daughters Builders — Quote Q-2291 — Kitchen remodel. Cabinets (shaker, white oak) $9,800…",
                score: 1, confidence: 0.98, features: features),
     Suggestion(item: item(2, "Documents/House/Kitchen/permit-BLD-2024-0457.pdf", .pdf, days: 505), unit: Unit(kind: .text, locator: .page(3), text: ""),
-               reason: "Related · from May 2025 · page 3", snippet: "Interior kitchen remodel. Replace cabinets and countertops, relocate sink 3 feet, add six (6) 20-amp GFCI outlets…",
+               reason: "Page 3: scope of work · from May 2025 · page 3", snippet: "Interior kitchen remodel. Replace cabinets and countertops, relocate sink 3 feet, add six (6) 20-amp GFCI outlets…",
                score: 0.7, confidence: 0.75, features: features),
     Suggestion(item: item(3, "Documents/House/Kitchen measurements.md", .document, days: 530), unit: Unit(kind: .text, locator: .chunk(0), text: ""),
                reason: "Related · from April 2025", snippet: "Back wall: 11' 4\" (sink wall). Window: 36\" wide, sill at 42\". Dana said the outlet by the window has to move for code",
@@ -41,7 +41,7 @@ let suggestions = [
 
 @MainActor func render<V: View>(_ view: V, _ name: String, width: CGFloat) {
     for (scheme, suffix) in [(ColorScheme.light, "light"), (.dark, "dark")] {
-        let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme).padding(24).background(scheme == .dark ? Color(white: 0.12) : Color(white: 0.9)))
+        let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme).padding(24).background(scheme == .dark ? Color(white: 0.04) : Color(white: 0.96)))
         host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         let size = host.fittingSize
         host.frame = NSRect(origin: .zero, size: NSSize(width: max(size.width, width + 48), height: size.height))

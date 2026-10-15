@@ -12,7 +12,7 @@ Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.tx
 | --- | --- |
 | All the copy: headline, sections, privacy rows, the mock's results, the share card's text | `src/site.ts` (the page, its Markdown, `llms.txt` and the share card all read it) |
 | The page and its JSON-LD | `src/pages/index.astro`, `src/layouts/Base.astro` |
-| Palette, type and layout | `src/styles/global.css` (colours from `../brand/README.md`); fonts are set in `astro.config.mjs` |
+| Palette, type and layout | `src/styles/global.css` (shadcn zinc tokens from `../brand/README.md`); fonts are set in `astro.config.mjs` |
 | The hero mock (Mail reply + Appears panel), in HTML and CSS | `src/components/Mock.astro`. Everything in it is made up. |
 | Mark and menu bar glyph | `src/components/Mark.astro`, `src/components/Glyph.astro`; favicon `public/favicon.svg` |
 | Markdown for agents | `src/pages/index.md.ts` → `/index.md`; `src/worker.ts` also serves it at `/` when the Accept header prefers `text/markdown` (`src/lib/negotiate.ts`) |
@@ -31,7 +31,7 @@ npm install
 npm run dev          # astro dev; from the repo root, the "web" config in .claude/launch.json runs it on port 4341
 npm run check        # type-check
 npm run build        # dist/
-npm run og           # re-render public/og.png after changing HEADLINE or CARD in src/site.ts
+npm run og           # re-render public/og.png after changing HEADLINE, CARD or MOCK_RESULTS in src/site.ts
 ```
 
 To try the built Worker, Markdown negotiation included:
@@ -58,4 +58,4 @@ Workers Builds isn't connected yet. Once it is, pushing to `main` deploys the si
 
 ## Attribution
 
-Fonts are [Instrument Serif](https://github.com/Instrument/instrument-serif) and [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), both under the SIL Open Font License, loaded through Astro's fonts API from Fontsource. The share card's copies are in `src/lib/og/fonts/`.
+The font is [Inter](https://github.com/rsms/inter), under the SIL Open Font License, loaded through Astro's fonts API from Fontsource. The share card's copies are in `src/lib/og/fonts/`.

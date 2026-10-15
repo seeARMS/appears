@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <style>.ring { stroke: #17150F } @media (prefers-color-scheme: dark) { .ring { stroke: #EDE8DE } }</style>
-  <circle class="ring" cx="32" cy="34" r="22" stroke-width="6"/>
-  <circle cx="32" cy="17" r="9" fill="#E0531F"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Appears' mark (brand/mark.svg). -->
+  <rect width="48" height="48" rx="12" fill="#18181B"/>
+  <circle cx="24" cy="27.3" r="10.6" stroke="#FAFAFA" stroke-width="3.3"/>
+  <circle cx="24" cy="12" r="4.9" fill="#2563EB"/>
 </svg>

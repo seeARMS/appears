@@ -52,10 +52,31 @@ public struct FileScanner: Sendable {
         "Library", "Applications", "Music", "Movies", "node_modules", "bower_components", "DerivedData",
         "build", "Build", "dist", "target", "out", "venv", "env", "__pycache__", "site-packages", "Pods",
         "Carthage", "vendor", "go", "Caches", "cache", "tmp", "temp", "Logs", "logs",
+        // More package managers and build systems.
+        "jspm_packages", "elm-stuff", "_build", "deps", "obj", "bin", "third_party", "third-party",
+        "coverage", "htmlcov", "__MACOSX", "bazel-out", "cmake-build-debug", "cmake-build-release",
+    ]
+
+    /// Boilerplate that ships with software, never something you wrote.
+    static let skippedFileStems: Set<String> = [
+        "license", "licence", "copying", "notice", "notices", "changelog", "changes", "history",
+        "authors", "contributors", "third_party_notices", "thirdpartynotices", "code_of_conduct",
+        "security", "contributing", "patents",
     ]
 
     /// Folders directly under home that hold app data rather than your files.
     static let skippedHomeChildren: Set<String> = ["Library", "Applications", "Public", "Music", "Movies"]
+
+    /// Folders (relative to home) where coding agents keep their workspaces: thousands of
+    /// generated notes and transcripts, not things you made. Include one to index it.
+    static let skippedHomePaths: [String] = ["conductor", "Documents/Codex", "Documents/Claude", "Documents/Cursor"]
+
+    /// Plain-text formats, for spotting data dumps.
+    static let plainTextExtensions: Set<String> = ["txt", "md", "markdown", "html", "htm"]
+
+    /// A folder with more plain-text files than this, directly inside it, is a data dump or an
+    /// export (stock prices, logs, a scraped site), not notes you wrote. Its text files are skipped.
+    static let dataFolderThreshold = 150
 
     public static let documentExtensions: Set<String> = ["txt", "md", "markdown", "rtf", "html", "htm", "docx", "doc", "odt"]
     public static let pdfExtensions: Set<String> = ["pdf"]
@@ -71,7 +92,7 @@ public struct FileScanner: Sendable {
 
     static func maxSize(_ kind: ItemKind) -> Int64 {
         switch kind {
-        case .document: 10 << 20
+        case .document: 10 << 20  // plain text is held to 2 MB in item(_:_:)
         case .pdf: 200 << 20
         case .image: 40 << 20
         case .note: .max
@@ -103,6 +124,7 @@ public struct FileScanner: Sendable {
             return isUnderInclude(path)
         }
         if Self.skippedNames.contains(name), !isUnderInclude(path) { return false }
+        if Self.skippedHomePaths.contains(where: { path == home + "/" + $0 }), !isUnderInclude(path) { return false }
         // Code checkouts are full of READMEs and docs that aren't "things you have";
         // include a repo explicitly to index it.
         if FileManager.default.fileExists(atPath: url.appending(path: ".git").path), !isUnderInclude(path) {
@@ -124,6 +146,7 @@ public struct FileScanner: Sendable {
         guard let children = try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
         ) else { return }
+        let skipText = isDataFolder(folder, children: children)
         for child in children {
             guard let values = try? child.resourceValues(forKeys: Set(Self.keys)) else { continue }
             if values.isDirectory == true {
@@ -131,6 +154,7 @@ public struct FileScanner: Sendable {
                 if values.isPackage == true { continue }
                 if shouldEnter(child, isRoot: false) { try walk(child, found) }
             } else if values.isRegularFile == true, let item = item(child, values) {
+                if skipText, Self.plainTextExtensions.contains(child.pathExtension.lowercased()) { continue }
                 try found(item)
             }
         }
@@ -140,18 +164,39 @@ public struct FileScanner: Sendable {
     public func item(at url: URL) -> Item? {
         guard let values = try? url.resourceValues(forKeys: Set(Self.keys)), values.isRegularFile == true else { return nil }
         var folder = url.deletingLastPathComponent()
+        let parent = folder
         while folder.path.count > 1 {
-            if roots.contains(folder.path) { return item(url, values) }
+            if roots.contains(folder.path) {
+                if Self.plainTextExtensions.contains(url.pathExtension.lowercased()),
+                   let siblings = try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                   isDataFolder(parent, children: siblings) { return nil }
+                return item(url, values)
+            }
             if !shouldEnter(folder, isRoot: false) { return nil }
             folder.deleteLastPathComponent()
         }
         return nil
     }
 
+    /// Whether a folder is a data dump: lots of plain-text files side by side.
+    func isDataFolder(_ folder: URL, children: [URL]) -> Bool {
+        guard !isUnderInclude(folder.path) else { return false }
+        var count = 0
+        for child in children where Self.plainTextExtensions.contains(child.pathExtension.lowercased()) {
+            count += 1
+            if count > Self.dataFolderThreshold { return true }
+        }
+        return false
+    }
+
     private func item(_ url: URL, _ values: URLResourceValues) -> Item? {
         guard let kind = Self.kind(forExtension: url.pathExtension), !settings.excludedKinds.contains(kind) else { return nil }
+        let stem = url.deletingPathExtension().lastPathComponent.lowercased()
+        if Self.skippedFileStems.contains(stem) || stem.hasPrefix("license") || stem.hasPrefix("changelog") { return nil }
         let size = Int64(values.fileSize ?? 0)
         guard size > 0, size <= Self.maxSize(kind) else { return nil }
+        // Multi-megabyte plain text is a log or an export, not something you wrote.
+        if Self.plainTextExtensions.contains(url.pathExtension.lowercased()), size > 2 << 20 { return nil }
         if isExcluded(url.path) { return nil }
         // An iCloud file that isn't on this Mac: reading it would download it.
         let notDownloaded = values.isUbiquitousItem == true

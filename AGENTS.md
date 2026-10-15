@@ -16,12 +16,15 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 
 ## Design
 
-- **Its own identity:** Appears has its own look. Don't borrow whosaid's or heade.rs's UX, layouts, Liquid Glass capsule or tokens (Geist, blue). Reusing whosaid's engineering is fine.
-- **Brand:** see `brand/README.md`. Warm paper, ink, and one vermilion signal colour (`Theme` in `PanelView.swift`, and `web/src/styles`). The app uses the system font with a serif for headings.
-- **The panel:**
-  - **Placement:** it hangs from the menu bar ring and never activates the app, so focus stays where it was.
-  - **Results:** media-first cards, each with a one-line reason. The "why" part of the reason is in the signal colour; when and where are grey.
-- **Name:** "Appears", capitalized. The domain is appea.rs.
+- **Direction:** "E · shadcn", chosen by Colin on 2026-10-15 from five explored on a design canvas. `brand/README.md` has the tokens. In short: shadcn/ui's zinc scale, hairline borders, 8 px card and 6 px control radii, a black primary, muted secondary text, a ⌘K-style results list, and one blue accent (`#2563EB`) used sparingly.
+- **Retired looks:** the first warm-paper, serif and vermilion look was rejected as "yellowy and archaic"; don't bring it back. Don't borrow whosaid's or heade.rs's UX, layouts, Liquid Glass capsule, or Geist.
+- **Code:** `Theme.swift` holds the app's tokens, button styles, `Kbd`, `Badge` and `Mark`; the web uses the same values in `web/src/styles`.
+- **Type:** the system font in the app, Inter on the site.
+- **The panel:** it hangs from the menu bar ring and never activates the app, so focus stays where it was.
+  - **Header:** "Related" with a "N found" badge.
+  - **Rows:** each has a thumbnail, a name, and a reason whose "why" is in the foreground colour, with when and where muted.
+  - **Selection:** the selected row gets the muted background, a ↩ key and its snippet.
+- **Wordmark:** the mark (a zinc tile, a white ring, a blue dot) plus lowercase "appears" in a bold weight. In sentences the name is "Appears", capitalized. The domain is appea.rs.
 
 ## Layout
 

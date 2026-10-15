@@ -32,8 +32,8 @@ const jsonLd = schema && JSON.stringify({ "@context": "https://schema.org", "@gr
     <link rel="describedby" href="/llms.txt" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#F4F1EA" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#09090B" media="(prefers-color-scheme: dark)" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -47,8 +47,7 @@ const jsonLd = schema && JSON.stringify({ "@context": "https://schema.org", "@gr
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@colinarms" />
     <meta name="twitter:creator" content="@colinarms" />
-    <Font cssVariable="--font-display" preload />
-    <Font cssVariable="--font-text" preload />
+    <Font cssVariable="--font-sans" preload />
     {jsonLd && <script type="application/ld+json" is:inline set:html={jsonLd} />}
   </head>
   <body>

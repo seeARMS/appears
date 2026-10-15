@@ -29,18 +29,18 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 16)
             HStack {
-                if step > 0 { Button("Back") { step -= 1 }.buttonStyle(.plain).foregroundStyle(Theme.muted) }
+                if step > 0 { Button("Back") { step -= 1 }.buttonStyle(OutlineButtonStyle()) }
                 Spacer()
                 Button(step == 3 ? "Start" : "Continue") { advance() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.signal)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .opacity(step == 1 && !trusted ? 0.5 : 1)
                     .disabled(step == 1 && !trusted)
             }
         }
         .padding(36)
         .frame(width: 520, height: 560)
-        .background(Theme.paper)
+        .background(Theme.background)
         .onReceive(timer) { _ in
             trusted = ContextReader.isTrusted
             screen = ScreenText.isAllowed
@@ -59,19 +59,18 @@ struct OnboardingView: View {
     }
 
     private var mark: some View {
-        ZStack {
-            Circle().stroke(Theme.ink, lineWidth: 3).frame(width: 34, height: 34).offset(y: 3)
-            Circle().fill(Theme.signal).frame(width: 13, height: 13).offset(y: -11)
+        HStack(spacing: 10) {
+            Mark(size: 36)
+            Text("appears").font(.system(size: 22, weight: .bold)).tracking(-0.8).foregroundStyle(Theme.foreground)
         }
-        .frame(width: 44, height: 48)
     }
 
     private func title(_ text: String) -> some View {
-        Text(text).font(.system(size: 26, weight: .regular, design: .serif)).foregroundStyle(Theme.ink).padding(.bottom, 12)
+        Text(text).font(.system(size: 22, weight: .semibold)).tracking(-0.4).foregroundStyle(Theme.foreground).padding(.bottom, 10)
     }
 
     private func body(_ text: String) -> some View {
-        Text(text).font(.system(size: 13)).foregroundStyle(Theme.ink.opacity(0.85)).fixedSize(horizontal: false, vertical: true).padding(.bottom, 10)
+        Text(text).font(.system(size: 13)).foregroundStyle(Theme.mutedForeground).fixedSize(horizontal: false, vertical: true).padding(.bottom, 10)
     }
 
     private var intro: some View {
@@ -94,8 +93,8 @@ struct OnboardingView: View {
 
     private func promise(_ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle().fill(Theme.signal).frame(width: 5, height: 5).offset(y: -2)
-            Text(text).font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.foreground)
+            Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.mutedForeground).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -108,7 +107,7 @@ struct OnboardingView: View {
             }
             if !trusted {
                 Text("Turn on Appears in the list, then come back. If you rebuilt the app, remove the old entry and add it again.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.muted).padding(.top, 8)
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground).padding(.top, 8)
             }
         }
     }
@@ -134,16 +133,16 @@ struct OnboardingView: View {
             title("Ready")
             body("Appears will read your files in the background. The first pass takes a while (images are the slow part) and pauses in Low Power Mode.")
             HStack {
-                Text("Ask Appears").font(.system(size: 13)).foregroundStyle(Theme.ink)
+                Text("Ask Appears").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
                 Spacer()
                 KeyboardShortcuts.Recorder(for: .pull)
             }
             .padding(.vertical, 8)
             Toggle(isOn: Binding(get: { model.settings.ambientMode == .on }, set: { model.setAmbientMode($0 ? .on : .shadow) })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Suggest on its own").font(.system(size: 13)).foregroundStyle(Theme.ink)
+                    Text("Suggest on its own").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
                     Text("Only when it's confident, never more than a few times an hour, and only a dot in the menu bar.")
-                        .font(.system(size: 11)).foregroundStyle(Theme.muted)
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
                 }
             }
             .toggleStyle(.switch)
@@ -154,13 +153,13 @@ struct OnboardingView: View {
     private func permission(granted: Bool, label: String, button: String, action: @escaping () -> Void) -> some View {
         HStack {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(granted ? Theme.signal : Theme.muted)
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+                .foregroundStyle(granted ? Theme.accent : Theme.mutedForeground)
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)
             Spacer()
-            if !granted { Button(button, action: action) }
+            if !granted { Button(button, action: action).buttonStyle(OutlineButtonStyle()) }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.rule))
+        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
     }
 }

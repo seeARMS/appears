@@ -71,18 +71,25 @@ public final class Engine: Sendable {
     // MARK: - Running
 
     /// Scans, indexes, then keeps up with changes until the process ends.
+    ///
+    /// Indexing runs at medium priority, not utility: the model runs on the GPU, and macOS
+    /// deprioritizes GPU work from utility threads, which made indexing about 3× slower than
+    /// the same work in the CLI (measured 2026-10-15). It still pauses for Low Power Mode and heat.
     public func start() {
         Task { await state.setReady(true) }
         startWatching()
-        Task.detached(priority: .utility) { [self] in
+        Task.detached(priority: .medium) { [self] in
+            await self.refresh()
+            var tick = 0
             while true {
-                await self.refresh()
-                // Notes have no file events we can watch from the sandbox; a full rescan of
-                // files catches anything FSEvents missed.
-                for _ in 0..<36 {
-                    try? await Task.sleep(for: .seconds(600))
-                    if (try? await self.indexer.scanNotes()) ?? 0 > 0 { await self.indexPending() }
-                }
+                try? await Task.sleep(for: .seconds(60))
+                tick += 1
+                // The watchdog: anything waiting and nothing running means a run ended early.
+                if (try? self.store.counts().waiting) ?? 0 > 0 { await self.indexPending() }
+                // Notes have no file events we can watch from the sandbox: look every 10 minutes.
+                if tick % 10 == 0, (try? await self.indexer.scanNotes()) ?? 0 > 0 { await self.indexPending() }
+                // A full rescan every 6 hours catches anything FSEvents missed.
+                if tick % 360 == 0 { await self.refresh() }
             }
         }
     }
@@ -93,6 +100,7 @@ public final class Engine: Sendable {
             try await indexer.scanFiles()
             try await indexer.scanNotes()
         } catch {
+            indexLog.error("Scan failed: \(error.localizedDescription, privacy: .public)")
             await state.setError("Scanning failed: \(error.localizedDescription)")
         }
         await indexPending()
@@ -102,8 +110,12 @@ public final class Engine: Sendable {
     public func indexPending() async {
         guard await state.beginIndexing() else { return }
         defer { Task { await state.endIndexing() } }
-        do { try await indexer.indexPending() } catch is CancellationError {} catch {
-            await state.setError("Indexing failed: \(error.localizedDescription)")
+        do {
+            try await indexer.indexPending()
+            await state.setError(nil)
+        } catch is CancellationError {} catch {
+            indexLog.error("Indexing run stopped: \(error.localizedDescription, privacy: .public)")
+            await state.setError("Indexing stopped: \(error.localizedDescription)")
         }
     }
 
@@ -147,7 +159,7 @@ public final class Engine: Sendable {
             let settings = try decoder.decode(SourceSettings.self, from: payload)
             let changed = await indexer.settings != settings
             try await indexer.update(settings: settings)
-            if changed { Task.detached(priority: .utility) { await self.refresh() } }
+            if changed { Task.detached(priority: .medium) { await self.refresh() } }
             return Data("{}".utf8)
         case .feedback:
             let event = try decoder.decode(FeedbackEvent.self, from: payload)
@@ -168,13 +180,13 @@ public final class Engine: Sendable {
             try store.touch(path: path)
             return Data("{}".utf8)
         case .rescan:
-            Task.detached(priority: .utility) { await self.refresh() }
+            Task.detached(priority: .medium) { await self.refresh() }
             return Data("{}".utf8)
         case .deleteIndex:
             try store.removeAll()
             try store.setMeta("model_id", embedder.modelID)
             vectors.removeAll()
-            Task.detached(priority: .utility) { await self.refresh() }
+            Task.detached(priority: .medium) { await self.refresh() }
             return Data("{}".utf8)
         case .deleteJournal:
             try journal.deleteAll()

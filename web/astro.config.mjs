@@ -21,18 +21,9 @@ export default defineConfig({
   fonts: [
     {
       provider: fontProviders.fontsource(),
-      name: "Instrument Serif",
-      cssVariable: "--font-display",
-      weights: [400],
-      styles: ["normal", "italic"],
-      subsets: ["latin"],
-      fallbacks: ["ui-serif", "Georgia", "serif"],
-    },
-    {
-      provider: fontProviders.fontsource(),
-      name: "Hanken Grotesk",
-      cssVariable: "--font-text",
-      weights: ["300 700"],
+      name: "Inter",
+      cssVariable: "--font-sans",
+      weights: ["400 700"],
       styles: ["normal"],
       subsets: ["latin"],
       fallbacks: ["ui-sans-serif", "system-ui", "sans-serif"],

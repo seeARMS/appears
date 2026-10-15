@@ -1,4 +1,9 @@
 import Foundation
+import os
+
+/// Engine logs, readable with `log stream --predicate 'subsystem == "rs.appea.appears"'`.
+/// Paths are private (redacted unless the Mac allows private data); counts and timings are public.
+let indexLog = Logger(subsystem: "rs.appea.appears", category: "indexer")
 
 /// Where indexing is, for the menu bar glyph and Settings.
 public struct IndexProgress: Sendable, Codable, Equatable {
@@ -73,6 +78,7 @@ public actor Indexer {
     @discardableResult
     public func scanFiles() throws -> Int {
         report { $0.phase = .scanning; $0.scanned = 0 }
+        let scanStarted = Date()
         let scanner = FileScanner(settings: settings)
         var known = try store.paths(source: .file)
         var found = 0
@@ -82,7 +88,9 @@ public actor Indexer {
             found += 1
             if found % 500 == 0 { report { $0.scanned = found } }
         }
-        vectors.remove(ids: try store.remove(itemIDs: Array(known.values)))
+        let removed = try store.remove(itemIDs: Array(known.values))
+        vectors.remove(ids: removed)
+        indexLog.info("Scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
         report { $0.scanned = found; $0.phase = .idle }
         return found
     }
@@ -131,6 +139,8 @@ public actor Indexer {
         let total = try store.counts().waiting
         guard total > 0 else { return 0 }
         report { $0.phase = .indexing; $0.done = 0; $0.total = total }
+        let runStarted = Date()
+        indexLog.info("Indexing run started: \(total, privacy: .public) waiting")
         var done = 0
         defer { report { $0.phase = .idle } }
         while !Task.isCancelled {
@@ -144,12 +154,30 @@ public actor Indexer {
             report { $0.phase = .indexing; $0.pausedReason = nil }
             for item in batch {
                 try Task.checkCancellation()
-                try await index(item)
+                let started = Date()
+                do {
+                    try await withTimeout(seconds: Self.itemTimeout) { try await self.index(item) }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    // One bad file never stops the run: mark it and move on. It's retried when it changes.
+                    indexLog.error("Couldn't index a \(item.kind.rawValue, privacy: .public) (\(item.size, privacy: .public) bytes): \(error.localizedDescription, privacy: .public) \(item.path, privacy: .private)")
+                    try? store.markFailed(itemID: item.id)
+                }
+                let seconds = Date().timeIntervalSince(started)
+                if seconds > 10 {
+                    indexLog.notice("Slow \(item.kind.rawValue, privacy: .public): \(seconds, format: .fixed(precision: 1), privacy: .public)s for \(item.size, privacy: .public) bytes \(item.path, privacy: .private)")
+                }
                 done += 1
                 report { $0.done = done; $0.total = max($0.total, done) }
+                if done % 100 == 0 {
+                    let rate = Double(done) / Date().timeIntervalSince(runStarted)
+                    indexLog.info("Indexed \(done, privacy: .public) of \(total, privacy: .public) (\(rate, format: .fixed(precision: 2), privacy: .public)/s)")
+                }
             }
         }
         if let gemma = embedder as? any UnloadsVision { await gemma.unloadVision() }
+        indexLog.info("Indexing run finished: \(done, privacy: .public) items in \(Int(Date().timeIntervalSince(runStarted)), privacy: .public)s")
         return done
     }
 
@@ -200,6 +228,9 @@ public actor Indexer {
         }
     }
 
+    /// Longest one file may take before it's skipped (a hung PDF or image decoder).
+    static let itemTimeout: Double = 120
+
     /// Low Power Mode, heat: reasons to wait before indexing more.
     static func pauseReason() -> String? {
         let info = ProcessInfo.processInfo
@@ -212,4 +243,23 @@ public actor Indexer {
 /// Embedders that can free their image model between indexing runs.
 public protocol UnloadsVision: Sendable {
     func unloadVision() async
+}
+
+struct TimeoutError: LocalizedError {
+    let seconds: Double
+    var errorDescription: String? { "Timed out after \(Int(seconds))s" }
+}
+
+/// Runs `work`, throwing `TimeoutError` if it takes longer than `seconds`. The work is
+/// cancelled, but work that ignores cancellation keeps running in the background.
+func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await work() }
+        group.addTask {
+            try await Task.sleep(for: .seconds(seconds))
+            throw TimeoutError(seconds: seconds)
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
+    }
 }

@@ -4,29 +4,8 @@ import PDFKit
 import QuickLookThumbnailing
 import SwiftUI
 
-/// Appears' palette (brand/README.md): warm paper, ink, one vermilion signal.
-enum Theme {
-    static let paper = Color(light: 0xF7F4EE, dark: 0x1B1A18)
-    static let card = Color(light: 0xFFFDF9, dark: 0x24221F)
-    static let ink = Color(light: 0x17150F, dark: 0xEDE8DE)
-    static let muted = Color(light: 0x6B655A, dark: 0x9A9387)
-    static let rule = Color(light: 0xDCD6CA, dark: 0x34302B)
-    static let signal = Color(light: 0xE0531F, dark: 0xFF6A33)
-    static let serif = Font.system(size: 15, weight: .regular, design: .serif)
-}
-
-extension Color {
-    init(light: UInt32, dark: UInt32) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
-            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(
-                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: 1
-            )
-        })
-    }
-}
-
+/// The panel that hangs from the menu bar ring: a header, up to three results as a ⌘K-style
+/// list, and keyboard hints. shadcn's popover and command-list language (Theme.swift).
 struct PanelView: View {
     @Bindable var model: AppModel
     let close: () -> Void
@@ -34,49 +13,52 @@ struct PanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Rectangle().fill(Theme.rule).frame(height: 1)
+            Rectangle().fill(Theme.border).frame(height: 1)
             content
             footer
         }
         .frame(width: 400)
-        .background(Theme.paper)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.rule, lineWidth: 1))
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    // MARK: - Header
+
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(headline)
-                    .font(Theme.serif)
-                    .foregroundStyle(Theme.ink)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.foreground)
                 if let shown = model.shown, let subtitle = Self.subtitle(shown) {
                     Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.mutedForeground)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
-            Spacer()
+            Spacer(minLength: 8)
             if model.isPulling {
                 ProgressView().controlSize(.small)
+            } else if let count = model.shown?.suggestions.count, count > 0 {
+                Badge(text: "\(count) found")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 
     private var headline: String {
         if model.isPulling, model.shown?.suggestions.isEmpty ?? true { return "Looking through your files…" }
         if model.shown?.mode == .ambient { return "Found something related" }
-        return "Related files and notes"
+        return "Related"
     }
 
-    /// "For “Meet - Standup” in Google Chrome": the window's title without the app's name or
-    /// a browser profile tacked on the end.
+    /// "Re: Kitchen · Mail": the window's title without the app's name or a browser profile
+    /// tacked on the end, then the app.
     static func subtitle(_ shown: AppModel.Shown) -> String? {
         var title = shown.windowTitle
         let app = shown.appName
@@ -86,9 +68,11 @@ struct PanelView: View {
             }
         }
         title = title.trimmingCharacters(in: .whitespaces)
-        if title.isEmpty || title == app { return app.isEmpty ? nil : "For what's in \(app)" }
-        return app.isEmpty ? "For “\(title)”" : "For “\(title)” in \(app)"
+        if title.isEmpty || title == app { return app.isEmpty ? nil : app }
+        return app.isEmpty ? title : "\(title) · \(app)"
     }
+
+    // MARK: - Content
 
     @ViewBuilder
     private var content: some View {
@@ -104,69 +88,91 @@ struct PanelView: View {
             Message(title: "Couldn't look", text: error, action: nil)
         } else if let shown = model.shown {
             if shown.suggestions.isEmpty, !model.isPulling {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(emptyText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.mutedForeground)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 14)
                     if !shown.weaker.isEmpty { weaker(shown) }
                 }
-                .padding(16)
+                .padding(4)
             } else {
-                VStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(shown.suggestions.enumerated()), id: \.element.id) { index, suggestion in
-                        ResultCard(suggestion: suggestion, selected: model.selectedIndex == index, model: model, close: close)
+                        ResultRow(suggestion: suggestion, selected: model.selectedIndex == index, model: model, close: close)
                     }
-                    if !shown.weaker.isEmpty { weaker(shown) }
+                    if !shown.weaker.isEmpty {
+                        Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 4).padding(.horizontal, -4)
+                        weaker(shown)
+                    }
                 }
-                .padding(10)
+                .padding(4)
             }
         }
     }
 
     private var emptyText: String {
         if let status = model.status, status.counts.indexedTotal == 0 {
-            return "Appears is still reading your files. Try again in a little while."
+            return "Still reading your files. Try again in a little while."
         }
         return "Nothing you've forgotten about this."
     }
 
     @ViewBuilder
     private func weaker(_ shown: AppModel.Shown) -> some View {
-        DisclosureGroup(isExpanded: $model.showWeaker) {
-            VStack(spacing: 6) {
-                ForEach(Array(shown.weaker.enumerated()), id: \.element.id) { index, suggestion in
-                    ResultCard(suggestion: suggestion, selected: model.selectedIndex == shown.suggestions.count + index, model: model, close: close)
-                        .opacity(0.8)
-                }
-            }
-            .padding(.top, 6)
+        Button {
+            model.showWeaker.toggle()
         } label: {
-            Text("Less likely (\(shown.weaker.count))")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.muted)
+            HStack(spacing: 4) {
+                Image(systemName: model.showWeaker ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold))
+                Text("Less likely (\(shown.weaker.count))")
+            }
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(Theme.mutedForeground)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 6)
+        .buttonStyle(.plain)
+        if model.showWeaker {
+            ForEach(Array(shown.weaker.enumerated()), id: \.element.id) { index, suggestion in
+                ResultRow(suggestion: suggestion, selected: model.selectedIndex == shown.suggestions.count + index, model: model, close: close)
+            }
+        }
     }
 
+    // MARK: - Footer
+
     private var footer: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if let status = model.status, status.progress.phase == .indexing || status.progress.phase == .scanning {
-                Text(status.progress.phase == .scanning ? "Looking through your files…" : "Reading \(status.progress.done.formatted()) of \(status.progress.total.formatted())…")
+                Text(status.progress.phase == .scanning ? "Looking through your files…" : "Indexing \(status.progress.done.formatted()) of \(status.progress.total.formatted())…")
             } else if let status = model.status, status.progress.phase == .paused, let reason = status.progress.pausedReason {
                 Text("Indexing paused: \(reason)")
             } else if model.settings.isPaused {
                 Text("Paused")
             } else {
-                Text("↩ open · space preview · ⌫ not useful · drag into anything")
+                hint("↩", "open")
+                hint("␣", "preview")
+                hint("⌫", "not useful")
+                Spacer(minLength: 0)
+                Text("or drag into anything")
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .font(.system(size: 10.5))
-        .foregroundStyle(Theme.muted)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-        .background(Theme.card.opacity(0.6))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.rule).frame(height: 1) }
+        .font(.system(size: 11.5))
+        .foregroundStyle(Theme.mutedForeground)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
+    }
+
+    private func hint(_ key: String, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Kbd(key: key)
+            Text(label)
+        }
     }
 }
 
@@ -177,19 +183,20 @@ private struct Message: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.ink)
-            Text(text).font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.foreground)
+            Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.mutedForeground).fixedSize(horizontal: false, vertical: true)
             if let action {
-                Button(action.0, action: action.1).padding(.top, 4)
+                Button(action.0, action: action.1).buttonStyle(PrimaryButtonStyle()).padding(.top, 6)
             }
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// One suggestion: a preview, its name, why it's here, and what you can do with it.
-struct ResultCard: View {
+/// One result, as a row in a command list: a thumbnail, the name, why it's here, and (when
+/// selected) the matching text.
+struct ResultRow: View {
     let suggestion: Suggestion
     let selected: Bool
     let model: AppModel
@@ -206,62 +213,34 @@ struct ResultCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             preview
-            VStack(alignment: .leading, spacing: 3) {
-                Text(suggestion.item.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.item.source == .notes ? suggestion.item.title : suggestion.item.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.foreground)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 reasonText
-                    .font(.system(size: 11))
+                    .font(.system(size: 11.5))
                     .lineLimit(1)
-                if !suggestion.snippet.isEmpty {
+                if selected, !suggestion.snippet.isEmpty {
                     Text(suggestion.snippet)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.mutedForeground)
                         .lineLimit(2)
+                        .padding(.top, 2)
                 }
             }
+            .frame(minHeight: 40, alignment: .center)
             Spacer(minLength: 0)
-            if hovering || selected {
-                VStack(spacing: 4) {
-                    iconButton("xmark", help: "Not useful") { model.act(.dismissed, on: suggestion) }
-                    Menu {
-                        Button("Not useful") { model.act(.dismissed, on: suggestion) }
-                        Button("Never show this") { model.act(.blocked, on: suggestion) }
-                        Button("Not in this app") { model.act(.muted, on: suggestion) }
-                        Divider()
-                        if suggestion.item.source == .file {
-                            Button("Show in Finder") { model.act(.revealed, on: suggestion); close() }
-                            Button("Copy Path") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(suggestion.item.path, forType: .string)
-                                model.act(.copied, on: suggestion)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis").font(.system(size: 10, weight: .semibold))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .frame(width: 18)
-                    .foregroundStyle(Theme.muted)
-                }
-            }
+            trailing
         }
-        .padding(10)
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.card)
+            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                .fill(selected || hovering ? Theme.muted : Color.clear)
         )
-        .overlay(alignment: .leading) {
-            if selected {
-                RoundedRectangle(cornerRadius: 1).fill(Theme.signal).frame(width: 2).padding(.vertical, 10)
-            }
-        }
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.rule.opacity(selected ? 1 : 0.6), lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture {
@@ -279,28 +258,66 @@ struct ResultCard: View {
         .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
     }
 
-    /// The why ("Mentions Dana Ruiz") in the signal colour; when and where in grey.
+    /// The why ("Mentions Dana Ruiz") in the foreground colour; when and where muted.
     private var reasonText: Text {
-        let parts = suggestion.reason.components(separatedBy: " · ")
+        var parts = suggestion.reason.components(separatedBy: " · ")
+        if suggestion.item.source == .notes { parts.insert("Notes", at: min(1, parts.count)) }
         let first = parts.first ?? ""
         let generic = first == "Related" || first == "Looks related"
-        let why = Text(first).foregroundStyle(generic ? Theme.muted : Theme.signal)
+        let why = Text(first).foregroundStyle(generic ? Theme.mutedForeground : Theme.foreground)
         guard parts.count > 1 else { return why }
-        return Text("\(why)\(Text(" · " + parts.dropFirst().joined(separator: " · ")).foregroundStyle(Theme.muted))")
+        return Text("\(why)\(Text(" · " + parts.dropFirst().joined(separator: " · ")).foregroundStyle(Theme.mutedForeground))")
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if hovering {
+            HStack(spacing: 2) {
+                Button { model.act(.dismissed, on: suggestion) } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.mutedForeground)
+                .help("Not useful")
+                Menu {
+                    Button("Not useful") { model.act(.dismissed, on: suggestion) }
+                    Button("Never show this") { model.act(.blocked, on: suggestion) }
+                    Button("Not in this app") { model.act(.muted, on: suggestion) }
+                    Divider()
+                    if suggestion.item.source == .file {
+                        Button("Show in Finder") { model.act(.revealed, on: suggestion); close() }
+                        Button("Copy Path") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(suggestion.item.path, forType: .string)
+                            model.act(.copied, on: suggestion)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 10, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 22, height: 22)
+                .foregroundStyle(Theme.mutedForeground)
+            }
+            .frame(minHeight: 40)
+        } else if selected {
+            Kbd(key: "↩").frame(minHeight: 40)
+        }
     }
 
     private var preview: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.paper)
+            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).fill(Theme.muted)
             if let thumbnail {
                 Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
             } else {
-                Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Theme.muted)
+                Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Theme.mutedForeground)
             }
         }
-        .frame(width: 52, height: 52)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.rule, lineWidth: 1))
+        .frame(width: 40, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
     }
 
     private var icon: String {
@@ -310,14 +327,6 @@ struct ResultCard: View {
         case .image: "photo"
         case .document: "doc.text"
         }
-    }
-
-    private func iconButton(_ name: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: name).font(.system(size: 10, weight: .semibold)) }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.muted)
-            .frame(width: 18, height: 18)
-            .help(help)
     }
 }
 
@@ -332,10 +341,10 @@ enum Thumbnails {
         let url = URL(filePath: suggestion.item.path)
         if suggestion.item.kind == .pdf, let page = suggestion.unit.locator.page,
            let document = PDFDocument(url: url), let pdfPage = document.page(at: page - 1) {
-            return pdfPage.thumbnail(of: NSSize(width: 104, height: 104), for: .mediaBox)
+            return pdfPage.thumbnail(of: NSSize(width: 80, height: 80), for: .mediaBox)
         }
         let request = QLThumbnailGenerator.Request(
-            fileAt: url, size: CGSize(width: 52, height: 52), scale: 2, representationTypes: .thumbnail
+            fileAt: url, size: CGSize(width: 40, height: 40), scale: 2, representationTypes: .thumbnail
         )
         return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
     }

@@ -7,7 +7,12 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. In private testing
 ## How it works
 
 - **Context:** the app reads the frontmost window through the Accessibility API: title, the document it shows, the field you're typing in, the selection, the visible text. It reads only when something changes, in memory, and drops it. Browser URLs come from Apple Events (Safari, Chrome) or Accessibility (Firefox). When a window has no readable text and you ask, it can OCR just that window (Screen Recording permission, optional).
-- **Index:** the engine indexes everything sensible in your home folder (documents, PDFs, images and screenshots) plus Apple Notes. It skips `~/Library`, code checkouts, build output and caches. Text, PDF pages and images are embedded by Google's EmbeddingGemma 2 on MLX, in one vector space, next to an FTS5 full-text index. Settings has Include and Exclude lists.
+- **Index:** the engine indexes everything sensible in your home folder (documents, PDFs, images and screenshots) plus Apple Notes. It skips:
+  - `~/Library`, code checkouts (any folder with `.git`), package and build folders (`node_modules`, `dist`, `vendor`, `obj`…), caches;
+  - coding agents' workspaces (`~/conductor`, `~/Documents/Codex`…);
+  - data dumps: a folder with more than 150 plain-text files directly in it;
+  - plain text over 2 MB, and boilerplate (LICENSE, CHANGELOG…);
+  - text that is mostly numbers, which is indexed by name only. Text, PDF pages and images are embedded by Google's EmbeddingGemma 2 on MLX, in one vector space, next to an FTS5 full-text index. Settings has Include and Exclude lists.
 - **Ranking:** vector search (text and images) and full-text search on the names, numbers and rare words in the context are fused by rank. Then:
   - **Forgotten:** results are weighted toward what you haven't touched in months. Anything open or touched in the last 3 days is never shown.
   - **New:** what's in the same folder or repeats the window title counts less.
@@ -75,7 +80,19 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
 
 Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads) and Screen Recording (OCR on ask). Builds are ad-hoc signed until a team is set in `project.yml`. With ad-hoc signing macOS forgets Accessibility on every rebuild: remove Appears from the Accessibility list and add it again.
 
-The first index takes a while (images are the slow part, roughly 0.5 s each on an M-series Mac) and pauses in Low Power Mode. The menu bar ring is open while it's working.
+The first index takes a while and pauses in Low Power Mode; the menu bar ring is open while it's working. Measured on 2026-10-15 on Colin's Mac (about 11,000 files after the skip rules):
+
+- documents and PDFs run at about 2.7 a second;
+- scanned PDFs take 10–17 seconds each, for OCR;
+- images run at about 13 a second.
+
+Watch it with:
+
+```bash
+log stream --level info --predicate 'subsystem == "rs.appea.appears"'
+```
+
+The log shows the scan, a rate line every 100 files, slow files (over 10 seconds), and files that failed or timed out (after 120 seconds). Paths are redacted.
 
 ### Try it without your files
 

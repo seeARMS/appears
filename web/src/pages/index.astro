@@ -31,9 +31,6 @@ import {
   TITLE,
 } from "../site";
 
-// The headline's second clause is set in italic, and its full stop is the mark's dot.
-const [first, rest] = HEADLINE.replace(/\.$/, "").split(/,\s*/, 2);
-
 const schema = [
   {
     "@type": "WebSite",
@@ -72,54 +69,70 @@ const schema = [
 ---
 
 <Base title={TITLE} path="/" markdown="/index.md" schema={schema}>
-  <header class="top wrap">
-    <a class="brand" href="/" aria-label="Appears, home">
-      <Mark size={26} />
-      <span class="brand-name">{NAME}</span>
-    </a>
-    <span class="status"><span class="status-dot" aria-hidden="true"></span>{STATUS}</span>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="/" aria-label="Appears, home">
+        <Mark size={24} />
+        <span class="wordmark">appears</span>
+      </a>
+      <nav class="top-nav" aria-label="On this page">
+        <a href="#how">How it works</a>
+        <a href="#privacy">Privacy</a>
+      </nav>
+    </div>
   </header>
 
   <main>
     <section class="hero wrap">
-      <h1>{first},<br class="hero-break" /> <em>{rest}</em><span class="stop" aria-hidden="true">.</span></h1>
-      <div class="hero-text">
-        <p class="lede">{LEDE}</p>
-        <p class="note">{STATUS_TEXT}</p>
+      <span class="badge badge-status"><span class="badge-dot" aria-hidden="true"></span>{STATUS}</span>
+      <h1>{HEADLINE}</h1>
+      <p class="lede">{LEDE}</p>
+      <div class="actions">
+        <a class="button button-primary" href="#how">How it works</a>
+        <a class="button button-outline" href="#privacy">Privacy</a>
       </div>
+      <p class="note">{STATUS_TEXT}</p>
     </section>
 
-    <div class="wrap wrap-wide">
+    <div class="wrap">
       <Mock />
     </div>
 
     <section class="part wrap" aria-labelledby="how">
-      <h2 id="how">{HOW_HEADING}</h2>
-      <div class="part-body">
+      <div class="part-head">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how">{HOW_HEADING}</h2>
+      </div>
+      <ol class="cards">
         {
-          HOW.map((item) => (
-            <div class="point">
+          HOW.map((item, i) => (
+            <li class="card">
+              <span class="card-num" aria-hidden="true">{i + 1}</span>
               <h3>{item.title}</h3>
               <p set:html={inline(item.text)} />
-            </div>
+            </li>
           ))
         }
-      </div>
+      </ol>
     </section>
 
     <section class="part wrap" aria-labelledby="quiet">
-      <h2 id="quiet">{QUIET_HEADING}</h2>
-      <div class="part-body">
-        <p class="big">{QUIET}</p>
-        <figure class="glyphs">
+      <div class="split">
+        <div class="part-head">
+          <p class="eyebrow">Attention</p>
+          <h2 id="quiet">{QUIET_HEADING}</h2>
+          <p class="part-text">{QUIET}</p>
+        </div>
+        <figure class="card glyphs">
           <ul>
             {
               GLYPHS.map((g) => (
                 <li>
-                  <span class:list={["glyph-chip", { "is-found": g.state === "found" }]}>
-                    <Glyph state={g.state} size={22} />
+                  <span class:list={["glyph-chip", `is-${g.state}`]}>
+                    <Glyph state={g.state} size={20} />
                   </span>
                   <span class="glyph-label">{g.label}</span>
+                  <span class="glyph-state">{g.state}</span>
                 </li>
               ))
             }
@@ -130,33 +143,42 @@ const schema = [
     </section>
 
     <section class="part wrap" aria-labelledby="privacy">
-      <h2 id="privacy">{PRIVACY_HEADING}</h2>
-      <div class="part-body">
-        <dl class="facts">
-          {
-            PRIVACY.map((row) => (
-              <div class="fact">
-                <dt>{row.label}</dt>
-                <dd set:html={inline(row.text)} />
-              </div>
-            ))
-          }
-        </dl>
+      <div class="part-head">
+        <p class="eyebrow">Privacy</p>
+        <h2 id="privacy">{PRIVACY_HEADING}</h2>
       </div>
+      <dl class="cards">
+        {
+          PRIVACY.map((row) => (
+            <div class="card">
+              <dt>{row.label}</dt>
+              <dd set:html={inline(row.text)} />
+            </div>
+          ))
+        }
+      </dl>
     </section>
 
     <section class="part wrap" aria-labelledby="now">
-      <h2 id="now">{NOW_HEADING}</h2>
-      <div class="part-body">
-        <p class="big">{NOW}</p>
+      <div class="card now">
+        <div>
+          <p class="eyebrow">Status</p>
+          <h2 id="now">{NOW_HEADING}</h2>
+          <p class="part-text">{NOW}</p>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="foot wrap">
-    <Mark size={20} />
-    <p>
-      {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>.
-    </p>
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <a class="brand" href="/" aria-label="Appears, home">
+        <Mark size={20} />
+        <span class="wordmark">appears</span>
+      </a>
+      <p>
+        {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>.
+      </p>
+    </div>
   </footer>
 </Base>
