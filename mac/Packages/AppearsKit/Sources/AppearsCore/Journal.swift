@@ -78,6 +78,10 @@ public struct JournalStats: Sendable, Codable, Equatable {
     /// Shadow suggestions that turned out to be what a later pull in the same context opened.
     public var shadowPrecision: Double?
     public var ambientPrecision: Double?
+    /// Suggestions made before a meeting (`CalendarEvent.bundleID`), shown or logged only.
+    public var calendar = 0
+    /// Of those shown, how many were used.
+    public var calendarPrecision: Double?
 
     public var usefulPerDay: Double { Double(useful) / Double(max(days, 1)) }
 }
@@ -158,11 +162,11 @@ public final class Journal: Sendable {
         try pool.read { db in
             let since = now.addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
             var stats = JournalStats(days: days)
-            struct Row_ { let id: Int64; let mode: String; let fingerprint: String; let at: Double; let items: [Int64] }
+            struct Row_ { let id: Int64; let mode: String; let bundleID: String; let fingerprint: String; let at: Double; let items: [Int64] }
             var entries: [Row_] = []
-            for row in try Row.fetchAll(db, sql: "SELECT id, mode, fingerprint, at, suggestions FROM entry WHERE at >= ?", arguments: [since]) {
+            for row in try Row.fetchAll(db, sql: "SELECT id, mode, bundle_id, fingerprint, at, suggestions FROM entry WHERE at >= ?", arguments: [since]) {
                 let shown = (try? JSONDecoder().decode([JournalEntry.Shown].self, from: Data((row["suggestions"] as String).utf8))) ?? []
-                entries.append(Row_(id: row["id"], mode: row["mode"], fingerprint: row["fingerprint"], at: row["at"], items: shown.map(\.itemID)))
+                entries.append(Row_(id: row["id"], mode: row["mode"], bundleID: row["bundle_id"], fingerprint: row["fingerprint"], at: row["at"], items: shown.map(\.itemID)))
             }
             var outcomes: [Int64: [(item: Int64, position: Int, outcome: Outcome)]] = [:]
             for row in try Row.fetchAll(db, sql: "SELECT entry_id, item_id, position, outcome FROM outcome WHERE at >= ?", arguments: [since]) {
@@ -174,8 +178,16 @@ public final class Journal: Sendable {
             }
             var pullsWithOutcome = 0, pullTop = 0, pullAny = 0
             var ambientWithOutcome = 0, ambientUseful = 0
+            var calendarWithOutcome = 0, calendarUseful = 0
             for entry in entries {
                 let results = outcomes[entry.id] ?? []
+                if entry.bundleID == CalendarEvent.bundleID {
+                    stats.calendar += 1
+                    if entry.mode == "ambient", !results.isEmpty {
+                        calendarWithOutcome += 1
+                        if results.contains(where: { $0.outcome.isUseful }) { calendarUseful += 1 }
+                    }
+                }
                 switch entry.mode {
                 case "pull":
                     stats.pulls += 1
@@ -199,6 +211,7 @@ public final class Journal: Sendable {
                 stats.pullPrecisionAt3 = Double(pullAny) / Double(pullsWithOutcome)
             }
             if ambientWithOutcome > 0 { stats.ambientPrecision = Double(ambientUseful) / Double(ambientWithOutcome) }
+            if calendarWithOutcome > 0 { stats.calendarPrecision = Double(calendarUseful) / Double(calendarWithOutcome) }
             // Shadow: did a later pull in the same context open the shadow's first pick?
             var shadowJudged = 0, shadowRight = 0
             let pulls = entries.filter { $0.mode == "pull" }

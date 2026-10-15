@@ -58,8 +58,11 @@ struct PanelView: View {
     }
 
     /// "Re: Kitchen · Mail": the window's title without the app's name or a browser profile
-    /// tacked on the end, then the app.
+    /// tacked on the end, then the app. For a meeting, why now: "For Kitchen walkthrough at 2:00 PM".
     static func subtitle(_ shown: AppModel.Shown) -> String? {
+        if let meeting = shown.meeting {
+            return "For \(meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)) at \(meeting.start.formatted(date: .omitted, time: .shortened))"
+        }
         var title = shown.windowTitle
         let app = shown.appName
         if !app.isEmpty {
@@ -282,7 +285,7 @@ struct ResultRow: View {
                 Menu {
                     Button("Not useful") { model.act(.dismissed, on: suggestion) }
                     Button("Never show this") { model.act(.blocked, on: suggestion) }
-                    Button("Not in this app") { model.act(.muted, on: suggestion) }
+                    Button(model.shown?.meeting == nil ? "Not in this app" : "Not before meetings") { model.act(.muted, on: suggestion) }
                     Divider()
                     if suggestion.item.source == .file {
                         Button("Show in Finder") { model.act(.revealed, on: suggestion); close() }
