@@ -166,7 +166,7 @@ public struct Recall: Sendable {
         self.embedder = embedder
     }
 
-    public func run(_ request: RecallRequest, now: Date = Date()) async throws -> RecallResponse {
+    public func run(_ request: RecallRequest, now: Date = Date(), groupMessageConversations: Bool = false) async throws -> RecallResponse {
         let started = Date()
         let context = request.context
         let picture = try await pictureVector(context)
@@ -341,6 +341,19 @@ public struct Recall: Sendable {
             scored.append((candidate, score, features, matched, confidence))
         }
         scored.sort { $0.score > $1.score }
+
+        // A typed search shows conversations, rather than repeating the same contact for
+        // each message's overlapping context window. Keep the best-ranked text passage
+        // before capping the pool, so duplicates don't crowd out other results. Photos
+        // are individual things to find; titles aren't identities (especially for groups).
+        if groupMessageConversations {
+            var seen: Set<Int64> = []
+            scored = scored.filter { entry in
+                let item = entry.candidate.item
+                guard item.source == .messages, item.kind == .message, let reference = item.message else { return true }
+                return seen.insert(reference.chatID).inserted
+            }
+        }
 
         // Variety: maximal marginal relevance over the top few, with a nudge away from a
         // second item from the same folder.
