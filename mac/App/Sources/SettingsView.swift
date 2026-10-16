@@ -28,6 +28,7 @@ struct GeneralPane: View {
         Form {
             Section {
                 LabeledContent("Ask Appears") { KeyboardShortcuts.Recorder(for: .pull) }
+                LabeledContent("Search Appears") { KeyboardShortcuts.Recorder(for: .search) }
                 Picker("Suggest on its own", selection: Binding(get: { model.settings.ambientMode }, set: { model.setAmbientMode($0) })) {
                     Text("On").tag(AmbientMode.on)
                     Text("Log only (shadow)").tag(AmbientMode.shadow)

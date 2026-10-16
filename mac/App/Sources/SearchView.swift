@@ -1,0 +1,279 @@
+import AppKit
+import AppearsCore
+import SwiftUI
+
+/// A typed search, distinct from the ambient panel: the query stays focused while arrows
+/// select results. Space is always a space; preview uses Command-Y.
+struct SearchView: View {
+    @Bindable var model: SearchModel
+    let close: () -> Void
+    let finish: () -> Void
+    let openSettings: () -> Void
+    let resize: (CGSize) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(Theme.mutedForeground)
+                SearchField(text: $model.query, command: command)
+                    .frame(height: 34)
+                if model.isSearching { ProgressView().controlSize(.small) }
+                if !model.query.isEmpty {
+                    Button { model.query = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.mutedForeground)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 68)
+            Rectangle().fill(Theme.border).frame(height: 1)
+            content.frame(height: model.hasQuery ? 350 : 148)
+            footer
+        }
+        .frame(width: 640)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border, lineWidth: 1))
+        .onGeometryChange(for: CGSize.self, of: { $0.size }, action: resize)
+        .onChange(of: model.app.modelDownload.phase) { model.refresh() }
+        .onChange(of: model.app.status?.ready) { model.refresh() }
+        .onChange(of: model.app.status?.counts.indexedTotal) {
+            if model.results.isEmpty { model.refresh() }
+        }
+        .onChange(of: model.app.settings.sources) { model.refresh() }
+    }
+
+    @ViewBuilder private var content: some View {
+        if model.app.modelDownload.phase != .ready {
+            ModelDownloadView(status: model.app.modelDownload, retry: model.app.retryModelDownload)
+                .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else if let error = model.error {
+            message("Search unavailable", text: error) {
+                Button("Try again") { model.refresh() }.buttonStyle(OutlineButtonStyle())
+            }
+        } else if !model.hasQuery {
+            message("Find it by meaning", text: "Search your files, photos, notes and messages. Describe what you remember.") {
+                Text("Try “the quote for the kitchen” or “our trip to Lisbon”.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+            }
+        } else if !model.results.isEmpty {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(model.results.enumerated()), id: \.element.id) { index, suggestion in
+                            SearchResultRow(suggestion: suggestion, selected: model.selectedIndex == index) {
+                                if model.open(suggestion) { finish() }
+                            } reveal: {
+                                if model.open(suggestion, reveal: true) { finish() }
+                            }
+                            .id(suggestion.id)
+                        }
+                    }
+                    .padding(6)
+                }
+                .onChange(of: model.selectedIndex) {
+                    if let selected = model.selected { proxy.scrollTo(selected.id) }
+                }
+            }
+        } else if model.isSearching {
+            message("Searching your index…", text: "Matching what you mean, across text and images.") { EmptyView() }
+        } else if model.app.status?.counts.indexedTotal == 0 {
+            message("Your index is still getting started", text: "Results appear as Appears reads your enabled sources.") {
+                Button("Open Settings", action: openSettings).buttonStyle(OutlineButtonStyle())
+            }
+        } else {
+            message("No results", text: "Try another description, a name, or a few more details.") { EmptyView() }
+        }
+    }
+
+    private func message<Actions: View>(_ title: String, text: String, @ViewBuilder actions: () -> Actions) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.foreground)
+            Text(text).font(.system(size: 13)).foregroundStyle(Theme.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+            actions().padding(.top, 4)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                Image(nsImage: GlyphImage.image(for: .idle)).renderingMode(.template).frame(width: 14, height: 14)
+                Text("Appears")
+            }
+            Spacer()
+            if !model.results.isEmpty {
+                hint("↑↓", "select")
+                hint("↩", "open")
+                if model.selected?.item.fileURL != nil { hint("⌘Y", "preview") }
+            } else {
+                Text("Only on this Mac")
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(Theme.mutedForeground)
+        .padding(.horizontal, 16)
+        .frame(height: 36)
+        .background(Theme.muted.opacity(0.5))
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
+    }
+
+    private func hint(_ key: String, _ text: String) -> some View {
+        HStack(spacing: 5) { Kbd(key: key); Text(text) }
+    }
+
+    /// Called by the native field editor, so navigation never moves the insertion point
+    /// out of the query, and normal text editing (including spaces and Delete) stays native.
+    private func command(_ selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.moveDown(_:)): model.moveSelection(1)
+        case #selector(NSResponder.moveUp(_:)): model.moveSelection(-1)
+        case #selector(NSResponder.insertNewline(_:)):
+            if let selected = model.selected, model.open(selected, reveal: NSApp.currentEvent?.modifierFlags.contains(.command) == true) { finish() }
+        case #selector(NSResponder.cancelOperation(_:)): close()
+        default: return false
+        }
+        return true
+    }
+}
+
+private struct SearchResultRow: View {
+    let suggestion: Suggestion
+    let selected: Bool
+    let open: () -> Void
+    let reveal: () -> Void
+    @State private var thumbnail: NSImage?
+
+    init(suggestion: Suggestion, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void) {
+        self.suggestion = suggestion
+        self.selected = selected
+        self.open = open
+        self.reveal = reveal
+        _thumbnail = State(initialValue: Thumbnails.cache[suggestion.item.id])
+    }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.controlRadius).fill(Theme.muted)
+                    if let thumbnail {
+                        Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Theme.mutedForeground)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(suggestion.item.title).font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.foreground).lineLimit(1).truncationMode(.middle)
+                    Text(location).font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
+                        .lineLimit(1).truncationMode(.middle)
+                    if selected, let line = suggestion.line {
+                        QuotedLine(line: line).padding(.top, 4)
+                    } else if selected, suggestion.item.kind != .image, !suggestion.snippet.isEmpty {
+                        Text(suggestion.snippet).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                            .lineLimit(2).padding(.top, 3)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                if selected {
+                    Image(systemName: "return").font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                        .frame(height: 40)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: Theme.controlRadius).fill(selected ? Theme.muted : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .contextMenu {
+            Button("Open", action: open)
+            if suggestion.item.fileURL != nil { Button("Show in Finder", action: reveal) }
+            if let line = suggestion.line { Button("Copy Line") { line.copyToPasteboard() } }
+        }
+        .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
+    }
+
+    private var location: String {
+        var label: String
+        switch suggestion.item.source {
+        case .file: label = (suggestion.item.folder as NSString).abbreviatingWithTildeInPath
+        case .notes: label = "Apple Notes"
+        case .messages: label = "Messages"
+        }
+        if let page = suggestion.unit.locator.page { label += " · page \(page)" }
+        return label
+    }
+
+    private var icon: String {
+        switch suggestion.item.kind {
+        case .document: "doc.text"
+        case .pdf: "doc.richtext"
+        case .image: "photo"
+        case .note: "note.text"
+        case .message: "bubble.left.and.bubble.right"
+        }
+    }
+}
+
+/// AppKit's field editor gives us dependable focus, IME support,
+/// and selection keys without treating a typed space as Quick Look.
+private struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+    let command: (Selector) -> Bool
+
+    func makeNSView(context: Context) -> QueryField {
+        let field = QueryField()
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 23)
+        field.placeholderString = "Search anything you remember…"
+        field.setAccessibilityLabel("Search Appears")
+        field.delegate = context.coordinator
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateNSView(_ field: QueryField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SearchField
+        init(_ parent: SearchField) { self.parent = parent }
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            // Don't search intermediate marked text while composing with an input method.
+            guard (field.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
+            parent.text = field.stringValue
+        }
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard !textView.hasMarkedText() else { return false }
+            return parent.command(selector)
+        }
+    }
+}
+
+private final class QueryField: NSTextField {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Also focused explicitly by the controller each time this reusable panel opens.
+        if let window { window.makeFirstResponder(self) }
+    }
+}

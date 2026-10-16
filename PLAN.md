@@ -261,7 +261,7 @@ This is the core of the product. There are three modes, and all three are in v0'
   - Never show this file;
   - ⌘Z undoes it.
 - **Hovering over the glyph** peeks at the top result in ambient mode.
-- **No query field by default.** An optional "refine" field can come later if pulls show people want to steer.
+- **Context recall has no query field.** Colin added a separate Spotlight-style semantic search on 2026-10-15: ⌃⇧Space (configurable), “Search Appears…” in the menu, or reopening the app. It searches the enabled index, including recent items, with typed queries kept in memory and out of the suggestion journal. The window uses Appears' existing zinc tokens and results-list design.
 - **The default hotkey** is chosen in M2, after checking conflicts: ⌥Space is common for AI launchers, ⌥⇧Space is whosaid's, and ⌃⌥ is VoiceOver's. It's configurable either way.
 - **Settings:**
   - Sources: Include and Exclude lists, plus counts of what's indexed;
@@ -451,3 +451,4 @@ These are targets to measure in M0, not guesses to trust:
 10. **Sources:** index as much as makes sense by default; Include and Exclude lists give control to anyone who wants it.
 11. **Logo:** Orbit, chosen on 2026-10-15. Keep the shadcn zinc/blue direction; use an open ring with a detached dot at the upper right, and monochrome menu bar states. See `brand/README.md` for geometry and regeneration.
 12. **Distribution (2026-10-15):** a lightweight DMG at `appea.rs/app.dmg`, built and notarized in GitHub Actions, stored in Cloudflare R2. The model downloads separately in the background on first launch while the user completes onboarding. This supersedes bundling model weights in the engine.
+13. **Explicit search (2026-10-15):** a separate Spotlight-style window for semantic search, opened manually or with its own configurable shortcut. Context recall stays available with its existing shortcut and menu bar click.

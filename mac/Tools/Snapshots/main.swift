@@ -158,6 +158,21 @@ let weaker = [
     model.showForSnapshot(nil, status: status)
     render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources", width: 560)
     render(UpdatesPane(updater: model.updater).frame(width: 560, height: 600), "settings-updates", width: 560)
+    let search = SearchModel(app: model)
+    func searchSnapshot(_ name: String) {
+        render(SearchView(model: search, close: {}, finish: {}, openSettings: {}, resize: { _ in }), name, width: 640)
+    }
+    searchSnapshot("search-empty")
+    search.showForSnapshot(query: "the quote for the kitchen", results: suggestions)
+    searchSnapshot("search-results")
+    search.showForSnapshot(query: "the wifi password at the cabin", results: [cabin])
+    searchSnapshot("search-answer")
+    search.showForSnapshot(query: "our trip to Lisbon", results: [], searching: true)
+    searchSnapshot("search-loading")
+    search.showForSnapshot(query: "our trip to Lisbon", results: [])
+    searchSnapshot("search-no-results")
+    search.showForSnapshot(query: "our trip to Lisbon", results: [], error: "Couldn't search your index. Try again, or check Sources in Settings.")
+    searchSnapshot("search-error")
     let scenes: [(Illustration.Scene, String, [Double])] = [
         (.moment, "moment", [1.5, 3.4, 5.5]), (.notice, "notice", [1.5, 4.0]),
         (.gather, "gather", [1.0, 2.2, 4.5]), (.ready, "ready", [0.5, 4.0]),

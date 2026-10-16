@@ -57,6 +57,10 @@ final class EngineClient: @unchecked Sendable {
         try await call(.related, request, as: RecallResponse.self)
     }
 
+    func search(_ text: String) async throws -> RecallResponse {
+        try await call(.search, SearchRequest(text: text), as: RecallResponse.self)
+    }
+
     func log(_ entry: JournalEntry) async -> Int64? { try? await call(.log, entry, as: Int64.self) }
 
     func stats(days: Int) async -> JournalStats? { try? await call(.stats, days, as: JournalStats.self) }

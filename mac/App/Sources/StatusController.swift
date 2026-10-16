@@ -16,6 +16,8 @@ final class StatusController: NSObject, NSMenuItemValidation {
     private var hoverCloseTask: Task<Void, Never>?
     private var clickMonitor: Any?
     var openSettings: (() -> Void)?
+    var openSearch: (() -> Void)?
+    var willShow: (() -> Void)?
 
     init(model: AppModel) {
         self.model = model
@@ -79,6 +81,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     // MARK: - The panel
 
     private func show(makeKey: Bool) {
+        willShow?()
         position()
         if makeKey {
             panel.makeKeyAndOrderFront(nil)
@@ -161,6 +164,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
 
     private func showMenu() {
         let menu = NSMenu()
+        menu.addItem(withTitle: "Search Appears…", action: #selector(searchFromMenu), keyEquivalent: "").target = self
         menu.addItem(withTitle: "What do I already have about this?", action: #selector(pullFromMenu), keyEquivalent: "").target = self
         menu.addItem(.separator())
         if model.settings.isPaused {
@@ -203,6 +207,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     }
 
     @objc private func pullFromMenu() { Task { await model.pull() } }
+    @objc private func searchFromMenu() { openSearch?() }
     @objc private func pauseHour() { model.pause(for: 3_600) }
     @objc private func pauseDay() {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!.addingTimeInterval(8 * 3_600)
