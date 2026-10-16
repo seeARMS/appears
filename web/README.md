@@ -29,6 +29,11 @@ The R2 bucket stays private. `/app.dmg` reads `latest.json` and returns a `no-st
 
 ## Develop
 
+Use Node 24 (Astro requires at least 22.22.0). Keep TypeScript on 6.x until
+`@astrojs/check` supports TypeScript 7; its current peer dependency accepts only
+TypeScript 5 or 6. Miniflare follows the version used by Wrangler, including its
+current 5.x beta.
+
 ```sh
 npm install
 npm run dev          # astro dev; from the repo root, the "web" config in .claude/launch.json runs it on port 4341

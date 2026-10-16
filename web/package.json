@@ -5,7 +5,7 @@
   "private": true,
   "description": "The landing site for Appears at appea.rs.",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.0"
   },
   "scripts": {
     "dev": "astro dev",
@@ -30,11 +30,11 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@cloudflare/workers-types": "^5.20261015.1",
+    "@cloudflare/workers-types": "^5.20261016.1",
     "@resvg/resvg-wasm": "^2.6.2",
     "esbuild": "^0.28.2",
-    "miniflare": "^5.20261012.0-beta",
+    "miniflare": "^5.20261012.1-beta",
     "typescript": "^6.0.3",
-    "wrangler": "^4.151.0"
+    "wrangler": "^4.151.1"
   }
 }
