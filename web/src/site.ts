@@ -10,6 +10,8 @@ import landing from "../../demo/landing.json";
 
 export const SITE = "https://appea.rs";
 export const NAME = "Appears";
+export const SOURCE_URL = "https://github.com/seeARMS/appears";
+export const SOURCE_LABEL = "GitHub";
 
 export const AUTHOR = {
   name: "Colin Armstrong",
@@ -43,7 +45,7 @@ export const LEDE =
 export const DOWNLOAD_URL = `${SITE}/app.dmg`;
 export const DOWNLOAD_LABEL = "Download for Mac";
 /** Under the Download buttons on the page. */
-export const NOTE = "Free and open source.";
+export const NOTE = `Free and [open source](${SOURCE_URL}).`;
 /** The Markdown version and llms.txt keep the system requirements for agents. */
 export const REQUIREMENTS = `${NOTE} Needs a ${HARDWARE} running ${OPERATING_SYSTEM}. The on-device model downloads during setup.`;
 

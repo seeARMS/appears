@@ -35,6 +35,8 @@ import {
   QUIET,
   QUIET_HEADING,
   SITE,
+  SOURCE_LABEL,
+  SOURCE_URL,
   SUMMARY,
   TITLE,
 } from "../site";
@@ -103,7 +105,7 @@ const schema = [
         <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
         <a class="button button-outline" href="#how">See how it works<Icon name="arrow-down" size={15} /></a>
       </div>
-      <p class="note rise" style="--d: 4">{NOTE}</p>
+      <p class="note rise" style="--d: 4" set:html={inline(NOTE)} />
     </section>
 
     <div class="wrap rise" style="--d: 5">
@@ -206,7 +208,7 @@ const schema = [
         <div class="actions">
           <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
         </div>
-        <p class="note">{NOTE}</p>
+        <p class="note" set:html={inline(NOTE)} />
       </div>
     </section>
   </main>
@@ -218,7 +220,7 @@ const schema = [
         <span class="wordmark">appears</span>
       </a>
       <p>
-        {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>.
+        {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>. <a href={SOURCE_URL}>{SOURCE_LABEL}</a>.
       </p>
     </div>
   </footer>

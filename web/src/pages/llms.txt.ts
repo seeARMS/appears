@@ -3,7 +3,7 @@
 // file; public/_headers gives it its charset.
 
 import type { APIRoute } from "astro";
-import { AUTHOR, DOWNLOAD_URL, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, SITE, SUMMARY } from "../site";
+import { AUTHOR, DOWNLOAD_URL, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, SITE, SOURCE_LABEL, SOURCE_URL, SUMMARY } from "../site";
 
 export const prerender = true;
 
@@ -22,6 +22,7 @@ const LLMS = `${[
   "## Docs",
   `- [Appears](${SITE}/index.md): what Appears does, how it decides what to show, and how it keeps everything on your Mac`,
   "## Optional",
+  `- [${SOURCE_LABEL}](${SOURCE_URL}): source code for Appears`,
   `- [${AUTHOR.name}](${AUTHOR.url}): who made Appears`,
 ].join("\n\n")}\n`;
 

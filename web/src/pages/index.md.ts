@@ -30,6 +30,8 @@ import {
   QUIET_HEADING,
   REQUIREMENTS,
   SITE,
+  SOURCE_LABEL,
+  SOURCE_URL,
   TITLE,
 } from "../site";
 
@@ -60,7 +62,7 @@ const MARKDOWN = `${[
   GET_TEXT,
   DOWNLOAD,
   "## Links",
-  [`- [${LICENSE} license](${LICENSE_URL})`, `- [llms.txt](${SITE}/llms.txt): ${NAME} in brief, for agents`].join("\n"),
+  [`- [${SOURCE_LABEL}](${SOURCE_URL})`, `- [${LICENSE} license](${LICENSE_URL})`, `- [llms.txt](${SITE}/llms.txt): ${NAME} in brief, for agents`].join("\n"),
   `${NAME} is made by [${AUTHOR.name}](${AUTHOR.url}).`,
 ].join("\n\n")}\n`;
 
