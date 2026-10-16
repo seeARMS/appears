@@ -116,7 +116,11 @@ public final class Engine: Sendable {
         guard await state.beginIndexing() else { return }
         defer { Task { await state.endIndexing() } }
         do {
-            try await indexer.indexPending()
+            // File events arrive on a utility queue. Pin the indexing work itself so a
+            // file event winning the startup race can't lower the whole run's GPU priority.
+            _ = try await Task.detached(priority: .medium) { [self] in
+                try await indexer.indexPending()
+            }.value
             await state.setError(nil)
         } catch is CancellationError {} catch {
             indexLog.error("Indexing run stopped: \(error.localizedDescription, privacy: .public)")
@@ -243,7 +247,10 @@ public final class FileWatcher: @unchecked Sendable {
                 if flag & kFSEventStreamEventFlagItemIsFile != 0 { changed.append(array[index]) }
             }
             // Skip the noise of Library and hidden folders early.
-            changed = changed.filter { !$0.contains("/Library/") && !$0.contains("/.") }
+            changed = changed.filter {
+                !$0.contains("/Library/") && !$0.contains("/.")
+                    && FileScanner.kind(forExtension: ($0 as NSString).pathExtension) != nil
+            }
             if !changed.isEmpty { watcher.handler(changed) }
         }
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)

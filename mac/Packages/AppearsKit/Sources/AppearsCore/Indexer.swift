@@ -42,6 +42,7 @@ public actor Indexer {
     private var scanningMessages = false
     private var messageHandles: [Int64: Handle] = [:]
     private var settingsRevision = 0
+    private var messageSeconds = (read: 0.0, embed: 0.0, write: 0.0)
     private var onProgress: (@Sendable (IndexProgress) -> Void)?
 
     public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil) {
@@ -234,7 +235,8 @@ public actor Indexer {
         guard total > 0 else { return 0 }
         report { $0.phase = .indexing; $0.done = 0; $0.total = total }
         let runStarted = Date()
-        indexLog.info("Indexing run started: \(total, privacy: .public) waiting")
+        messageSeconds = (0, 0, 0)
+        indexLog.info("Indexing run started: \(total, privacy: .public) waiting (priority \(Task.currentPriority.rawValue, privacy: .public))")
         var done = 0
         defer { report { $0.phase = .idle } }
         while !Task.isCancelled {
@@ -275,6 +277,10 @@ public actor Indexer {
                 if done % 100 == 0 {
                     let rate = Double(done) / Date().timeIntervalSince(runStarted)
                     indexLog.info("Indexed \(done, privacy: .public) of \(total, privacy: .public) (\(rate, format: .fixed(precision: 2), privacy: .public)/s)")
+                    if messageSeconds.embed > 0 {
+                        let seconds = messageSeconds
+                        indexLog.info("Messages time: read \(seconds.read, format: .fixed(precision: 2), privacy: .public)s, embed \(seconds.embed, format: .fixed(precision: 2), privacy: .public)s, write \(seconds.write, format: .fixed(precision: 2), privacy: .public)s")
+                    }
                 }
             }
         }
@@ -337,20 +343,32 @@ public actor Indexer {
     private func indexMessageTexts(_ items: [Item]) async throws {
         let revision = settingsRevision
         guard settings.messages else { return }
+        let readStarted = Date()
         var prepared: [(item: Item, text: String)] = []
+        let texts = try? messagesReader.texts(for: items, handles: messageHandles)
         for item in items {
-            let extraction = await messagesReader.extraction(for: item, handles: messageHandles)
+            let text: String?
+            if let texts { text = texts[item.id] }
+            else {
+                // A transient batch read failure shouldn't fail every message together.
+                text = await messagesReader.extraction(for: item, handles: messageHandles)?.texts.first?.text
+            }
             guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
-            if let text = extraction?.texts.first?.text { prepared.append((item, text)) }
+            if let text { prepared.append((item, text)) }
             else { try store.markFailed(itemID: item.id) }
         }
+        messageSeconds.read += Date().timeIntervalSince(readStarted)
         guard !prepared.isEmpty else { return }
+        let embedStarted = Date()
         let embedded = try await embedder.embed(documents: prepared.map { EmbeddingDocument(title: $0.item.title, text: $0.text) })
+        messageSeconds.embed += Date().timeIntervalSince(embedStarted)
         guard revision == settingsRevision else { return }
+        let writeStarted = Date()
         for (entry, vector) in zip(prepared, embedded) {
             guard try store.item(path: entry.item.path)?.id == entry.item.id else { continue }
             try commit(entry.item, units: [(Unit(kind: .text, locator: .whole, text: entry.text), vector)])
         }
+        messageSeconds.write += Date().timeIntervalSince(writeStarted)
     }
 
     private func commit(_ item: Item, units: [(unit: Unit, vector: [Float])]) throws {

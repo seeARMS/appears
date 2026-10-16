@@ -161,22 +161,30 @@ public struct ChatDatabase: Sendable {
     /// chat, plus the message itself, oldest first.
     public func thread(around message: Message, before: Int, after: Int) throws -> [Message] {
         try read { db in
-            let date = AppleDate.chatDBValue(from: message.date)
-            // Seek into Messages' (chat_id, message_date, message_id) index. An OR
-            // between dates and ids makes SQLite read and sort the chat's history.
-            let earlier = try Self.fetchMessages(
-                db,
-                where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) < (?, ?)",
-                arguments: [message.chatID, date, message.rowID],
-                order: "cmj.message_date DESC, cmj.message_id DESC", limit: before
-            )
-            let later = try Self.fetchMessages(
-                db,
-                where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) >= (?, ?)",
-                arguments: [message.chatID, date, message.rowID],
-                order: "cmj.message_date ASC, cmj.message_id ASC", limit: after + 1
-            )
-            return earlier.reversed() + later
+            try Self.thread(db, around: message, before: before, after: after, schema: Schema(db))
+        }
+    }
+
+    /// A batch of anchors and their context, from one short read-only transaction. Reusing
+    /// the connection and schema avoids opening two connections for each indexed message.
+    public func messagesWithThreads(
+        rowIDs: [Int64], before: Int, after: Int
+    ) throws -> [Int64: (message: Message, thread: [Message])] {
+        guard !rowIDs.isEmpty else { return [:] }
+        return try read { db in
+            let schema = try Schema(db)
+            var result: [Int64: (message: Message, thread: [Message])] = [:]
+            for chunk in rowIDs.chunked(into: 500) {
+                let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                let anchors = try Self.fetchMessages(
+                    db, where: "m.ROWID IN (\(placeholders))", arguments: StatementArguments(chunk),
+                    order: "m.ROWID", limit: nil, schema: schema
+                )
+                for message in anchors {
+                    result[message.rowID] = (message, try Self.thread(db, around: message, before: before, after: after, schema: schema))
+                }
+            }
+            return result
         }
     }
 
@@ -220,6 +228,23 @@ public struct ChatDatabase: Sendable {
 
     // MARK: - Row mapping
 
+    private static func thread(_ db: Database, around message: Message, before: Int, after: Int, schema: Schema) throws -> [Message] {
+        let date = AppleDate.chatDBValue(from: message.date)
+        // Seek into Messages' (chat_id, message_date, message_id) index. An OR
+        // between dates and ids makes SQLite read and sort the chat's history.
+        let earlier = try fetchMessages(
+            db, where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) < (?, ?)",
+            arguments: [message.chatID, date, message.rowID],
+            order: "cmj.message_date DESC, cmj.message_id DESC", limit: before, schema: schema
+        )
+        let later = try fetchMessages(
+            db, where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) >= (?, ?)",
+            arguments: [message.chatID, date, message.rowID],
+            order: "cmj.message_date ASC, cmj.message_id ASC", limit: after + 1, schema: schema
+        )
+        return earlier.reversed() + later
+    }
+
     private static func handles(_ db: Database) throws -> [Int64: Handle] {
         var result: [Int64: Handle] = [:]
         for row in try Row.fetchAll(db, sql: "SELECT ROWID, id, service FROM handle") {
@@ -230,9 +255,9 @@ public struct ChatDatabase: Sendable {
     }
 
     private static func fetchMessages(
-        _ db: Database, where condition: String, arguments: StatementArguments, order: String, limit: Int?
+        _ db: Database, where condition: String, arguments: StatementArguments, order: String, limit: Int?, schema: Schema? = nil
     ) throws -> [Message] {
-        let schema = try Schema(db)
+        let schema = try schema ?? Schema(db)
         let m = { (column: String, fallback: String) in schema.column(column, in: "message", or: fallback, prefix: "m") }
         let sql = """
             SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.handle_id, m.is_from_me, m.date, m.service,
