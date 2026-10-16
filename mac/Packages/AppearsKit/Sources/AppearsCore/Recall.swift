@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public enum Trigger: String, Sendable, Codable {
     /// You asked: the hotkey or a click.
@@ -143,6 +144,9 @@ public struct RankingSettings: Sendable, Codable, Equatable {
     public var sameTitlePenalty = 0.5
     /// MMR: 1 is pure relevance, 0 pure variety.
     public var diversity = 0.7
+    /// When the window shows a picture and has words too, the picture's share of the blended
+    /// query vector. With no words, the picture is the whole query.
+    public var pictureWeight = 0.7
 
     public init() {}
 }
@@ -154,6 +158,7 @@ public struct Recall: Sendable {
     public let vectors: VectorIndex
     public let embedder: any Embedder
     public var settings = RankingSettings()
+    private let pictures = PictureCache()
 
     public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder) {
         self.store = store
@@ -164,13 +169,31 @@ public struct Recall: Sendable {
     public func run(_ request: RecallRequest, now: Date = Date()) async throws -> RecallResponse {
         let started = Date()
         let context = request.context
-        let query = QueryBuilder.build(context) { terms in
+        let picture = try await pictureVector(context)
+        // A picture's window title is usually just its file name, which says nothing.
+        var textContext = context
+        if picture != nil, let path = context.documentPath, Self.isFileName(context.windowTitle, of: path, app: context.appName) {
+            textContext.windowTitle = ""
+        }
+        let query = QueryBuilder.build(textContext) { terms in
             (try? store.documentFrequencies(terms)) ?? ([:], 0)
         }
-        guard query.dense.count >= 12 || !query.entities.isEmpty else {
+        let hasText = query.dense.count >= 12 || !query.entities.isEmpty
+        guard hasText || picture != nil else {
             return RecallResponse(suggestions: [], query: query.summary, milliseconds: 0)
         }
-        let queryVector = try await embedder.embed(queries: [query.dense])[0]
+        // One query vector: the words, the picture, or both blended. Text and image vectors share
+        // one space, so the picture finds other pictures of the same thing and text about it.
+        var queryVector: [Float]
+        if hasText {
+            queryVector = try await embedder.embed(queries: [query.dense])[0]
+            if let picture {
+                let w = Float(settings.pictureWeight)
+                queryVector = VectorMath.normalized(zip(queryVector, picture).map { (1 - w) * $0 + w * $1 })
+            }
+        } else {
+            queryVector = picture!
+        }
 
         // Candidates: three ranked lists, fused by rank.
         let textHits = vectors.search(queryVector, kind: .text, limit: 200)
@@ -365,6 +388,32 @@ public struct Recall: Sendable {
         )
     }
 
+    /// The vector of the picture the window shows: the one it was indexed with, or, for a
+    /// picture that isn't indexed (yet), one embedded now. Nil when the window shows no
+    /// picture, the embedder can't see images, or the file can't be read.
+    func pictureVector(_ context: ContextSnapshot) async throws -> [Float]? {
+        guard context.showsPicture, embedder.supportsImages, let path = context.documentPath else { return nil }
+        if let item = try store.item(path: path),
+           let unit = try store.units(itemID: item.id).first(where: { $0.unit.kind == .image }),
+           unit.vector.count == embedder.dimension {
+            return unit.vector
+        }
+        let url = URL(filePath: path)
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if let vector = pictures.vector(path: path, modified: modified) { return vector }
+        guard let image = Extractor.loadImage(url), Extractor.isWorthIndexing(image),
+              let vector = try await embedder.embed(images: [image]).first, vector.count == embedder.dimension else { return nil }
+        pictures.keep(vector, path: path, modified: modified)
+        return vector
+    }
+
+    /// Whether a window title is just the file's name ("IMG_2041.HEIC", "IMG_2041").
+    static func isFileName(_ title: String, of path: String, app: String) -> Bool {
+        let title = QueryBuilder.cleanTitle(title, app: app).lowercased()
+        let name = (path as NSString).lastPathComponent.lowercased()
+        return title.isEmpty || title == name || title == (name as NSString).deletingPathExtension
+    }
+
     static func words(_ text: String) -> Set<String> {
         Set(text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count >= 3 })
     }
@@ -401,6 +450,26 @@ public struct Recall: Sendable {
             return (start > flat.startIndex ? "…" : "") + flat[start..<end] + (end < flat.endIndex ? "…" : "")
         }
         return String(flat.prefix(160)) + "…"
+    }
+}
+
+/// The last picture embedded for a context that wasn't in the index, so staying on it
+/// doesn't run the vision model on every look. Memory only, one entry.
+final class PictureCache: Sendable {
+    private struct Entry {
+        let path: String
+        let modified: Date?
+        let vector: [Float]
+    }
+
+    private let entry = Mutex<Entry?>(nil)
+
+    func vector(path: String, modified: Date?) -> [Float]? {
+        entry.withLock { $0?.path == path && $0?.modified == modified ? $0?.vector : nil }
+    }
+
+    func keep(_ vector: [Float], path: String, modified: Date?) {
+        entry.withLock { $0 = Entry(path: path, modified: modified, vector: vector) }
     }
 }
 

@@ -2,6 +2,8 @@
   "about": "Days since each demo file was last touched. The eval sets modification dates from this.",
   "ages": {
     "Desktop/IMG_2031.jpg": 470,
+    "Desktop/IMG_2041.HEIC": 0.2,
+    "Desktop/IMG_2077.HEIC": 0.3,
     "Desktop/Screenshot 2023-05-11 at 9.12.44 AM.png": 885,
     "Desktop/Screenshot 2024-01-10 at 10.10.00 AM.png": 795.9583217865911,
     "Desktop/Screenshot 2024-01-19 at 10.19.00 AM.png": 781.9806308157221,
@@ -23,6 +25,7 @@
     "Documents/House/Kitchen/IMG_4471.jpg": 520,
     "Documents/House/Kitchen/email-draft-to-dana.txt": 0.5,
     "Documents/House/Kitchen/permit-BLD-2024-0457.pdf": 505,
+    "Documents/House/Plant care.md": 410,
     "Documents/Personal/Journal/book-club-notes-1.md": 1226.6054069380332,
     "Documents/Personal/Journal/book-club-notes-2.md": 806.8920733235266,
     "Documents/Personal/Journal/book-club-notes-3.md": 159.99640038122575,
@@ -142,6 +145,7 @@
     "Downloads/receipt-115.pdf": 298.0863605760387,
     "Downloads/receipt-116.pdf": 230.89602345854928,
     "Downloads/receipt-117.pdf": 338.9379604792375,
-    "Downloads/receipt-118.pdf": 248.42063806802284
+    "Downloads/receipt-118.pdf": 248.42063806802284,
+    "Pictures/2024/IMG_0412.HEIC": 730
   }
 }

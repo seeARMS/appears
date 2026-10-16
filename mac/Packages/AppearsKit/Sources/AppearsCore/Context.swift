@@ -49,6 +49,12 @@ public struct ContextSnapshot: Sendable, Codable, Equatable {
         ContextSnapshot(appName: app, windowTitle: title, visibleText: text, origin: .text)
     }
 
+    /// The window shows a picture (a photo open in Preview): what's in it is the context,
+    /// even with no words on screen. The engine matches the picture itself (`Recall`).
+    public var showsPicture: Bool {
+        documentPath.map { FileScanner.kind(forExtension: ($0 as NSString).pathExtension) == .image } ?? false
+    }
+
     /// All the words, for deciding whether there's enough to go on.
     public var characterCount: Int {
         selection.count + focusedText.count + visibleText.count + windowTitle.count
