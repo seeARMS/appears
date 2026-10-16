@@ -23,7 +23,10 @@ final class StatusController: NSObject, NSMenuItemValidation {
         self.model = model
         panel = ResultsPanel()
         super.init()
-        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }))
+        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, resize: { [weak self] size in
+            guard let self, self.panel.isVisible else { return }
+            self.position(contentSize: size)
+        }))
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         if let button = item.button {
             button.image = GlyphImage.image(for: model.glyph)
@@ -107,10 +110,10 @@ final class StatusController: NSObject, NSMenuItemValidation {
         model.panelClosed()
     }
 
-    private func position() {
+    private func position(contentSize: CGSize? = nil) {
         guard let button = item.button, let window = button.window else { return }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-        let size = panel.contentView?.fittingSize ?? NSSize(width: 400, height: 200)
+        let size = contentSize ?? panel.contentView?.fittingSize ?? NSSize(width: 400, height: 200)
         panel.setContentSize(NSSize(width: 400, height: max(size.height, 120)))
         let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         var x = anchor.midX - 400 + 28

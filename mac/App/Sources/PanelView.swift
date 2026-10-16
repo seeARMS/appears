@@ -4,11 +4,12 @@ import PDFKit
 import QuickLookThumbnailing
 import SwiftUI
 
-/// The panel that hangs from the menu bar ring: a header, up to three results as a ⌘K-style
-/// list, and keyboard hints. shadcn's popover and command-list language (Theme.swift).
+/// The panel that hangs from the menu bar ring: a header, up to ten results in a bounded
+/// scrolling list, and fixed keyboard hints. shadcn's command-list language (Theme.swift).
 struct PanelView: View {
     @Bindable var model: AppModel
     let close: () -> Void
+    var resize: (CGSize) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,6 +23,7 @@ struct PanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGSize.self, of: { $0.size }, action: resize)
     }
 
     // MARK: - Header
@@ -101,23 +103,16 @@ struct PanelView: View {
             Message(title: "Couldn't look", text: error, action: nil)
         } else if let shown = model.shown {
             if shown.suggestions.isEmpty, !model.isPulling {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(emptyText)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.mutedForeground)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 14)
-                    if !shown.weaker.isEmpty { weaker(shown) }
-                }
-                .padding(4)
+                Text(emptyText)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.mutedForeground)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 18)
+            } else if shown.suggestions.isEmpty {
+                Color.clear.frame(height: 40)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(shown.suggestions.enumerated()), id: \.element.id) { index, suggestion in
-                        ResultRow(suggestion: suggestion, selected: model.selectedIndex == index, model: model, close: close)
-                    }
-                    if !shown.weaker.isEmpty { weaker(shown) }
-                }
-                .padding(6)
+                RelatedResultsList(model: model, suggestions: shown.suggestions, close: close)
+                    .id(shown.at)
             }
         }
     }
@@ -126,31 +121,10 @@ struct PanelView: View {
         if let status = model.status, status.counts.indexedTotal == 0 {
             return "Still reading your files. Try again in a little while."
         }
-        return "Nothing you've forgotten about this."
-    }
-
-    @ViewBuilder
-    private func weaker(_ shown: AppModel.Shown) -> some View {
-        Button {
-            model.showWeaker.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Text("\(shown.weaker.count) less likely")
-                Image(systemName: model.showWeaker ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-            .font(.system(size: 11.5))
-            .foregroundStyle(Theme.mutedForeground)
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
-            .padding(.bottom, 4)
-            .contentShape(Rectangle())
+        if let progress = model.status?.progress, progress.phase == .scanning || progress.phase == .indexing {
+            return "No close matches yet. Still reading your files."
         }
-        .buttonStyle(.plain)
-        if model.showWeaker {
-            ForEach(Array(shown.weaker.enumerated()), id: \.element.id) { index, suggestion in
-                ResultRow(suggestion: suggestion, selected: model.selectedIndex == shown.suggestions.count + index, model: model, close: close)
-            }
-        }
+        return "No close matches for this window."
     }
 
     // MARK: - Footer
@@ -163,7 +137,7 @@ struct PanelView: View {
     }
 
     private var hasRows: Bool {
-        model.shown?.suggestions.isEmpty == false || (model.showWeaker && model.shown?.weaker.isEmpty == false)
+        model.shown?.suggestions.isEmpty == false
     }
 
     private var footer: some View {
@@ -200,6 +174,38 @@ struct PanelView: View {
     }
 }
 
+/// Eagerly lay out at most ten rows so short lists keep their natural height. Longer lists
+/// show roughly five rows; keyboard movement scrolls just enough to reveal the selection.
+private struct RelatedResultsList: View {
+    @Bindable var model: AppModel
+    let suggestions: [Suggestion]
+    let close: () -> Void
+    @State private var contentHeight: CGFloat?
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                        ResultRow(suggestion: suggestion, selected: model.selectedIndex == index, model: model, close: close)
+                            .id(suggestion.id)
+                    }
+                }
+                .padding(6)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+            }
+            .scrollIndicators(.visible)
+            .frame(height: min(contentHeight ?? CGFloat(suggestions.count) * 96 + 12, 480))
+            .onAppear {
+                if let selected = model.selected { proxy.scrollTo(selected.id) }
+            }
+            .onChange(of: model.selected?.id) { _, id in
+                if let id { proxy.scrollTo(id) }
+            }
+        }
+    }
+}
+
 private struct Message: View {
     let title: String
     let text: String
@@ -225,6 +231,7 @@ struct ResultRow: View {
     let selected: Bool
     let model: AppModel
     let close: () -> Void
+    private let evidence: SuggestionEvidence
     @State private var thumbnail: NSImage?
     @State private var hovering = false
 
@@ -233,6 +240,7 @@ struct ResultRow: View {
         self.selected = selected
         self.model = model
         self.close = close
+        evidence = SuggestionEvidence(suggestion, terms: model.shown?.evidenceTerms ?? [])
         _thumbnail = State(initialValue: Thumbnails.cache[suggestion.item.id])
     }
 
@@ -240,28 +248,38 @@ struct ResultRow: View {
         HStack(alignment: .top, spacing: 12) {
             preview
             VStack(alignment: .leading, spacing: 3) {
-                Text(suggestion.item.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.foreground)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                reasonText
-                    .font(.system(size: 12))
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(suggestion.item.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.foreground)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    ConfidenceRing(confidence: suggestion.confidence)
+                }
+                if !evidence.segments.isEmpty {
+                    evidenceText
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.foreground)
+                        .lineSpacing(1.5)
+                        .lineLimit(3)
+                }
                 if selected, let line = suggestion.line {
                     QuotedLine(line: line).padding(.top, 5)
-                } else if selected, showsSnippet {
-                    Text(suggestion.snippet)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.mutedForeground.opacity(0.85))
-                        .lineSpacing(1.5)
-                        .lineLimit(2)
-                        .padding(.top, 3)
                 }
+                HStack(spacing: 4) {
+                    if !evidence.metadata.isEmpty {
+                        Text(evidence.metadata)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.mutedForeground)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    trailing
+                }
+                .frame(height: 22)
             }
             .frame(minHeight: 36, alignment: .center)
-            Spacer(minLength: 0)
-            trailing
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
@@ -286,22 +304,17 @@ struct ResultRow: View {
         .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
     }
 
-    /// A picture's text is whatever OCR made of it, which reads as noise; its thumbnail says
-    /// more. Other kinds show the passage that matched.
-    private var showsSnippet: Bool {
-        !suggestion.snippet.isEmpty && suggestion.item.kind != .image
-    }
-
-    /// The why ("Mentions Dana Ruiz") in the foreground colour; when and where muted.
-    private var reasonText: Text {
-        var parts = suggestion.reason.components(separatedBy: " · ")
-        if suggestion.item.source == .notes { parts.insert("Notes", at: min(1, parts.count)) }
-        if suggestion.item.source == .messages { parts.insert("Messages", at: min(1, parts.count)) }
-        let first = parts.first ?? ""
-        let generic = first == "Related" || first == "Looks related"
-        let why = Text(first).foregroundStyle(generic ? Theme.mutedForeground : Theme.foreground)
-        guard parts.count > 1 else { return why }
-        return Text("\(why)\(Text(" · " + parts.dropFirst().joined(separator: " · ")).foregroundStyle(Theme.mutedForeground))")
+    /// Quote the retrieved source, with matching terms emphasized. A specific name match
+    /// remains useful when there is no clean passage; visual-only matches use the thumbnail.
+    private var evidenceText: Text {
+        var content = AttributedString(evidence.isQuotation ? "“" : "")
+        for segment in evidence.segments {
+            var run = AttributedString(segment.text)
+            run.font = .system(size: 12, weight: segment.emphasized ? .semibold : .regular)
+            content += run
+        }
+        if evidence.isQuotation { content += AttributedString("”") }
+        return Text(content)
     }
 
     @ViewBuilder
@@ -341,7 +354,6 @@ struct ResultRow: View {
                 .frame(width: 22, height: 22)
                 .foregroundStyle(Theme.mutedForeground)
             }
-            .frame(minHeight: 36)
         }
     }
 
@@ -350,6 +362,7 @@ struct ResultRow: View {
             RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).fill(Theme.muted)
             if let thumbnail {
                 Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 36, height: 36, alignment: suggestion.item.kind == .pdf ? .top : .center)
             } else {
                 Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Theme.mutedForeground)
             }

@@ -35,8 +35,8 @@ final class AppModel {
         var windowTitle: String
         var fingerprint: String
         var suggestions: [Suggestion]
-        /// Suggestions below the bar, shown only on request (pull).
-        var weaker: [Suggestion]
+        /// Matching names and terms, used only in memory to emphasize source excerpts.
+        var evidenceTerms: [String] = []
         var interacted = false
         var at = Date()
         /// Set when this is for an upcoming meeting rather than a window. In memory only.
@@ -52,7 +52,6 @@ final class AppModel {
     private(set) var isPulling = false
     /// The highlighted card, for the keyboard.
     var selectedIndex = 0
-    var showWeaker = false
     private(set) var pullError: String?
     private(set) var accessibilityTrusted = ContextReader.isTrusted
     /// Why the last context wasn't used, for the panel's footer ("password field").
@@ -68,7 +67,20 @@ final class AppModel {
     /// Called when the panel should open or update (the status item owns the panel).
     @ObservationIgnored var onShow: ((_ makeKey: Bool) -> Void)?
 
-    static let strongConfidence = 0.15
+    static let contextResultLimit = 10
+    /// Keep the ambient discovery gate on the same first three candidates. A longer list
+    /// must not make the menu bar dot appear for a context that used to stay quiet.
+    private static let ambientCandidateLimit = 3
+
+    /// Broaden the panel only after the original ambient candidates clear the policy.
+    /// Keep those confident matches first, followed by the other ranked candidates.
+    static func ambientPanelSuggestions(_ candidates: [Suggestion], isConfident: (Double) -> Bool) -> [Suggestion] {
+        let confident = candidates.prefix(ambientCandidateLimit).filter { isConfident($0.confidence) }
+        guard !confident.isEmpty else { return [] }
+        let confidentIDs = Set(confident.map(\.id))
+        let remaining = candidates.filter { !confidentIDs.contains($0.id) }
+        return Array((confident + remaining).prefix(contextResultLimit))
+    }
 
     /// `-demo <folder>`: index that folder (demo/files) instead of your home folder, in a
     /// separate index. For trying Appears and for screenshots.
@@ -224,19 +236,19 @@ final class AppModel {
         let dwell = Date().timeIntervalSince(topicSince)
         guard policy.mayLook(dwell: dwell, fingerprint: fingerprint) == .show else { return }
         ambientLookups.didStart()
-        guard let response = try? await engine.related(RecallRequest(context: captured.snapshot, trigger: .ambient, limit: 3)) else { return }
+        guard let response = try? await engine.related(RecallRequest(context: captured.snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         // The context may have moved on while the engine worked.
         guard !Task.isCancelled, !settings.isPaused, settings.ambientMode != .off,
               let current = reader.capture(includeBrowserURL: true),
               current.snapshot.fingerprint(salt: settings.salt) == fingerprint else { return }
         ambientLookups.didFinish(fingerprint: fingerprint)
-        let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
-        guard !confident.isEmpty else { return }
+        let suggestions = Self.ambientPanelSuggestions(response.suggestions, isConfident: policy.isConfident)
+        guard !suggestions.isEmpty else { return }
 
         let mode: JournalEntry.Mode = settings.ambientMode == .on ? .ambient : .shadow
         var entry = Shown(
             mode: mode, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
-            fingerprint: fingerprint, suggestions: confident, weaker: []
+            fingerprint: fingerprint, suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: response.query.entities + response.query.rareTerms
         )
         entry.entryID = await engine.log(journalEntry(entry, dwell: dwell, context: captured.snapshot))
         guard !Task.isCancelled else { return }
@@ -264,15 +276,15 @@ final class AppModel {
             if case .wait(let reason) = decision { Self.log.info("Meeting coming up; not looking (\(reason, privacy: .public))") }
             return
         }
-        guard let response = try? await engine.related(RecallRequest(context: snapshot, trigger: .ambient, limit: 3)) else { return }
-        let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
-        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
-        guard !confident.isEmpty, event.start > Date() else { return }
+        guard let response = try? await engine.related(RecallRequest(context: snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
+        let suggestions = Self.ambientPanelSuggestions(response.suggestions, isConfident: policy.isConfident)
+        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public)")
+        guard !suggestions.isEmpty, event.start > Date() else { return }
 
         let mode: JournalEntry.Mode = settings.ambientMode == .on ? .ambient : .shadow
         var entry = Shown(
             mode: mode, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: event.title,
-            fingerprint: fingerprint, suggestions: confident, weaker: [], meeting: event
+            fingerprint: fingerprint, suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: response.query.entities + response.query.rareTerms, meeting: event
         )
         entry.entryID = await engine.log(journalEntry(entry, dwell: 0, context: snapshot))
         policy.didSurface(fingerprint: fingerprint)
@@ -359,9 +371,8 @@ final class AppModel {
         }
         isPulling = true
         selectedIndex = 0
-        showWeaker = false
         shown = Shown(mode: .pull, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
-                      fingerprint: "", suggestions: [], weaker: [])
+                      fingerprint: "", suggestions: [])
         onShow?(true)
         defer { isPulling = false }
         // Apps that draw their own text (Google Docs, some Electron apps) need OCR.
@@ -372,11 +383,10 @@ final class AppModel {
         }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
         do {
-            let response = try await engine.related(RecallRequest(context: captured.snapshot, trigger: .pull, limit: 6))
-            let strong = response.suggestions.filter { $0.confidence >= Self.strongConfidence }.prefix(3)
-            let weaker = response.suggestions.filter { !strong.contains($0) }.prefix(3)
+            let response = try await engine.related(RecallRequest(context: captured.snapshot, trigger: .pull, limit: Self.contextResultLimit))
             var entry = Shown(mode: .pull, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
-                              fingerprint: fingerprint, suggestions: Array(strong), weaker: Array(weaker))
+                              fingerprint: fingerprint, suggestions: Array(response.suggestions.prefix(Self.contextResultLimit)),
+                              evidenceTerms: response.query.entities + response.query.rareTerms)
             shown = entry
             entry.entryID = await engine.log(journalEntry(entry, dwell: Date().timeIntervalSince(topicSince), context: captured.snapshot))
             if shown?.fingerprint == fingerprint { shown?.entryID = entry.entryID }
@@ -410,7 +420,7 @@ final class AppModel {
 
     func act(_ outcome: Outcome, on suggestion: Suggestion) {
         guard var current = shown else { return }
-        let position = (current.suggestions + current.weaker).firstIndex(of: suggestion) ?? 0
+        let position = current.suggestions.firstIndex(of: suggestion) ?? 0
         current.interacted = true
         shown = current
         record(outcome, for: current, item: suggestion, position: position)
@@ -421,7 +431,7 @@ final class AppModel {
             if let url = suggestion.item.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         case .dismissed, .blocked:
             shown?.suggestions.removeAll { $0 == suggestion }
-            shown?.weaker.removeAll { $0 == suggestion }
+            selectedIndex = min(selectedIndex, max(visibleSuggestions.count - 1, 0))
         case .muted:
             let bundle = current.bundleID
             if bundle == CalendarEvent.bundleID {
@@ -431,7 +441,6 @@ final class AppModel {
                 settings.excludedApps.append(bundle)
             }
             shown?.suggestions.removeAll()
-            shown?.weaker.removeAll()
         default:
             break
         }
@@ -439,8 +448,7 @@ final class AppModel {
 
     /// The visible cards in keyboard order.
     var visibleSuggestions: [Suggestion] {
-        guard let shown else { return [] }
-        return shown.suggestions + (showWeaker || shown.suggestions.isEmpty ? shown.weaker : [])
+        shown?.suggestions ?? []
     }
 
     var selected: Suggestion? {
@@ -469,7 +477,7 @@ final class AppModel {
         #endif
         return JournalEntry(
             mode: shown.mode, bundleID: context.bundleID, fingerprint: shown.fingerprint, dwellSeconds: dwell,
-            suggestions: (shown.suggestions + shown.weaker).map(JournalEntry.Shown.init), debugContext: debug
+            suggestions: shown.suggestions.map(JournalEntry.Shown.init), debugContext: debug
         )
     }
 
@@ -478,7 +486,7 @@ final class AppModel {
     func sourcesChanged() {
         if !settings.sources.messages {
             shown?.suggestions.removeAll { $0.item.source == .messages }
-            shown?.weaker.removeAll { $0.item.source == .messages }
+            selectedIndex = min(selectedIndex, max(visibleSuggestions.count - 1, 0))
         }
         Task { await engine.send(.settings, engineSources) }
     }
@@ -494,13 +502,12 @@ final class AppModel {
         let context = ContextSnapshot(appName: "Mail", bundleID: "com.apple.mail", windowTitle: "Scripted", focusedText: text, origin: .text)
         isPulling = true
         selectedIndex = 0
-        shown = Shown(mode: .pull, appName: "Mail", windowTitle: "Scripted", fingerprint: "", suggestions: [], weaker: [])
+        shown = Shown(mode: .pull, appName: "Mail", windowTitle: "Scripted", fingerprint: "", suggestions: [])
         onShow?(true)
-        let response = try? await engine.related(RecallRequest(context: context, trigger: .pull, limit: 6))
+        let response = try? await engine.related(RecallRequest(context: context, trigger: .pull, limit: Self.contextResultLimit))
         let suggestions = response?.suggestions ?? []
-        let strong = suggestions.filter { $0.confidence >= Self.strongConfidence }.prefix(3)
         shown = Shown(mode: .pull, appName: "Mail", windowTitle: "Scripted", fingerprint: context.fingerprint(salt: settings.salt),
-                      suggestions: Array(strong), weaker: Array(suggestions.filter { !strong.contains($0) }.prefix(3)))
+                      suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: (response?.query.entities ?? []) + (response?.query.rareTerms ?? []))
         isPulling = false
         onShow?(true)
         NSLog("Appears scripted ask: %@", (shown?.suggestions ?? []).map { "\($0.item.title) (\(String(format: "%.2f", $0.confidence)))" }.joined(separator: ", "))
@@ -522,6 +529,7 @@ final class AppModel {
     /// For the snapshot tool: show these suggestions without the engine.
     func showForSnapshot(_ shown: Shown?, status: EngineStatus?, trusted: Bool = true) {
         self.shown = shown
+        selectedIndex = 0
         self.status = status
         modelDownload = ModelDownloadStatus(phase: .ready)
         accessibilityTrusted = trusted
