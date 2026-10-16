@@ -17,6 +17,16 @@ def checksum(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def find_checkouts(build_dir):
+    # Archive products sit deeper in DerivedData than regular build products.
+    build_dir = build_dir.resolve()
+    for ancestor in (build_dir, *build_dir.parents):
+        checkouts = ancestor / "SourcePackages/checkouts"
+        if checkouts.is_dir():
+            return checkouts
+    raise FileNotFoundError(f"No SourcePackages/checkouts found above {build_dir}")
+
+
 def verify(folder):
     manifest = json.loads((folder / "manifest.json").read_text())
     if not manifest.get("files") or not manifest.get("dependencies"):
@@ -74,6 +84,7 @@ def bundle(checkouts, resolved, output, sparkle=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkouts", type=Path)
+    parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--resolved", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--sparkle", type=Path)
@@ -82,8 +93,10 @@ def main():
     if args.verify:
         verify(args.verify)
     else:
+        if args.checkouts is None and args.build_dir is not None:
+            args.checkouts = find_checkouts(args.build_dir)
         if not all((args.checkouts, args.resolved, args.output)):
-            parser.error("--checkouts, --resolved and --output are required")
+            parser.error("--resolved, --output and either --checkouts or --build-dir are required")
         bundle(args.checkouts, args.resolved, args.output, args.sparkle)
 
 

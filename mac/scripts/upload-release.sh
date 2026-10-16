@@ -28,7 +28,10 @@ fi
 aws_r2 s3 cp Appears.dmg "s3://$R2_BUCKET/$KEY" --only-show-errors \
   --content-type application/x-apple-diskimage --content-disposition 'attachment; filename="Appears.dmg"' \
   --cache-control 'public, max-age=31536000, immutable' --metadata "version=$VERSION,sha256=$SHA"
-REMOTE_SHA=$(aws_r2 s3 cp "s3://$R2_BUCKET/$KEY" - --only-show-errors | shasum -a 256 | cut -d' ' -f1)
+REMOTE_COPY=$(mktemp "$OUT/.appears-verify.XXXXXX")
+trap 'rm -f "$REMOTE_COPY"' EXIT
+aws_r2 s3api get-object --bucket "$R2_BUCKET" --key "$KEY" "$REMOTE_COPY" >/dev/null
+REMOTE_SHA=$(shasum -a 256 "$REMOTE_COPY" | cut -d' ' -f1)
 [[ "$REMOTE_SHA" == "$SHA" ]] || { echo "R2 checksum mismatch; latest download was not changed." >&2; exit 1; }
 aws_r2 s3 cp Appears.dmg.sha256 "s3://$R2_BUCKET/$KEY.sha256" --only-show-errors \
   --content-type text/plain --cache-control 'public, max-age=31536000, immutable'

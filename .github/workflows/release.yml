@@ -87,7 +87,7 @@ jobs:
 
       - name: Install build tools
         run: |
-          brew install xcodegen uv
+          brew install xcodegen uv awscli
           xcodebuild -version
           xcodebuild -downloadComponent MetalToolchain
 

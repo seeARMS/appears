@@ -24,6 +24,18 @@ model = load("prepare_model")
 
 
 class PackagingTests(unittest.TestCase):
+    def test_dependency_checkouts_resolve_for_builds_and_archives(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            checkouts = root / "DerivedData/SourcePackages/checkouts"
+            checkouts.mkdir(parents=True)
+            for relative in ["Build/Products", "Build/Intermediates.noindex/ArchiveIntermediates/Appears/BuildProductsPath"]:
+                build = root / "DerivedData" / relative
+                build.mkdir(parents=True)
+                self.assertEqual(licenses.find_checkouts(build), checkouts)
+            with self.assertRaises(FileNotFoundError):
+                licenses.find_checkouts(root / "without-packages/Build/Products")
+
     def test_exact_dependency_notices_and_tamper_detection(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
