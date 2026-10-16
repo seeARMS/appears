@@ -1,5 +1,6 @@
 import CoreServices
 import Foundation
+import Synchronization
 
 /// What the engine reports to the app.
 public struct EngineStatus: Sendable, Codable, Equatable {
@@ -55,7 +56,7 @@ public struct FeedbackEvent: Sendable, Codable {
 
 /// The methods the app calls on the engine. Payloads and replies are JSON.
 public enum EngineMethod: String, Sendable {
-    case status, related, search, settings, feedback, log, stats, touch, rescan, deleteIndex, deleteJournal
+    case status, related, search, cancelSearch, settings, feedback, log, stats, touch, rescan, deleteIndex, deleteJournal
 }
 
 /// The XPC interface. One generic call keeps the Objective-C surface tiny; the Swift types
@@ -74,8 +75,12 @@ public final class Engine: Sendable {
     public let journal: Journal
     public let recall: Recall
     private let state = EngineState()
+    private let searches = SearchCoordinator()
+    private let sources: Mutex<(settings: SourceSettings, revision: UInt64)>
 
     public init(folder: URL, embedder: any Embedder, settings: SourceSettings) throws {
+        let embedder = ScheduledEmbedder(embedder)
+        sources = Mutex((settings, 0))
         store = try IndexStore(url: folder.appending(path: "index.sqlite"))
         journal = try Journal(url: folder.appending(path: "journal.sqlite"))
         vectors = VectorIndex(dimension: embedder.dimension)
@@ -177,7 +182,7 @@ public final class Engine: Sendable {
         status.counts = (try? store.counts()) ?? IndexCounts()
         status.progress = await indexer.progress
         status.notesReadable = NotesReader.isReadable
-        let sources = await indexer.settings
+        let sources = self.sources.withLock { $0.settings }
         status.messagesReadable = sources.messages && sources.homeOverride == nil && MessagesReader().isReadable
         let home = FileScanner.realHome
         status.protectedFoldersReadable = (try? FileManager.default.contentsOfDirectory(atPath: home + "/Documents")) != nil
@@ -203,10 +208,37 @@ public final class Engine: Sendable {
             return try encoder.encode(try await recall.run(request))
         case .search:
             let request = try decoder.decode(SearchRequest.self, from: payload)
-            return try encoder.encode(try await Search(recall: recall).run(request, sources: await indexer.settings))
+            let trace = SearchTrace()
+            do {
+                let operation: @Sendable () async throws -> RecallResponse = { [self] in
+                    try await SearchTrace.$current.withValue(trace) {
+                        let configuration = sources.withLock { $0 }
+                        let response = try await Search(recall: recall).run(request, sources: configuration.settings)
+                        try Task.checkCancellation()
+                        // A settings update can remove a source while embedding is in flight.
+                        guard sources.withLock({ $0.revision }) == configuration.revision else { throw CancellationError() }
+                        return response
+                    }
+                }
+                var response: RecallResponse
+                if let token = request.token { response = try await searches.run(token, operation: operation) }
+                else { response = try await operation() }
+                response.timings = trace.finish(outcome: "completed")
+                return try encoder.encode(response)
+            } catch {
+                _ = trace.finish(outcome: error is CancellationError ? "cancelled" : "failed")
+                throw error
+            }
+        case .cancelSearch:
+            await searches.cancel(try decoder.decode(SearchToken.self, from: payload))
+            return Data("{}".utf8)
         case .settings:
             let settings = try decoder.decode(SourceSettings.self, from: payload)
-            let changed = await indexer.settings != settings
+            let changed = sources.withLock { value in
+                guard value.settings != settings else { return false }
+                value = (settings, value.revision + 1)
+                return true
+            }
             try await indexer.update(settings: settings)
             if changed {
                 await startWatching()

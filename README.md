@@ -229,6 +229,14 @@ log stream --level info --predicate 'subsystem == "rs.appea.appears"'
 
 Paths in the log are redacted.
 
+Typed search also reports preparation, model queue wait, model execution, vector matching, full-text matching, ranking, and total durations in the `search` log category. These entries contain only timings and whether the request completed, failed, or was cancelled; they never contain queries, source text, paths, or result identifiers. Search replies include the same timings in memory. To inspect them locally:
+
+```bash
+log stream --level info --predicate 'subsystem == "rs.appea.appears" AND category == "search"'
+```
+
+Search keeps its 180 ms typing debounce. A new query cancels the previous request through XPC and replaces queued model work. The shared model finishes its current forward safely, then serves waiting queries ahead of indexing batches and individual images. Filesystem walks run separately from the indexing actor, repeated rescans share one active walk and one pending follow-up, and source-setting changes invalidate older scans and searches. Results arrive after semantic matching completes.
+
 </details>
 
 ### Try it on made-up data
@@ -292,7 +300,7 @@ The confidence weights were fitted to these same scenarios, so treat the eval as
 - `appears related "<text>"` and `appears index [--root DIR]` work on the CLI's own index in `~/Library/Application Support/rs.appea.appears.cli` (or `--data DIR`). `--no-messages` skips conversations.
 - `appears stats --data <engine data folder>` prints the journal's numbers.
 - `appears-context` prints what Accessibility reads from the front window every 3 seconds, for checking coverage app by app.
-- `appears-snapshots` (run from the repo root) renders the panel, search and onboarding, light and dark, to `mac/build/snapshots`.
+- `appears-snapshots` (run from the repo root) renders the panel, search and onboarding, light and dark, to `mac/build/snapshots`. Its controlled search backend checks debounce, replacement before an old reply, stale replies, clear/reopen, selection and source changes. An anonymous XPC fixture also checks cancellation messages and reply races without starting the installed engine or reading user files.
 
 </details>
 

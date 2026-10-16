@@ -100,6 +100,7 @@ public struct RecallResponse: Sendable, Codable {
     public var suggestions: [Suggestion]
     public var query: Query.Summary
     public var milliseconds: Double
+    public var timings: SearchTimings? = nil
 
     /// The best suggestion's confidence, or 0.
     public var confidence: Double { suggestions.first?.confidence ?? 0 }
@@ -167,7 +168,9 @@ public struct Recall: Sendable {
     }
 
     public func run(_ request: RecallRequest, now: Date = Date(), groupMessageConversations: Bool = false) async throws -> RecallResponse {
+        try Task.checkCancellation()
         let started = Date()
+        let prepared = ContinuousClock.now
         let context = request.context
         let picture = try await pictureVector(context)
         // A picture's window title is usually just its file name, which says nothing.
@@ -178,6 +181,8 @@ public struct Recall: Sendable {
         let query = QueryBuilder.build(textContext) { terms in
             (try? store.documentFrequencies(terms)) ?? ([:], 0)
         }
+        SearchTrace.current?.record(.preparation, since: prepared)
+        try Task.checkCancellation()
         let hasText = query.dense.count >= 12 || !query.entities.isEmpty
         guard hasText || picture != nil else {
             return RecallResponse(suggestions: [], query: query.summary, milliseconds: 0)
@@ -194,11 +199,21 @@ public struct Recall: Sendable {
         } else {
             queryVector = picture!
         }
+        try Task.checkCancellation()
 
         // Candidates: three ranked lists, fused by rank.
+        let vectorStarted = ContinuousClock.now
         let textHits = vectors.search(queryVector, kind: .text, limit: 200)
+        try Task.checkCancellation()
         let imageHits = vectors.search(queryVector, kind: .image, limit: 60)
+        SearchTrace.current?.record(.vector, since: vectorStarted)
+        try Task.checkCancellation()
+        let fullTextStarted = ContinuousClock.now
         let fullTextHits = (try? store.fullText(query.fullText, limit: 100)) ?? []
+        SearchTrace.current?.record(.fullText, since: fullTextStarted)
+        try Task.checkCancellation()
+        let rankingStarted = ContinuousClock.now
+        defer { SearchTrace.current?.record(.ranking, since: rankingStarted) }
 
         var fused: [Int64: Double] = [:]
         var cosine: [Int64: Double] = [:]
@@ -262,6 +277,7 @@ public struct Recall: Sendable {
             if draft.dense.count >= 12, draft.dense != query.dense {
                 messageQuery = draft
                 let vector = try await embedder.embed(queries: [draft.dense])[0]
+                try Task.checkCancellation()
                 let text = vectors.search(vector, kind: .text, limit: 200)
                 let images = vectors.search(vector, kind: .image, limit: 60)
                 messageCosine = Dictionary(uniqueKeysWithValues: (text + images).map { ($0.id, Double($0.score)) })
@@ -396,6 +412,7 @@ public struct Recall: Sendable {
                 line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) }
             )
         }
+        try Task.checkCancellation()
         return RecallResponse(
             suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000
         )

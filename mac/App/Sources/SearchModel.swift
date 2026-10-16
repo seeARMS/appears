@@ -13,16 +13,17 @@ final class SearchModel {
     private(set) var error: String?
     var selectedIndex = 0
     var sourcePreview: Suggestion?
-    @ObservationIgnored private let search: (String) async throws -> RecallResponse
+    @ObservationIgnored private let search: (SearchRequest) async throws -> RecallResponse
     @ObservationIgnored private var worker: Task<Void, Never>?
-    @ObservationIgnored private var revision = 0
-    @ObservationIgnored private var deadline = Date.distantPast
+    @ObservationIgnored private var revision: UInt64 = 0
+    @ObservationIgnored private let session = UUID()
     @ObservationIgnored private var isOpen = false
 
-    init(app: AppModel, search: ((String) async throws -> RecallResponse)? = nil) {
+    init(app: AppModel, search: ((SearchRequest) async throws -> RecallResponse)? = nil) {
         self.app = app
         self.search = search ?? {
             await app.sourcesUpdate?.value
+            try Task.checkCancellation()
             return try await app.engine.search($0)
         }
     }
@@ -48,48 +49,43 @@ final class SearchModel {
 
     func refresh(clearResults: Bool = false) {
         revision += 1
+        worker?.cancel()
+        worker = nil
         error = nil
         sourcePreview = nil
         isSearching = isOpen && hasQuery && app.modelDownload.phase == .ready
         if clearResults || !isSearching { results = []; selectedIndex = 0 }
-        deadline = Date().addingTimeInterval(0.18)
-        guard isSearching, worker == nil else { return }
-        // One request at a time: typing while the model is busy replaces the pending query
-        // instead of queuing embeddings for every keystroke. Only the latest reply can show.
-        worker = Task { [weak self] in
+        guard isSearching else { return }
+        let version = revision
+        let request = SearchRequest(text: query, token: SearchToken(session: session, revision: version))
+        // Debounce the latest draft independently of a superseded XPC reply. The engine
+        // cancels obsolete work too, so replacing the task doesn't build a model queue.
+        worker = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            defer { self.worker = nil }
-            while self.isOpen && self.hasQuery && self.app.modelDownload.phase == .ready {
-                let version = self.revision
-                let wait = self.deadline.timeIntervalSinceNow
-                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
-                guard self.isOpen else { return }
-                if version != self.revision { continue }
-                let text = self.query
-                do {
-                    let response = try await self.search(text)
-                    guard self.isOpen else { return }
-                    if version != self.revision { continue }
-                    let selectedID = self.selected?.id
-                    self.results = response.suggestions.filter { self.app.mayShow($0.item) }
-                    self.selectedIndex = selectedID.flatMap { id in self.results.firstIndex { $0.id == id } } ?? 0
-                    self.isSearching = false
-                } catch {
-                    guard self.isOpen else { return }
-                    if version != self.revision { continue }
-                    self.results = []
-                    self.selectedIndex = 0
-                    // Keep the engine's actionable failure in memory only, just like the
-                    // query. Neither is written to logs or the suggestion journal.
-                    if self.app.modelDownload.phase == .ready,
-                       error.localizedDescription == ModelAssetError.missing.localizedDescription {
-                        self.error = "The model is downloaded, but the search engine can't read it. Reopen Appears and try again."
-                    } else {
-                        self.error = error.localizedDescription
-                    }
-                    self.isSearching = false
+            defer { if version == self.revision { self.worker = nil } }
+            do {
+                try await Task.sleep(for: .milliseconds(180))
+                try Task.checkCancellation()
+                let response = try await self.search(request)
+                guard !Task.isCancelled, self.isOpen, version == self.revision else { return }
+                let selectedID = self.selected?.id
+                self.results = response.suggestions.filter { self.app.mayShow($0.item) }
+                self.selectedIndex = selectedID.flatMap { id in self.results.firstIndex { $0.id == id } } ?? 0
+                self.isSearching = false
+            } catch {
+                guard !Task.isCancelled, self.isOpen, version == self.revision else { return }
+                if error is CancellationError { self.isSearching = false; return }
+                self.results = []
+                self.selectedIndex = 0
+                // Keep the engine's actionable failure in memory only, just like the
+                // query. Neither is written to logs or the suggestion journal.
+                if self.app.modelDownload.phase == .ready,
+                   error.localizedDescription == ModelAssetError.missing.localizedDescription {
+                    self.error = "The model is downloaded, but the search engine can't read it. Reopen Appears and try again."
+                } else {
+                    self.error = error.localizedDescription
                 }
-                return
+                self.isSearching = false
             }
         }
     }

@@ -4,10 +4,12 @@ import Foundation
 public struct SearchRequest: Sendable, Codable {
     public var text: String
     public var limit: Int
+    public var token: SearchToken?
 
-    public init(text: String, limit: Int = 20) {
+    public init(text: String, limit: Int = 20, token: SearchToken? = nil) {
         self.text = text
         self.limit = limit
+        self.token = token
     }
 }
 
@@ -20,6 +22,8 @@ public struct Search: Sendable {
     public init(recall: Recall) { self.recall = recall }
 
     public func run(_ request: SearchRequest, sources: SourceSettings, now: Date = Date()) async throws -> RecallResponse {
+        try Task.checkCancellation()
+        let prepared = ContinuousClock.now
         let text = String(request.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
         guard !text.isEmpty else {
             return RecallResponse(suggestions: [], query: .init(entities: [], rareTerms: [], denseCharacters: 0), milliseconds: 0)
@@ -28,6 +32,8 @@ public struct Search: Sendable {
         excluded += try recall.store.itemIDs(kinds: sources.excludedKinds)
         if !sources.notes { excluded += try recall.store.itemIDs(source: .notes) }
         if !sources.messages { excluded += try recall.store.itemIDs(source: .messages) }
+        SearchTrace.current?.record(.preparation, since: prepared)
+        try Task.checkCancellation()
         var recall = recall
         recall.settings.recentWeight = 1
         recall.settings.recentMessageWeight = 1

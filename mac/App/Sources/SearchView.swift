@@ -43,7 +43,7 @@ struct SearchView: View {
         .onChange(of: model.app.modelDownload.phase) { model.refresh() }
         .onChange(of: model.app.status?.ready) { model.refresh() }
         .onChange(of: model.app.status?.counts.indexedTotal) {
-            if model.results.isEmpty { model.refresh() }
+            if model.results.isEmpty && !model.isSearching { model.refresh() }
         }
         .onChange(of: model.app.settings.sources) { model.refresh(clearResults: true) }
     }
