@@ -20,9 +20,10 @@ public struct CapturedContext: Sendable {
 /// Nothing it reads is stored. It's handed to the engine in memory and dropped.
 @MainActor
 public final class ContextReader {
+    public enum Change { case context, textEdited, navigation }
     /// Called on the main thread whenever the frontmost app, window, focus, title, text or
     /// selection changes. Callers debounce.
-    public var onChange: (() -> Void)?
+    public var onChange: ((Change) -> Void)?
 
     private var observer: AXObserver?
     private var observedPID: pid_t = 0
@@ -42,12 +43,13 @@ public final class ContextReader {
     }
 
     public func start() {
+        guard activationToken == nil else { observeFrontmost(); return }
         activationToken = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.observeFrontmost()
-                self?.onChange?()
+                self?.onChange?(.navigation)
             }
         }
         observeFrontmost()
@@ -74,12 +76,16 @@ public final class ContextReader {
         let element = AXUIElementCreateApplication(pid)
         enableManualAccessibility(element, pid: pid)
         var created: AXObserver?
-        let callback: AXObserverCallback = { _, _, _, refcon in
+        let callback: AXObserverCallback = { _, element, notification, refcon in
             guard let refcon else { return }
             let reader = Unmanaged<ContextReader>.fromOpaque(refcon).takeUnretainedValue()
             MainActor.assumeIsolated {
+                let edited = notification as String == kAXValueChangedNotification &&
+                    reader.observedField.map { CFEqual(element, $0) } == true
+                let navigation = [kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification,
+                                  kAXFocusedUIElementChangedNotification].contains(notification as String)
                 reader.observeFocusedField()
-                reader.onChange?()
+                reader.onChange?(edited ? .textEdited : (navigation ? .navigation : .context))
             }
         }
         guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }

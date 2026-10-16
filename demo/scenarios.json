@@ -243,6 +243,15 @@
       "never": [
         "Desktop/IMG_2041.HEIC"
       ]
+    },
+    {
+      "name": "Short composed question before the reading dwell: rent payment",
+      "app": "Messages",
+      "title": "Jordan Vale",
+      "focused": "did you pay rent yet?",
+      "expect": [
+        "messages:demo-rent-payment"
+      ]
     }
   ],
   "negative": [
@@ -393,6 +402,12 @@
       "app": "Preview",
       "title": "IMG_2077.HEIC",
       "document": "Desktop/IMG_2077.HEIC"
+    },
+    {
+      "name": "Short composed question with nothing to recall",
+      "app": "Messages",
+      "title": "Jordan Vale",
+      "focused": "want to watch a movie?"
     }
   ]
 }

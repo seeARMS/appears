@@ -100,6 +100,17 @@ let weaker = [
     precondition(ambient.count == 10 && ambient.prefix(2).map(\.id) == [suggestions[0].id, suggestions[1].id])
     precondition(AppModel.ambientPanelSuggestions(weaker + extra + suggestions, isConfident: policy.isConfident).isEmpty,
                  "A strong result outside the first three must not trigger the ambient dot")
+    var deduplication = SurfacePolicy()
+    deduplication.didSurface(itemIDs: [suggestions[0].item.id], topic: "fixture")
+    let novel = AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident) {
+        deduplication.maySuggest(itemID: $0.item.id, topic: "fixture")
+    }
+    precondition(!novel.isEmpty && !novel.contains { $0.item.id == suggestions[0].item.id },
+                 "A different confident item can signal in the same conversation without repeating the first")
+    deduplication.didSurface(itemIDs: suggestions.map { $0.item.id }, topic: "fixture")
+    precondition(AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident) {
+        deduplication.maySuggest(itemID: $0.item.id, topic: "fixture")
+    }.isEmpty, "Previously shown leading candidates cannot be replaced by a confident tail result to bypass the gate")
     model.showForSnapshot(.init(mode: .pull, appName: "Mail", windowTitle: "Related files", fingerprint: "scroll",
                                 suggestions: ten, evidenceTerms: ["Dana", "Ruiz", "outlet", "cabinets"]), status: status)
     let host = NSHostingView(rootView: PanelView(model: model, close: {}).environment(\.colorScheme, .light))

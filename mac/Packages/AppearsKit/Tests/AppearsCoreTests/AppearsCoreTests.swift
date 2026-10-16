@@ -254,21 +254,49 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
 }
 
 @Suite struct PolicyTests {
-    @Test func waitsForDwellAndBacksOff() {
+    @Test func fixedGapHasNoHourlyCapOrFeedbackPenalty() {
         var policy = SurfacePolicy()
         let now = Date()
-        #expect(policy.mayLook(dwell: 5, fingerprint: "a", now: now) == .wait("dwell"))
-        #expect(policy.mayLook(dwell: 20, fingerprint: "a", now: now) == .show)
-        policy.didSurface(fingerprint: "a", at: now)
-        #expect(policy.mayLook(dwell: 20, fingerprint: "a", now: now) == .wait("already shown here"))
-        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(60)) == .wait("backoff"))
-        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(400)) == .show)
-        policy.record(.dismissed)
-        #expect(policy.mayLook(dwell: 20, fingerprint: "b", now: now.addingTimeInterval(400)) == .wait("backoff"))
+        #expect(policy.signalDelay(now: now) == 0)
+        for n in 0..<20 {
+            let time = now.addingTimeInterval(Double(n) * 60)
+            #expect(policy.signalDelay(now: time) == 0)
+            policy.didSurface(itemIDs: [Int64(n)], topic: "chat", at: time)
+            for outcome in Outcome.allCases { policy.record(outcome, itemID: Int64(n), topic: "chat") }
+            #expect(policy.signalDelay(now: time.addingTimeInterval(1)) == 59)
+            #expect(policy.signalDelay(now: time.addingTimeInterval(60)) == 0)
+        }
+    }
+
+    @Test func itemDeduplicationSurvivesEditsAndReturningToAConversation() {
+        var policy = SurfacePolicy()
+        policy.didSurface(itemIDs: [1, 2], topic: "chat-a")
+        #expect(!policy.maySuggest(itemID: 1, topic: "chat-a"))
+        #expect(policy.maySuggest(itemID: 3, topic: "chat-a"))
+        #expect(policy.maySuggest(itemID: 1, topic: "chat-b"))
+        policy.didSurface(itemIDs: [1], topic: "chat-b")
+        #expect(!policy.maySuggest(itemID: 2, topic: "chat-a"))
+        policy.record(.dismissed, itemID: 3, topic: "chat-a")
+        #expect(!policy.maySuggest(itemID: 3, topic: "chat-a"))
+        #expect(policy.isDismissed(itemID: 3, topic: "chat-a"))
+        #expect(!policy.isDismissed(itemID: 3, topic: "chat-b"))
+    }
+
+    @Test func searchCanFinishDuringTheSignalGapAndUseTheLatestDraft() {
+        let now = Date()
+        var policy = SurfacePolicy()
+        policy.didSurface(itemIDs: [1], topic: "chat", at: now)
+        var schedule = AmbientLookupSchedule()
+        schedule.didChange(textEdited: true, at: now.addingTimeInterval(5))
+        #expect(schedule.delay(fingerprint: "new draft", topic: "chat", requiredDwell: 5, now: now.addingTimeInterval(7)) == 0)
+        #expect(policy.signalDelay(now: now.addingTimeInterval(7)) == 53)
+        #expect(policy.maySuggest(itemID: 2, topic: "chat"))
+        #expect(policy.signalDelay(now: now.addingTimeInterval(60)) == 0)
     }
 
     @Test func sensitivityMovesThreshold() {
         var settings = SurfacePolicy.Settings()
+        #expect(abs(settings.threshold - 0.6) < 0.000_001)
         settings.sensitivity = 0
         let strict = settings.threshold
         settings.sensitivity = 1

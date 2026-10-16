@@ -237,7 +237,7 @@ export const FAQ = [
   {
     q: "How often will it suggest something?",
     a: [
-      "Rarely. Only when it's confident, a few times an hour at most, and less if you ignore it. The menu bar ring gets a dot; nothing pops up.",
+      "When it finds a confident match, after five seconds reading or a two-second pause after typing. New suggestions are at least one minute apart, and the same item won't repeat in that conversation. The menu bar ring gets a dot; nothing pops up.",
       "Press ⇧⌘Space to ask any time.",
     ],
   },

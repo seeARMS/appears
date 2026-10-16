@@ -10,18 +10,16 @@ public enum AmbientMode: String, Sendable, Codable, CaseIterable {
     case on
 }
 
-/// Decides when an ambient suggestion is allowed to change the menu bar glyph. Most of the
-/// time the answer is no: silence is the default, and every ignored or dismissed suggestion
-/// makes the next one wait longer.
+/// Controls signals, independently of lookups. An unnoticed dot or a dismissal never
+/// slows other suggestions; an item can signal only once in each document/conversation.
 public struct SurfacePolicy: Sendable {
     public struct Settings: Sendable, Codable, Equatable {
         /// Seconds in one context before Appears looks.
-        public var dwell: TimeInterval = 15
-        /// 0 (rarely) to 1 (more often). Maps to the confidence a suggestion needs.
-        public var sensitivity: Double = 0.5
-        public var perHour = 4
-        /// The wait after a suggestion, before backoff.
-        public var baseGap: TimeInterval = 5 * 60
+        public var dwell: TimeInterval = 5
+        /// 0 (strict) to 1 (broad). The default maps to a confidence threshold of 0.6.
+        public var sensitivity: Double = 5.0 / 7.0
+        /// The minimum interval between menu bar signals. There is no hourly budget.
+        public var baseGap: TimeInterval = 60
 
         public init() {}
 
@@ -30,28 +28,27 @@ public struct SurfacePolicy: Sendable {
     }
 
     public var settings: Settings
-    private(set) var surfacedAt: [Date] = []
-    private(set) var shownFingerprints: [String: Date] = [:]
-    /// Doubles with each ignored or dismissed suggestion, resets when one is used.
-    private(set) var backoff: Double = 1
+    private var shownItems: [String: Set<Int64>] = [:]
+    private var dismissedItems: [String: Set<Int64>] = [:]
     private(set) var lastSurface: Date?
 
     public init(settings: Settings = Settings()) {
         self.settings = settings
     }
 
-    public enum Decision: Equatable, Sendable {
-        case show
-        case wait(String)
+    /// Search can run during this gap; only announcing its result must wait.
+    public func signalDelay(now: Date = Date()) -> TimeInterval {
+        guard let lastSurface else { return 0 }
+        return max(0, settings.baseGap - now.timeIntervalSince(lastSurface))
     }
 
-    /// Whether to look at all: the context has settled long enough and the budget allows.
-    public func mayLook(dwell: TimeInterval, fingerprint: String, now: Date = Date()) -> Decision {
-        if dwell < settings.dwell { return .wait("dwell") }
-        if shownFingerprints[fingerprint] != nil { return .wait("already shown here") }
-        if let lastSurface, now.timeIntervalSince(lastSurface) < settings.baseGap * backoff { return .wait("backoff") }
-        if surfacedAt.filter({ now.timeIntervalSince($0) < 3_600 }).count >= settings.perHour { return .wait("hourly budget") }
-        return .show
+    public func maySuggest(itemID: Int64, topic: String) -> Bool {
+        !(shownItems[topic]?.contains(itemID) ?? false) && !isDismissed(itemID: itemID, topic: topic)
+    }
+
+    /// Manual asks may repeat an item, but respect a deliberate dismissal in this topic.
+    public func isDismissed(itemID: Int64, topic: String) -> Bool {
+        dismissedItems[topic]?.contains(itemID) ?? false
     }
 
     /// Whether a result is good enough to show.
@@ -59,21 +56,15 @@ public struct SurfacePolicy: Sendable {
         confidence >= settings.threshold
     }
 
-    public mutating func didSurface(fingerprint: String, at now: Date = Date()) {
-        surfacedAt = surfacedAt.filter { now.timeIntervalSince($0) < 3_600 } + [now]
-        shownFingerprints[fingerprint] = now
-        if shownFingerprints.count > 500 {
-            shownFingerprints = shownFingerprints.filter { now.timeIntervalSince($0.value) < 86_400 }
-        }
+    public mutating func didSurface(itemIDs: [Int64], topic: String, at now: Date = Date()) {
+        shownItems[topic, default: []].formUnion(itemIDs)
         lastSurface = now
     }
 
-    /// Feed back what happened, so the next suggestion waits more or less.
-    public mutating func record(_ outcome: Outcome) {
-        if outcome.isUseful {
-            backoff = 1
-        } else {
-            backoff = min(backoff * 2, 32)
+    /// Feedback suppresses this item locally, without changing the global signal gap.
+    public mutating func record(_ outcome: Outcome, itemID: Int64, topic: String) {
+        if outcome == .dismissed || outcome == .blocked {
+            dismissedItems[topic, default: []].insert(itemID)
         }
     }
 }

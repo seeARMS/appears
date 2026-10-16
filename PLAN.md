@@ -227,9 +227,9 @@ This is the core of the product. There are three modes, and all three are in v0'
   - When you later pull in the same context, the log says whether the shadow pick was what you opened.
   - This is how push earns its way in without burning trust.
 - **Ambient (on by default at launch):** the menu bar item changes state when a settled context has a confident result. Nothing else happens until you look.
-  - **Dwell:** ≥15 s in the context.
-  - **Confidence:** at or above the calibrated threshold.
-  - **Budget:** one per context, a few per hour. Each ignored or dismissed suggestion doubles the wait; an opened one resets it.
+  - **Timing (updated 2026-10-16):** five seconds reading OR a two-second pause after editing, including in a new conversation. No extra ten-second lookup throttle. Typing cancels the reading timer.
+  - **Confidence:** ≥0.6 by default; the match-selectivity slider changes this threshold independently of frequency. This is still a heuristic, not a calibrated probability.
+  - **Signals (updated 2026-10-16):** at least one minute apart, with no hourly cap or feedback backoff. Searches run during the gap; a one-shot timer revalidates a cached result against the latest context when eligible. Deduplicate by item within a document/conversation for the app session. Ignoring or closing a suggestion has no penalty; a deliberate dismissal suppresses its item in that context only.
   - **Never** while the screen is shared or recorded, during a presentation, or in a Focus mode.
   - **Fades** on a context change or after about a minute.
 
@@ -452,3 +452,4 @@ These are targets to measure in M0, not guesses to trust:
 11. **Logo:** Orbit, chosen on 2026-10-15. Keep the shadcn zinc/blue direction; use an open ring with a detached dot at the upper right, and monochrome menu bar states. See `brand/README.md` for geometry and regeneration.
 12. **Distribution (2026-10-15):** a lightweight DMG at `appea.rs/app.dmg`, built and notarized in GitHub Actions, stored in Cloudflare R2. The model downloads separately in the background on first launch while the user completes onboarding. This supersedes bundling model weights in the engine.
 13. **Explicit search (2026-10-15):** a separate Spotlight-style window for semantic search, opened manually or with its own configurable shortcut. Context recall stays available with its existing shortcut and menu bar click.
+14. **Ambient frequency (2026-10-16):** five seconds reading OR a two-second typing debounce; no hourly cap, a fixed one-minute signal gap, no feedback backoff, a 0.6 default confidence threshold, and item deduplication within each document/conversation. Searches run during cooldown, and a one-shot timer revalidates pending results when eligible. A deliberate dismissal suppresses its item in that context without slowing other signals.

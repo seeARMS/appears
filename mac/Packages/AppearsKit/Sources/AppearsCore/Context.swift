@@ -60,6 +60,19 @@ public struct ContextSnapshot: Sendable, Codable, Equatable {
         selection.count + focusedText.count + visibleText.count + windowTitle.count
     }
 
+    /// A short composed question can be useful even in a nearly empty chat window.
+    public var hasAmbientText: Bool {
+        characterCount >= 80 || focusedText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 12
+    }
+
+    /// Stable across edits and document-title changes. Kept in memory, like the full
+    /// context fingerprint; no document path or conversation name enters policy state.
+    public func topicFingerprint(salt: String) -> String {
+        let identity = documentPath ?? url ?? windowTitle
+        let digest = SHA256.hash(data: Data((salt + bundleID + "\u{1F}" + identity).utf8))
+        return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Identifies the current draft and selection, plus the start of the window's text.
     /// Hashed with a per-install salt so it can't be reversed into words. Changes at the
     /// end of a long draft count too; whitespace alone doesn't.
