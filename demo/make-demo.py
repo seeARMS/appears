@@ -63,6 +63,44 @@ LANDING = {
         "reason": "Priorities from the last review · May 2025",
         "text": "Keep the next phase focused. Revisit the original scope and timeline with Priya before adding new priorities.",
     },
+    "photo": {
+        "file": "IMG_2041.HEIC",
+        "message": {
+            "title": "Maya Chen",
+            "reason": "Yellow leaves usually mean overwatering · Jun 2025",
+            "text": "If the fig's lower leaves go yellow, it's usually too much water. Let the soil dry out first.",
+        },
+        "note": {
+            "title": "Plant care",
+            "reason": "Fiddle-leaf fig: water every 10 days · Mar 2024",
+            "text": "Fiddle-leaf fig: bright window, water every 10 days, turn it a quarter each week.",
+        },
+        "image": {
+            "title": "IMG_0412.HEIC",
+            "reason": "The same plant, the day you bought it · Mar 2024",
+        },
+    },
+    "meeting": {
+        "title": "Kitchen walkthrough",
+        "with": "Dana Ortiz",
+        "time": "2:00 PM",
+        "until": "2:30 PM",
+        "message": {
+            "title": "Dana Ortiz",
+            "reason": "Sent the revised cabinet quote · Last week",
+            "text": "Here's the revised quote with the taller cabinets. Happy to go through it on Thursday.",
+        },
+        "document": {
+            "title": "Kitchen quote v2.pdf",
+            "reason": "Page 1: cabinets and installation · Oct 2026",
+            "text": "Cabinets, countertop and installation, with the taller upper cabinets.",
+        },
+        "image": {
+            "title": "IMG_1877.HEIC",
+            "reason": "Your handwritten measurements · Sep 2026",
+            "text": "Kitchen: north wall 3.6 m, window 1.2 m, ceiling 2.7 m.",
+        },
+    },
 }
 (ROOT / "landing.json").write_text(json.dumps(LANDING, indent=2) + "\n")
 

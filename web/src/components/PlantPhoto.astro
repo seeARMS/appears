@@ -1,0 +1,60 @@
+---
+// The made-up photo in the hero mock's second scenario: a fiddle-leaf fig on a
+// sideboard, drawn rather than photographed. `fresh` is the same plant the day
+// it was bought, smaller and all green; otherwise two lower leaves have gone
+// yellow. It fills its box, cropping like a photo thumbnail.
+interface Props {
+  fresh?: boolean;
+}
+const { fresh = false } = Astro.props;
+const uid = fresh ? "fresh" : "now";
+
+// [x, y, rotation, colour] for each leaf, bottom to top.
+const GREEN = ["#3f6212", "#4d7c0f", "#365314"];
+const leaves: [number, number, number, string][] = fresh
+  ? [
+      [69, 60, -60, GREEN[1]],
+      [91, 57, 58, GREEN[0]],
+      [72, 46, -35, GREEN[2]],
+      [88, 43, 35, GREEN[1]],
+      [80, 34, 0, GREEN[0]],
+    ]
+  : [
+      [64, 66, -112, "#ca8a04"],
+      [95, 62, 70, "#a16207"],
+      [68, 52, -55, GREEN[1]],
+      [92, 48, 52, GREEN[0]],
+      [70, 37, -35, GREEN[2]],
+      [90, 33, 34, GREEN[1]],
+      [74, 23, -18, GREEN[0]],
+      [87, 19, 22, GREEN[2]],
+      [80, 11, 0, GREEN[1]],
+    ];
+---
+
+<svg class="plant-photo" viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <defs>
+    <linearGradient id={`wall-${uid}`} x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3ece1" />
+      <stop offset="1" stop-color="#ddd0bc" />
+    </linearGradient>
+  </defs>
+  <rect width="160" height="120" fill={`url(#wall-${uid})`} />
+  <path d="M0 0h46l-20 92H0z" fill="#fffaf2" opacity="0.55" />
+  <rect y="92" width="160" height="28" fill="#a47551" />
+  <rect y="92" width="160" height="3" fill="#8a5e3f" />
+  <g>
+    <path d={fresh ? "M80 74V28" : "M80 74V8"} stroke="#6b4f3a" stroke-width="2.4" stroke-linecap="round" />
+    {
+      leaves.map(([x, y, r, c]) => (
+        <g transform={`translate(${x} ${y}) rotate(${r})`}>
+          <ellipse rx="8.5" ry="12.5" fill={c} />
+          <path d="M0 -11V11" stroke="#fff" stroke-opacity="0.22" stroke-width="0.8" />
+        </g>
+      ))
+    }
+  </g>
+  <path d="M63 72h34l-4 24H67z" fill="#c2693d" />
+  <rect x="61" y="70" width="38" height="6" rx="1" fill="#b45a31" />
+  <ellipse cx="80" cy="97" rx="15" ry="1.6" fill="#000" opacity="0.18" />
+</svg>

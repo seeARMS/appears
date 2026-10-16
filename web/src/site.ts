@@ -76,6 +76,54 @@ export const MOCK_RESULTS = [
   },
 ] as const;
 
+/** The upcoming meeting in the hero mock's third scenario, also shown in a Calendar widget on its desktop. */
+export const MOCK_MEETING = landing.meeting;
+
+/**
+ * The hero mock's scenarios, in the order of its tabs. The first is the email
+ * above; Mock.astro plays each one and moves the pointer between them. `kind`
+ * names a result's thumbnail ("plant" is the photo you open, drawn in
+ * PlantPhoto.astro). `app` and `clock` are what the mock's menu bar shows.
+ */
+export const MOCK_SCENARIOS = [
+  {
+    id: "email",
+    label: "Writing an email",
+    caption: MOCK_CAPTION,
+    app: "Mail",
+    clock: "Thu 10:42",
+    context: MOCK_PANEL_CONTEXT,
+    results: MOCK_RESULTS,
+  },
+  {
+    id: "photo",
+    label: "Opening a photo",
+    caption:
+      "You open a photo of your houseplant. Appears recognises the plant and finds a friend's advice in Messages, your care notes and a photo of the same plant from two years ago. Pictures are matched by what's in them, not their file names.",
+    app: "Preview",
+    clock: "Thu 12:15",
+    context: `${landing.photo.file} · Preview`,
+    results: [
+      { kind: "message", group: "Messages", title: landing.photo.message.title, reason: landing.photo.message.reason },
+      { kind: "note", group: "Notes", title: landing.photo.note.title, reason: landing.photo.note.reason },
+      { kind: "plant", group: "Files", title: landing.photo.image.title, reason: landing.photo.image.reason },
+    ],
+  },
+  {
+    id: "meeting",
+    label: "Before a meeting",
+    caption: `Ten minutes before a meeting, Appears looks for what you'll need: ${landing.meeting.with}'s latest message, the quote you're discussing and a photo of the measurements you wrote down. You don't have to open anything.`,
+    app: "Finder",
+    clock: "Thu 1:50",
+    context: `${landing.meeting.time} · ${landing.meeting.title}`,
+    results: [
+      { kind: "message", group: "Messages", title: landing.meeting.message.title, reason: landing.meeting.message.reason },
+      { kind: "pdf", group: "Files", title: landing.meeting.document.title, reason: landing.meeting.document.reason },
+      { kind: "photo", group: "Files", title: landing.meeting.image.title, reason: landing.meeting.image.reason },
+    ],
+  },
+] as const;
+
 // --- How it works ------------------------------------------------------------------
 
 export const HOW_HEADING = "Keep working. Appears finds what's relevant.";

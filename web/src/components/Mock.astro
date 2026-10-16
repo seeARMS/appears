@@ -1,35 +1,63 @@
 ---
-// The hero's mock, in HTML and CSS rather than an image: a planning email
-// on a desktop that fades out at the bottom, and Appears' panel hanging from its menu bar glyph with
-// three things you already had, grouped like a ⌘K results list. Every name,
-// file and number here is made up. The results and their groups come from
-// MOCK_RESULTS in src/site.ts; the fictional content comes from demo/landing.json.
+// The hero's mock, in HTML and CSS rather than an image: a Mac desktop with
+// Appears' panel hanging from its menu bar glyph, in three scenarios picked by
+// the tabs above it (MOCK_SCENARIOS in src/site.ts):
 //
-// With JavaScript, the mock plays once when it scrolls into view: the reply is
-// typed, the glyph finds something as "scope" is typed, the pointer clicks it
-// and the panel drops. Without JavaScript, or with reduced motion, it's the
-// finished frame.
+// - email: a planning email being typed in Mail;
+// - photo: a photo of a houseplant opened from the desktop in Preview;
+// - meeting: nothing open at all, ten minutes before a meeting.
+//
+// Every name, file and number here is made up; the fictional content comes
+// from demo/landing.json.
+//
+// With JavaScript, the email plays once when it scrolls into view. Clicking a
+// tab plays that scenario, and the pointer gets there the way you would: it
+// closes the open window, then opens Mail from the Dock or double-clicks the
+// photo on the desktop. Without JavaScript the email's finished frame shows and
+// the tabs stay hidden; with reduced motion the tabs switch finished frames.
 import Glyph from "./Glyph.astro";
 import Icon from "./Icon.astro";
-import { MOCK_CAPTION, MOCK_EMAIL, MOCK_NOTE, MOCK_PANEL_CONTEXT, MOCK_RESULTS } from "../site";
+import PlantPhoto from "./PlantPhoto.astro";
+import { MOCK_EMAIL, MOCK_MEETING, MOCK_NOTE, MOCK_SCENARIOS } from "../site";
 
 const SUBJECT = MOCK_EMAIL.subject;
-const groups = [...new Set(MOCK_RESULTS.map((r) => r.group))].map((name) => ({
-  name,
-  results: MOCK_RESULTS.filter((r) => r.group === name),
-}));
-const first = MOCK_RESULTS[0];
+const PHOTO = MOCK_SCENARIOS[1].context.split(" · ")[0];
+const first = MOCK_SCENARIOS[0];
+const panels = MOCK_SCENARIOS.map((s) => {
+  const results = s.results.map((r, i) => ({ ...r, i, first: i === 0 }) as { kind: string; group: string; title: string; reason: string; i: number; first: boolean });
+  return {
+    ...s,
+    groups: [...new Set(results.map((r) => r.group))].map((name) => ({ name, results: results.filter((r) => r.group === name) })),
+  };
+});
 ---
 
-<figure class="mock">
+<figure class="mock" data-scene={first.id}>
+  <div class="mock-tabs" role="tablist" aria-label="Examples" hidden>
+    {
+      MOCK_SCENARIOS.map((s, i) => (
+        <button
+          class="mock-tab"
+          type="button"
+          role="tab"
+          aria-selected={i === 0 ? "true" : "false"}
+          data-scene={s.id}
+          data-app={s.app}
+          data-clock={s.clock}
+        >
+          {s.label}
+        </button>
+      ))
+    }
+  </div>
   <div class="desk" aria-hidden="true">
     <div class="menubar">
       <span class="mb-apple"><Icon name="apple" size={13} /></span>
-      <span class="mb-app">Mail</span>
+      <span class="mb-app">{first.app}</span>
       <span class="mb-item">File</span>
       <span class="mb-item">Edit</span>
       <span class="mb-item">View</span>
-      <span class="mb-item">Message</span>
+      <span class="mb-item mb-message">Message</span>
       <span class="mb-item mb-extra">Format</span>
       <span class="mb-item mb-extra">Window</span>
       <span class="mb-spacer"></span>
@@ -37,11 +65,29 @@ const first = MOCK_RESULTS[0];
       <span class="mb-status mb-extra"><Icon name="wifi" size={14} /></span>
       <span class="mb-status mb-extra"><Icon name="search" size={13} /></span>
       <span class="mb-glyph"><Glyph state="found" size={15} /></span>
-      <span class="mb-clock">Thu 10:42</span>
+      <span class="mb-clock">{first.clock}</span>
     </div>
 
     <div class="stage">
-      <div class="compose">
+      <!-- The desktop, under the windows: a photo file and a Calendar widget. -->
+      <span class="desk-file">
+        <span class="df-thumb"><PlantPhoto /></span>
+        <span class="df-name">{PHOTO}</span>
+      </span>
+      <div class="widget">
+        <p class="w-day">Thursday</p>
+        <div class="w-event">
+          <span class="w-bar"></span>
+          <span>
+            <span class="w-title">{MOCK_MEETING.title}</span>
+            <span class="w-time">{MOCK_MEETING.time} – {MOCK_MEETING.until}</span>
+            <span class="w-with">{MOCK_MEETING.with}</span>
+          </span>
+        </div>
+        <p class="w-soon">In 10 minutes</p>
+      </div>
+
+      <div class="compose win">
         <div class="titlebar">
           <span class="lights"><i class="l-close"></i><i class="l-min"></i><i class="l-max"></i></span>
           <span class="titlebar-name">{SUBJECT}</span>
@@ -59,50 +105,75 @@ const first = MOCK_RESULTS[0];
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="panel-title">Related</p>
-            <p class="panel-sub">{MOCK_PANEL_CONTEXT}</p>
-          </div>
-          <span class="badge">{MOCK_RESULTS.length} found</span>
+      <div class="viewer win is-closed">
+        <div class="titlebar">
+          <span class="lights"><i class="l-close"></i><i class="l-min"></i><i class="l-max"></i></span>
+          <span class="titlebar-name">{PHOTO}</span>
         </div>
-        {
-          groups.map((g, gi) => (
-            <>
-              {gi > 0 && <div class="sep" />}
-              <div class="group">
-                <p class="group-label">{g.name}</p>
-                <ul class="results">
-                  {g.results.map((r) => (
-                    <li class:list={["result", { "is-selected": r === first }]} style={`--i: ${MOCK_RESULTS.indexOf(r)}`}>
-                      <span class:list={["thumb", `thumb-${r.kind}`]}>
-                        {r.kind === "message" && <Icon name="message" size={23} />}
-                        {r.kind === "pdf" && (
-                          <span class="page">
-                            <i />
-                          </span>
-                        )}
-                        {r.kind === "note" && <span class="sticky" />}
-                      </span>
-                      <span class="result-text">
-                        <span class="result-title">{r.title}</span>
-                        <span class="result-reason">{r.reason}</span>
-                      </span>
-                      {r === first && <kbd class="result-kbd">↩</kbd>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          ))
-        }
-        <div class="panel-foot">
-          <span><kbd>↩</kbd> open</span>
-          <span><kbd>␣</kbd> preview</span>
-          <span><kbd>⌫</kbd> not useful</span>
+        <div class="viewer-photo">
+          <PlantPhoto />
+          <span class="v-scan"></span>
         </div>
       </div>
+
+      {
+        panels.map((s, si) => (
+          <div class:list={["panel", { "is-current": si === 0 }]} data-scene={s.id}>
+            <div class="panel-head">
+              <div>
+                <p class="panel-title">Related</p>
+                <p class="panel-sub">
+                  {s.id === "meeting" && <Icon name="calendar" size={12} />}
+                  {s.context}
+                </p>
+              </div>
+              <span class="badge">{s.results.length} found</span>
+            </div>
+            {s.groups.map((g, gi) => (
+              <>
+                {gi > 0 && <div class="sep" />}
+                <div class="group">
+                  <p class="group-label">{g.name}</p>
+                  <ul class="results">
+                    {g.results.map((r) => (
+                      <li class:list={["result", { "is-selected": r.first }]} style={`--i: ${r.i}`}>
+                        <span class:list={["thumb", `thumb-${r.kind}`]}>
+                          {r.kind === "message" && <Icon name="message" size={23} />}
+                          {r.kind === "pdf" && (
+                            <span class="page">
+                              <i />
+                            </span>
+                          )}
+                          {r.kind === "note" && <span class="sticky" />}
+                          {r.kind === "photo" && (
+                            <span class="paper">
+                              <i />
+                              <i />
+                              <i />
+                              <i />
+                            </span>
+                          )}
+                          {r.kind === "plant" && <PlantPhoto fresh />}
+                        </span>
+                        <span class="result-text">
+                          <span class="result-title">{r.title}</span>
+                          <span class="result-reason">{r.reason}</span>
+                        </span>
+                        {r.first && <kbd class="result-kbd">↩</kbd>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            ))}
+            <div class="panel-foot">
+              <span><kbd>↩</kbd> open</span>
+              <span><kbd>␣</kbd> preview</span>
+              <span><kbd>⌫</kbd> not useful</span>
+            </div>
+          </div>
+        ))
+      }
 
       <svg class="pointer" width="17" height="24" viewBox="0 0 17 24">
         <path d="M1.5 1.5v17.2l4.3-4.1 2.9 6.9 3-1.3-2.9-6.7h6.1z" fill="#09090b" stroke="#fff" stroke-width="1.4" stroke-linejoin="round" />
@@ -115,6 +186,7 @@ const first = MOCK_RESULTS[0];
         <span class="app app-photos"></span>
         <span class="app app-calendar"><b>14</b></span>
         <span class="dock-sep"></span>
+        <span class="app app-preview"><i></i></span>
         <span class="app app-files"><i></i></span>
       </div>
     </div>
@@ -122,24 +194,59 @@ const first = MOCK_RESULTS[0];
   <button class="replay" type="button" hidden aria-label="Replay the animation" title="Replay">
     <Icon name="replay" size={15} />
   </button>
-  <figcaption>{MOCK_CAPTION} <span class="mock-note">{MOCK_NOTE}</span></figcaption>
+  <figcaption>
+    {
+      MOCK_SCENARIOS.map((s, i) => (
+        <span class="mock-caption" data-scene={s.id} hidden={i > 0}>
+          {s.caption}{" "}
+        </span>
+      ))
+    }
+    <span class="mock-note">{MOCK_NOTE}</span>
+  </figcaption>
 </figure>
 
 <script>
+  type Scene = "email" | "photo" | "meeting";
+
   const mock = document.querySelector<HTMLElement>(".mock");
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (mock && !reduced && "IntersectionObserver" in window) setup(mock);
+  if (mock) setup(mock);
 
   function setup(mock: HTMLElement) {
-    const desk = mock.querySelector<HTMLElement>(".desk")!;
-    const glyph = mock.querySelector<HTMLElement>(".mb-glyph")!;
-    const compose = mock.querySelector<HTMLElement>(".compose")!;
-    const pointer = mock.querySelector<SVGElement>(".pointer")!;
-    const replay = mock.querySelector<HTMLButtonElement>(".replay")!;
-    const caret = mock.querySelector<HTMLElement>(".caret")!;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const $ = <T extends Element = HTMLElement>(s: string) => mock.querySelector<T>(s)!;
+    const desk = $(".desk");
+    const stage = $(".stage");
+    const glyph = $(".mb-glyph");
+    const appName = $(".mb-app");
+    const menuMessage = $(".mb-message");
+    const clock = $(".mb-clock");
+    const compose = $(".compose");
+    const viewer = $(".viewer");
+    const file = $(".desk-file");
+    const mailIcon = $(".app-mail");
+    const previewIcon = $(".app-preview");
+    const pointer = $<SVGElement>(".pointer");
+    const replay = $<HTMLButtonElement>(".replay");
+    const caret = $(".caret");
+    const tabs = [...mock.querySelectorAll<HTMLButtonElement>(".mock-tab")];
     const TRIGGER = "scope";
     // A slip and its correction, the way people actually type.
     const TYPOS: Record<string, string> = { timeline: "timelnie" };
+    // The meeting scenario's clock ticks over to ten minutes before.
+    const BEFORE = "Thu 1:49";
+
+    let scene: Scene = "email";
+    let playing = false;
+    // Each play gets a number; a newer one makes every wait of the older one throw.
+    let run = 0;
+    const CANCELLED = new Error("cancelled");
+    const wait = (ms: number) => {
+      const id = run;
+      return new Promise<void>((resolve, reject) => setTimeout(() => (id === run ? resolve() : reject(CANCELLED)), ms));
+    };
+    const jitter = (min: number, max: number) => min + Math.random() * (max - min);
+    const visible = (el: HTMLElement) => el.offsetParent !== null;
 
     // Each paragraph becomes typed text, the caret, then the rest of the text,
     // kept in place but invisible so the window never changes size.
@@ -152,27 +259,139 @@ const first = MOCK_RESULTS[0];
       return { p, text, typed, rest };
     });
 
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const jitter = (min: number, max: number) => min + Math.random() * (max - min);
-
-    function reset() {
-      mock.classList.remove("is-found", "is-open", "is-pressed", "is-done");
-      mock.classList.add("is-playing");
+    function clearText() {
       for (const l of lines) {
         l.typed.textContent = "";
         l.rest.textContent = l.text;
       }
       lines[0].p.insertBefore(caret, lines[0].rest);
-      pointer.classList.remove("is-shown");
-      pointer.style.transition = "none";
-      replay.hidden = true;
+    }
+    function fillText() {
+      for (const l of lines) {
+        l.typed.textContent = l.text;
+        l.rest.textContent = "";
+      }
+      lines[1].p.append(caret);
+    }
+
+    function setApp(name: string) {
+      appName.textContent = name;
+      menuMessage.hidden = name !== "Mail";
+      mailIcon.classList.toggle("is-open", !compose.classList.contains("is-closed"));
+      previewIcon.classList.toggle("is-open", !viewer.classList.contains("is-closed"));
+    }
+
+    // The tab, caption and panel for a scenario, and its desktop without the panel.
+    function select(s: Scene) {
+      scene = s;
+      mock.dataset.scene = s;
+      for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.scene === s));
+      for (const c of mock.querySelectorAll<HTMLElement>(".mock-caption")) c.hidden = c.dataset.scene !== s;
+    }
+    function showPanel(s: Scene) {
+      for (const p of mock.querySelectorAll<HTMLElement>(".panel")) p.classList.toggle("is-current", p.dataset.scene === s);
+    }
+    function tab(s: Scene) {
+      return tabs.find((t) => t.dataset.scene === s)!;
+    }
+
+    // A scenario's first frame, set at once: its window open, nothing found yet.
+    function prepare(s: Scene) {
+      mock.classList.remove("is-found", "is-open", "is-pressed", "is-clicking", "is-typing", "is-soon", "is-done");
+      viewer.classList.remove("is-looking");
+      file.classList.remove("is-selected");
+      compose.classList.toggle("is-closed", s !== "email");
+      viewer.classList.toggle("is-closed", s !== "photo");
+      clearText();
+      showPanel(s);
+      setApp(tab(s).dataset.app!);
+      clock.textContent = s === "meeting" ? BEFORE : tab(s).dataset.clock!;
+    }
+
+    // A scenario's last frame, for reduced motion.
+    function finish(s: Scene) {
+      prepare(s);
+      fillText();
+      clock.textContent = tab(s).dataset.clock!;
+      mock.classList.add("is-found", "is-open");
+      if (s === "meeting") mock.classList.add("is-soon");
     }
 
     // Where the pointer's tip should be, relative to the stage it moves in.
     function at(el: Element, fx: number, fy: number) {
-      const d = pointer.parentElement!.getBoundingClientRect();
+      const d = stage.getBoundingClientRect();
       const r = el.getBoundingClientRect();
       return `translate(${r.left - d.left + r.width * fx}px, ${r.top - d.top + r.height * fy}px)`;
+    }
+    async function appear(el: Element, fx: number, fy: number) {
+      if (pointer.classList.contains("is-shown")) return;
+      pointer.style.transition = "none";
+      pointer.style.transform = at(el, fx, fy);
+      void pointer.getBoundingClientRect();
+      pointer.style.transition = "";
+      pointer.classList.add("is-shown");
+      await wait(250);
+    }
+    async function move(el: Element, fx = 0.5, fy = 0.5) {
+      pointer.style.transform = at(el, fx, fy);
+      await wait(950);
+    }
+    // A click anywhere but the panel closes it, as on a Mac.
+    async function click() {
+      mock.classList.add("is-clicking");
+      await wait(120);
+      mock.classList.remove("is-clicking", "is-open");
+    }
+
+    // Close whatever window is open, by its red button.
+    async function leave() {
+      mock.classList.remove("is-typing");
+      const open = [compose, viewer].find((w) => !w.classList.contains("is-closed"));
+      if (!open) {
+        mock.classList.remove("is-open", "is-found", "is-soon");
+        return;
+      }
+      await appear(open, 0.6, 0.55);
+      await move(open.querySelector(".l-close")!);
+      await click();
+      open.classList.add("is-closed");
+      mock.classList.remove("is-found", "is-soon");
+      viewer.classList.remove("is-looking");
+      setApp("Finder");
+      await wait(500);
+    }
+
+    // Get to a scenario from an empty desktop.
+    async function enter(s: Scene) {
+      showPanel(s);
+      clock.textContent = s === "meeting" ? BEFORE : tab(s).dataset.clock!;
+      if (s === "email") {
+        clearText();
+        if (visible(mailIcon)) {
+          await appear(stage, 0.5, 0.6);
+          await move(mailIcon, 0.5, 0.45);
+          await click();
+        }
+        compose.classList.remove("is-closed");
+        setApp("Mail");
+        await wait(600);
+      } else if (s === "photo") {
+        await appear(stage, 0.5, 0.6);
+        await move(file.querySelector(".df-thumb")!, 0.55, 0.6);
+        await click();
+        file.classList.add("is-selected");
+        await wait(90);
+        await click();
+        await wait(150);
+        viewer.classList.remove("is-closed");
+        file.classList.remove("is-selected");
+        setApp("Preview");
+        await wait(500);
+      } else {
+        setApp("Finder");
+        // Nothing to open: the pointer drifts off to the side and waits.
+        if (pointer.classList.contains("is-shown")) await move(stage, 0.36, 0.72);
+      }
     }
 
     async function type(line: (typeof lines)[number]) {
@@ -205,46 +424,108 @@ const first = MOCK_RESULTS[0];
       }
     }
 
-    async function play() {
-      reset();
-      mock.classList.add("is-typing");
-      await wait(500);
-      await type(lines[0]);
-      await wait(450);
-      for (const l of lines.slice(1)) await type(l);
-      mock.classList.remove("is-typing");
-      mock.classList.add("is-found");
-      await wait(1100);
-
-      // The pointer drifts in from the email and clicks the glyph.
-      pointer.style.transform = at(compose, 0.78, 0.62);
-      void pointer.getBoundingClientRect();
-      pointer.style.transition = "";
-      pointer.classList.add("is-shown");
-      await wait(250);
-      pointer.style.transform = at(glyph, 0.45, 0.6);
-      await wait(950);
-      mock.classList.add("is-pressed");
-      await wait(140);
-      mock.classList.remove("is-pressed");
-      mock.classList.add("is-open");
-      await wait(1600);
-      mock.classList.remove("is-playing");
-      mock.classList.add("is-done");
-      replay.hidden = false;
+    // What happens in each scenario, up to the glyph getting its dot.
+    async function act(s: Scene) {
+      if (s === "email") {
+        mock.classList.add("is-typing");
+        await wait(500);
+        await type(lines[0]);
+        await wait(450);
+        for (const l of lines.slice(1)) await type(l);
+        mock.classList.remove("is-typing");
+        mock.classList.add("is-found");
+        await wait(1100);
+        await appear(compose, 0.78, 0.62);
+      } else if (s === "photo") {
+        await wait(500);
+        // Appears looks at the picture itself.
+        viewer.classList.add("is-looking");
+        await wait(1500);
+        mock.classList.add("is-found");
+        await wait(1100);
+        await appear(viewer, 0.7, 0.6);
+      } else {
+        await wait(1300);
+        clock.textContent = tab(s).dataset.clock!;
+        mock.classList.add("is-soon");
+        await wait(700);
+        mock.classList.add("is-found");
+        await wait(1100);
+        await appear(stage, 0.36, 0.72);
+      }
     }
 
+    // Play a scenario: from scratch, or by getting there from whatever is on screen.
+    async function play(s: Scene, from: "start" | "here") {
+      run++;
+      playing = true;
+      replay.hidden = true;
+      mock.classList.add("is-playing");
+      mock.classList.remove("is-done");
+      select(s);
+      try {
+        if (from === "start") {
+          prepare(s);
+          pointer.classList.remove("is-shown");
+          pointer.style.transition = "none";
+        } else {
+          await leave();
+          await enter(s);
+        }
+        await act(s);
+        // The pointer clicks the glyph and the panel drops.
+        await move(glyph, 0.45, 0.6);
+        mock.classList.add("is-pressed", "is-clicking");
+        await wait(140);
+        mock.classList.remove("is-pressed", "is-clicking");
+        mock.classList.add("is-open");
+        await wait(1600);
+        mock.classList.remove("is-playing");
+        mock.classList.add("is-done");
+        replay.hidden = false;
+        playing = false;
+      } catch (e) {
+        if (e !== CANCELLED) throw e;
+      }
+    }
+
+    for (const t of tabs) {
+      t.addEventListener("click", () => {
+        const s = t.dataset.scene as Scene;
+        seen?.disconnect();
+        if (reduced || !animated) {
+          select(s);
+          finish(s);
+          return;
+        }
+        if (s === scene && playing) return;
+        play(s, s === scene ? "start" : "here");
+      });
+      // Arrow keys move between tabs, as in any tab list.
+      t.addEventListener("keydown", (e) => {
+        const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
+        const next = tabs[(tabs.indexOf(t) + step + tabs.length) % tabs.length];
+        next.focus();
+        next.click();
+      });
+    }
+    $(".mock-tabs").hidden = false;
+
+    const animated = !reduced && "IntersectionObserver" in window;
+    let seen: IntersectionObserver | undefined;
+    if (!animated) return;
     mock.classList.add("is-animated");
-    reset();
-    const seen = new IntersectionObserver(
+    prepare("email");
+    seen = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        seen.disconnect();
-        play();
+        seen!.disconnect();
+        play(scene, "start");
       },
       { threshold: 0.45 },
     );
     seen.observe(desk);
-    replay.addEventListener("click", play);
+    replay.addEventListener("click", () => play(scene, "start"));
   }
 </script>
