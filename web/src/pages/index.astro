@@ -2,10 +2,12 @@
 // The one page. Its copy is in src/site.ts, which the Markdown version
 // (index.md.ts) and llms.txt read too.
 import Base from "../layouts/Base.astro";
+import Found from "../components/Found.astro";
 import Glyph from "../components/Glyph.astro";
 import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import Mock from "../components/Mock.astro";
+import PrivacyArt from "../components/PrivacyArt.astro";
 import Scene from "../components/Scene.astro";
 import { inline } from "../lib/inline";
 import {
@@ -13,6 +15,8 @@ import {
   DESCRIPTION,
   DOWNLOAD_LABEL,
   DOWNLOAD_URL,
+  FAQ,
+  FAQ_HEADING,
   GET_HEADING,
   GET_TEXT,
   GLYPHS,
@@ -23,15 +27,14 @@ import {
   LICENSE,
   LICENSE_URL,
   NAME,
+  NOTE,
   OPERATING_SYSTEM,
   PRIVACY,
   PRIVACY_HEADING,
   PRIVACY_TEXT,
   QUIET,
   QUIET_HEADING,
-  REQUIREMENTS,
   SITE,
-  STATUS,
   SUMMARY,
   TITLE,
 } from "../site";
@@ -91,17 +94,16 @@ const schema = [
 
   <main>
     <section class="hero wrap">
-      <span class="badge badge-status rise" style="--d: 0">
-        <Glyph state="found" size={14} />
-        {STATUS}
-      </span>
+      <div class="rise" style="--d: 0">
+        <Found />
+      </div>
       <h1 class="rise" style="--d: 1">{HEADLINE}</h1>
       <p class="lede rise" style="--d: 2">{LEDE}</p>
       <div class="actions rise" style="--d: 3">
         <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
         <a class="button button-outline" href="#how">See how it works<Icon name="arrow-down" size={15} /></a>
       </div>
-      <p class="note rise" style="--d: 4">{REQUIREMENTS}</p>
+      <p class="note rise" style="--d: 4">{NOTE}</p>
     </section>
 
     <div class="wrap rise" style="--d: 5">
@@ -160,16 +162,40 @@ const schema = [
       <dl class="cards cards-4">
         {
           PRIVACY.map((row, i) => (
-            <div class="card reveal" style={`--d: ${i}`}>
-              <span class="card-icon">
-                <Icon name={row.icon} size={18} />
-              </span>
+            <div class="card card-scene reveal" style={`--d: ${i}`}>
+              <PrivacyArt art={row.art} />
               <dt>{row.label}</dt>
               <dd set:html={inline(row.text)} />
             </div>
           ))
         }
       </dl>
+    </section>
+
+    <section class="part wrap" aria-labelledby="questions">
+      <div class="faq">
+        <div class="part-head reveal">
+          <p class="eyebrow">FAQ</p>
+          <h2 id="questions">{FAQ_HEADING}</h2>
+        </div>
+        <div class="faq-list reveal" style="--d: 1">
+          {
+            FAQ.map((item) => (
+              <details class="faq-item">
+                <summary>
+                  {item.q}
+                  <Icon name="chevron-down" size={16} />
+                </summary>
+                <div class="faq-answer">
+                  {item.a.map((para) => (
+                    <p set:html={inline(para)} />
+                  ))}
+                </div>
+              </details>
+            ))
+          }
+        </div>
+      </div>
     </section>
 
     <section class="part wrap" aria-labelledby="get">
@@ -180,7 +206,7 @@ const schema = [
         <div class="actions">
           <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
         </div>
-        <p class="note">{REQUIREMENTS}</p>
+        <p class="note">{NOTE}</p>
       </div>
     </section>
   </main>
