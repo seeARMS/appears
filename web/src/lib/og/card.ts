@@ -6,6 +6,7 @@
 
 import type { FontMetrics } from "./metrics";
 import { orbitMarkArtwork } from "../orbit";
+import { MOCK_PANEL_CONTEXT } from "../../site";
 
 export const WIDTH = 1200;
 export const HEIGHT = 630;
@@ -17,7 +18,7 @@ export interface CardFonts {
 }
 
 export interface Result {
-  kind: "photo" | "pdf" | "note";
+  kind: "photo" | "pdf" | "note" | "message";
   group: string;
   title: string;
   reason: string;
@@ -96,6 +97,9 @@ function thumb(kind: Result["kind"], x: number, y: number, s: number): string {
     parts.push(`<rect width="${s}" height="${s}" fill="#E4E4E7"/><rect x="10" y="7" width="${s - 20}" height="${s}" fill="#FFFFFF"/>`);
     for (let i = 0; i < 6; i++) parts.push(`<rect x="15" y="${14 + i * 6}" width="${s - 30}" height="2" fill="#D4D4D8"/>`);
     parts.push(`<rect x="13" y="24" width="${s - 26}" height="8" fill="#FACC15" opacity="0.55"/>`);
+  } else if (kind === "message") {
+    parts.push(`<rect width="${s}" height="${s}" fill="${C.muted}"/>`);
+    parts.push(`<path d="M12 12h22v17H22l-8 6v-6h-2z" fill="none" stroke="${C.mutedForeground}" stroke-width="2" stroke-linejoin="round"/>`);
   } else {
     parts.push(`<rect width="${s}" height="${s}" fill="#FDE68A"/><rect x="10" y="11" width="24" height="4" rx="1" fill="#78350F"/>`);
     for (let i = 0; i < 4; i++) parts.push(`<rect x="10" y="${21 + i * 7}" width="${s - 20}" height="2" fill="#B45309"/>`);
@@ -121,7 +125,7 @@ function panel(fonts: CardFonts, results: readonly Result[], x: number, y: numbe
 
   // Header: "Related", its source, and a "3 found" badge.
   out.push(`<text x="${x + 22}" y="${y + 36}" font-family="${FONT}" font-weight="600" font-size="19" fill="${C.foreground}">Related</text>`);
-  out.push(`<text x="${x + 22}" y="${y + 58}" font-family="${FONT}" font-size="15" fill="${C.mutedForeground}">Re: Kitchen · Mail</text>`);
+  out.push(`<text x="${x + 22}" y="${y + 58}" font-family="${FONT}" font-size="15" fill="${C.mutedForeground}">${esc(MOCK_PANEL_CONTEXT)}</text>`);
   const badge = `${results.length} found`;
   const bw = width(fonts.semibold, badge, 14) + 40;
   const bx = x + w - 20 - bw;

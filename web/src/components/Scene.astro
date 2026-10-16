@@ -5,11 +5,13 @@
 // visitor asks for reduced motion. Every file name here is made up.
 import Glyph from "./Glyph.astro";
 import Mark from "./Mark.astro";
+import { MOCK_RESULTS } from "../site";
 
 interface Props {
   scene: "notice" | "gather" | "forgot" | "reason";
 }
 const { scene } = Astro.props;
+const document = MOCK_RESULTS.find((result) => result.kind === "pdf")!;
 ---
 
 <div class:list={["scene", `scene-${scene}`]} aria-hidden="true">
@@ -104,8 +106,8 @@ const { scene } = Astro.props;
           </span>
         </span>
         <span class="r-text">
-          <span class="r-title">permit-BLD-2024-0457.pdf</span>
-          <span class="r-reason">Page 3: scope of work</span>
+          <span class="r-title">{document.title}</span>
+          <span class="r-reason">{document.reason.split(" · ")[0]}</span>
         </span>
         <kbd class="r-kbd">↩</kbd>
       </div>

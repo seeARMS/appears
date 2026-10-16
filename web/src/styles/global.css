@@ -682,6 +682,12 @@ h1 {
   overflow: hidden;
   box-shadow: inset 0 0 0 1px rgb(9 9 11 / 0.08);
 }
+.thumb-message {
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
 /* A phone photo of a handwritten paper quote on a table. */
 .thumb-photo {
   background: linear-gradient(155deg, #a8a29e, #6b6560);
@@ -880,7 +886,7 @@ h1 {
 }
 
 /* The mock's animation (the script in Mock.astro). `is-animated` means the
-   script took over: the panel waits for the click, the glyph for "permit". */
+   script took over: the panel waits for the click, the glyph for "scope". */
 .mock {
   position: relative;
 }
