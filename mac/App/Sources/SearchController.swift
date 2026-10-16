@@ -89,7 +89,9 @@ final class SearchController: NSObject, NSWindowDelegate {
         }
         guard modifiers.isEmpty else { return false }
         switch event.keyCode {
-        case 53: close(); return true
+        case 53:
+            if model.sourcePreview != nil { model.sourcePreview = nil } else { close() }
+            return true
         case 125: model.moveSelection(1); return true
         case 126: model.moveSelection(-1); return true
         case 36, 76:
@@ -100,6 +102,8 @@ final class SearchController: NSObject, NSWindowDelegate {
     }
 
     private func quickLook() {
+        guard !model.isSearching else { return }
+        if model.selected?.item.fileURL == nil { model.toggleSourcePreview(); return }
         guard let url = model.selected?.item.fileURL else { return }
         panel.previewURL = url
         let preview = QLPreviewPanel.shared()!

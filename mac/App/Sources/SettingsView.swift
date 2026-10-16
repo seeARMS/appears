@@ -8,12 +8,12 @@ struct SettingsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        TabView {
-            GeneralPane(model: model).tabItem { Label("General", systemImage: "circle.dotted") }
-            UpdatesPane(updater: model.updater).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
-            SourcesPane(model: model).tabItem { Label("Sources", systemImage: "folder") }
-            PrivacyPane(model: model).tabItem { Label("Privacy", systemImage: "lock") }
-            StatsPane(model: model).tabItem { Label("Stats", systemImage: "chart.bar") }
+        TabView(selection: $model.settingsTab) {
+            GeneralPane(model: model).tag(SettingsTab.general).tabItem { Label("General", systemImage: "circle.dotted") }
+            UpdatesPane(updater: model.updater).tag(SettingsTab.updates).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
+            SourcesPane(model: model).tag(SettingsTab.sources).tabItem { Label("Sources", systemImage: "folder") }
+            PrivacyPane(model: model).tag(SettingsTab.privacy).tabItem { Label("Privacy", systemImage: "lock") }
+            StatsPane(model: model).tag(SettingsTab.stats).tabItem { Label("Stats", systemImage: "chart.bar") }
         }
         .frame(width: 560, height: 620)
         .padding(.top, 8)
@@ -27,6 +27,17 @@ struct GeneralPane: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Launch at login", isOn: Binding(get: { model.loginItem.enabled }, set: { model.loginItem.setEnabled($0) }))
+                    .disabled(model.loginItem.updating)
+                if model.loginItem.status == .requiresApproval {
+                    HStack {
+                        Text("Allow Appears in Login Items to finish enabling it.").font(.caption).foregroundStyle(.secondary)
+                        Button("Open Login Items…") { model.loginItem.openSettings() }
+                    }
+                }
+                if let error = model.loginItem.error { Text(error).font(.caption).foregroundStyle(.red) }
+                Text("Starts quietly in the menu bar. Open Appears again to search.")
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent("Ask Appears") { KeyboardShortcuts.Recorder(for: .pull) }
                 LabeledContent("Search Appears") { KeyboardShortcuts.Recorder(for: .search) }
                 Picker("Suggest on its own", selection: Binding(get: { model.settings.ambientMode }, set: { model.setAmbientMode($0) })) {
@@ -116,6 +127,7 @@ struct GeneralPane: View {
         .onChange(of: model.settings.dwell) { model.ambientSettingsChanged() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             calendarAccess = CalendarWatcher.access
+            model.loginItem.refresh()
         }
     }
 }
@@ -126,23 +138,13 @@ struct SourcesPane: View {
     var body: some View {
         Form {
             Section {
-                if model.modelDownload.phase != .ready {
-                    ModelDownloadView(status: model.modelDownload, retry: model.retryModelDownload)
-                }
-                if let status = model.status {
-                    LabeledContent("Indexed") {
-                        Text(summary(status.counts))
+                ReadinessView(model: model, details: true)
+                if let status = model.status, status.ready, !status.protectedFoldersReadable {
+                    HStack(alignment: .top) {
+                        Text("Documents needs access. Allow it when macOS asks, or give Appears Full Disk Access.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Open Settings") { FullDiskAccessGuide.open() }
                     }
-                    if status.progress.phase != .idle {
-                        LabeledContent("Now") { Text(progress(status.progress)) }
-                    }
-                    if !status.protectedFoldersReadable {
-                        Text("Appears can't read Documents yet. Allow it when macOS asks, or give it Full Disk Access.")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                    if let error = status.error { Text(error).font(.caption).foregroundStyle(.red) }
-                } else {
-                    Text("Starting the engine…").foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Everything sensible in your home folder, by default")
@@ -177,7 +179,7 @@ struct SourcesPane: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Also include") {
-                FolderList(folders: $model.settings.sources.includes, empty: "Folders outside your home folder, or a code checkout you want indexed.") { model.sourcesChanged() }
+                FolderList(folders: $model.settings.sources.includes, empty: "Folders outside your home folder, or a code checkout you want indexed.", watched: model.status?.watchedFolders, unreadable: model.status?.unreadableFolders ?? []) { model.sourcesChanged() }
             }
             Section("Never include") {
                 FolderList(folders: $model.settings.sources.excludes, empty: "Nothing excluded.") { model.sourcesChanged() }
@@ -198,27 +200,14 @@ struct SourcesPane: View {
         .formStyle(.grouped)
     }
 
-    private func summary(_ counts: IndexCounts) -> String {
-        let parts = ItemKind.allCases.compactMap { kind -> String? in
-            guard let n = counts.indexed[kind], n > 0 else { return nil }
-            return "\(n.formatted()) \(kind.label.lowercased())s"
-        }
-        return parts.isEmpty ? "Nothing yet" : parts.joined(separator: ", ")
-    }
 
-    private func progress(_ progress: IndexProgress) -> String {
-        switch progress.phase {
-        case .scanning: "Looking through folders (\(progress.scanned.formatted()) found)"
-        case .indexing: "Reading \(progress.done.formatted()) of \(progress.total.formatted())"
-        case .paused: "Paused: \(progress.pausedReason ?? "")"
-        case .idle: "Up to date"
-        }
-    }
 }
 
 private struct FolderList: View {
     @Binding var folders: [String]
     let empty: String
+    var watched: [String]? = nil
+    var unreadable: [String] = []
     let changed: () -> Void
 
     var body: some View {
@@ -228,7 +217,13 @@ private struct FolderList: View {
         ForEach(folders, id: \.self) { folder in
             HStack {
                 Image(systemName: "folder").foregroundStyle(.secondary)
-                Text((folder as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text((folder as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
+                    if let watched {
+                        Text(unreadable.contains(folder) ? "Folder unavailable — check that it’s connected and readable" : watched.contains(folder) ? "Watching for changes" : "Waiting for live updates")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 Button {
                     folders.removeAll { $0 == folder }

@@ -47,8 +47,14 @@ final class AppModel {
 
     private(set) var glyph: Glyph = .idle
     private(set) var status: EngineStatus?
+    private(set) var engineStatusError: String?
+    let loginItem = LoginItem()
+    var settingsTab = SettingsTab.general
+    var sourcePreview: Suggestion?
     /// What the panel shows.
-    private(set) var shown: Shown?
+    private(set) var shown: Shown? {
+        didSet { if shown?.at != oldValue?.at { sourcePreview = nil } }
+    }
     /// An ambient result waiting behind the glyph.
     private(set) var waiting: Shown?
     private(set) var isPulling = false
@@ -63,6 +69,7 @@ final class AppModel {
     @ObservationIgnored private var dwellTask: Task<Void, Never>?
     @ObservationIgnored private var signalTask: Task<Void, Never>?
     @ObservationIgnored private var statusTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var sourcesUpdate: Task<Void, Never>?
     @ObservationIgnored private var meetingExpiry: Task<Void, Never>?
     private struct PendingAmbient {
         let id = UUID()
@@ -162,7 +169,13 @@ final class AppModel {
                 await engine.send(.settings, engineSources)
                 contextChanged()
             }
-            status = await engine.status()
+            do {
+                status = try await engine.call(.status, EngineClient.Empty(), as: EngineStatus.self)
+                engineStatusError = nil
+            } catch {
+                status = nil
+                engineStatusError = "The search engine isn’t responding. Try again, or reopen Appears."
+            }
         }
         updateGlyph()
     }
@@ -176,7 +189,7 @@ final class AppModel {
             glyph = .needsSetup
         } else if settings.isPaused {
             glyph = .paused
-        } else if modelDownload.phase == .failed {
+        } else if modelDownload.phase == .failed || engineStatusError != nil || (status?.ready == false && status?.error != nil) {
             glyph = .needsSetup
         } else if modelDownload.phase != .ready {
             glyph = .working
@@ -469,6 +482,7 @@ final class AppModel {
     }
 
     func panelClosed() {
+        sourcePreview = nil
         guard let current = shown else { return }
         if current.mode == .ambient, !current.interacted {
             // You looked and moved on.
@@ -524,6 +538,7 @@ final class AppModel {
         let count = visibleSuggestions.count
         guard count > 0 else { return }
         selectedIndex = (selectedIndex + delta + count) % count
+        if sourcePreview != nil { sourcePreview = selected?.item.fileURL == nil ? selected : nil }
     }
 
     private func record(_ outcome: Outcome, for shown: Shown, item: Suggestion?, position: Int) {
@@ -548,17 +563,27 @@ final class AppModel {
     // MARK: - Settings
 
     func sourcesChanged() {
+        sourcePreview = nil
         dwellTask?.cancel()
         signalTask?.cancel()
         pendingAmbient = nil
-        if !settings.sources.messages {
-            shown?.suggestions.removeAll { $0.item.source == .messages }
-            selectedIndex = min(selectedIndex, max(visibleSuggestions.count - 1, 0))
-        }
-        Task {
+        shown?.suggestions.removeAll { !mayShow($0.item) }
+        waiting?.suggestions.removeAll { !mayShow($0.item) }
+        selectedIndex = min(selectedIndex, max(visibleSuggestions.count - 1, 0))
+        let previous = sourcesUpdate
+        sourcesUpdate = Task {
+            await previous?.value
             await engine.send(.settings, engineSources)
             ambientSettingsChanged()
         }
+    }
+
+    func mayShow(_ item: Item) -> Bool {
+        let sources = engineSources
+        if sources.excludedKinds.contains(item.kind) { return false }
+        if item.source == .notes, !sources.notes { return false }
+        if item.source == .messages, !sources.messages { return false }
+        return !FileScanner(settings: sources).isExcluded(item.fileURL?.path ?? item.path)
     }
 
     /// `-ask`: wait for the engine to be ready and idle, then ask with scripted text.

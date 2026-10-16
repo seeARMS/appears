@@ -9,6 +9,8 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: AppModel
     let close: () -> Void
+    var openSources: () -> Void = {}
+    var openSearch: () -> Void = {}
     var resize: (CGSize) -> Void = { _ in }
 
     var body: some View {
@@ -101,13 +103,25 @@ struct PanelView: View {
             Message(title: "Not here", text: reason, action: nil)
         } else if let error = model.pullError {
             Message(title: "Couldn't look", text: error, action: nil)
+        } else if let preview = model.sourcePreview {
+            SourcePreviewView(suggestion: preview, back: { model.sourcePreview = nil }) {
+                model.act(.opened, on: preview); close()
+            }
+        } else if model.status?.ready != true || model.status?.error != nil || model.engineStatusError != nil {
+            ReadinessView(model: model, openSources: openSources).padding(16)
         } else if let shown = model.shown {
             if shown.suggestions.isEmpty, !model.isPulling {
-                Text(emptyText)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.mutedForeground)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 18)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(emptyText).font(.system(size: 13)).foregroundStyle(Theme.mutedForeground)
+                    if let missing = model.missingSourceAccess {
+                        Text(missing).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                    }
+                    HStack {
+                        Button("Search instead", action: openSearch).buttonStyle(OutlineButtonStyle())
+                        Button("View sources", action: openSources).buttonStyle(OutlineButtonStyle())
+                    }
+                }
+                .padding(16)
             } else if shown.suggestions.isEmpty {
                 Color.clear.frame(height: 40)
             } else {
@@ -142,7 +156,11 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            if let status = model.status, status.progress.phase == .indexing || status.progress.phase == .scanning {
+            if model.sourcePreview != nil {
+                hint("esc", "back")
+                Spacer(minLength: 0)
+                hint("↩", "open")
+            } else if let status = model.status, status.progress.phase == .indexing || status.progress.phase == .scanning {
                 Text(status.progress.phase == .scanning ? "Looking through your files…" : "Indexing \(status.progress.done.formatted()) of \(status.progress.total.formatted())…")
             } else if let status = model.status, status.progress.phase == .paused, let reason = status.progress.pausedReason {
                 Text("Indexing paused: \(reason)")
@@ -332,6 +350,13 @@ struct ResultRow: View {
                     Button("Never show this") { model.act(.blocked, on: suggestion) }
                     Button(model.shown?.meeting == nil ? "Not in this app" : "Not before meetings") { model.act(.muted, on: suggestion) }
                     Divider()
+                    if suggestion.item.fileURL == nil {
+                        Button("Preview passage") {
+                            model.selectedIndex = model.visibleSuggestions.firstIndex { $0.id == suggestion.id } ?? model.selectedIndex
+                            model.sourcePreview = suggestion
+                            model.act(.previewed, on: suggestion)
+                        }
+                    }
                     if let line = suggestion.line {
                         Button("Copy Line") {
                             line.copyToPasteboard()

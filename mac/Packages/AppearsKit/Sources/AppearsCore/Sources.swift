@@ -148,6 +148,18 @@ public struct FileScanner: Sendable {
         return true
     }
 
+    /// Ignore directory noise from skipped trees, while allowing explicitly included roots.
+    func shouldWatchFolder(_ path: String) -> Bool {
+        guard !isExcluded(path) else { return false }
+        var folder = URL(filePath: path)
+        while folder.path.count > 1 {
+            if roots.contains(folder.path) { return true }
+            if !shouldEnter(folder, isRoot: false) { return false }
+            folder.deleteLastPathComponent()
+        }
+        return false
+    }
+
     /// Walks every root and calls `found` for each indexable file.
     public func scan(_ found: (Item) throws -> Void) rethrows {
         for root in roots {

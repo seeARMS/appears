@@ -34,9 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let status = StatusController(model: model)
         status.openSettings = { [weak self] in self?.showSettings() }
+        status.openSources = { [weak self] in self?.showSettings(tab: .sources) }
         self.status = status
         let search = SearchController(app: model)
-        search.openSettings = { [weak self] in self?.showSettings() }
+        search.openSettings = { [weak self] in self?.showSettings(tab: .sources) }
         search.willShow = { [weak status] in status?.close() }
         status.openSearch = { [weak search] in search?.show() }
         status.willShow = { [weak search] in search?.close() }
@@ -52,9 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Logger(subsystem: "rs.appea.appears", category: "app").info(
             "Launched. Accessibility: \(ContextReader.isTrusted, privacy: .public), Full Disk Access: \(FullDiskAccessGuide.isGranted, privacy: .public)"
         )
+        let background = LaunchBehavior.isBackground(
+            event: NSAppleEventManager.shared().currentAppleEvent,
+            isDefaultLaunch: notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool
+        )
         if let text = AppModel.scriptedSearch {
             search.show()
             search.model.query = text
+        } else if background {
+            // Login and session restoration stay in the menu bar, even if access changed.
         } else if AppModel.scriptedAsk == nil, !model.settings.onboarded || !ContextReader.isTrusted {
             showOnboarding()
         } else if AppModel.scriptedAsk == nil {
@@ -70,7 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showSearch() { search?.show() }
 
-    func showSettings() {
+    func showSettings(tab: SettingsTab = .general) {
+        model.settingsTab = tab
         if settingsWindow == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),

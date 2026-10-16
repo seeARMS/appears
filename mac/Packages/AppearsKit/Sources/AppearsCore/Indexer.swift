@@ -30,8 +30,6 @@ public actor Indexer {
     public let vectors: VectorIndex
     public let embedder: any Embedder
     public private(set) var settings: SourceSettings
-    /// The settings it started with, readable without awaiting (for the file watcher).
-    public nonisolated let initialSettings: SourceSettings
     public private(set) var progress = IndexProgress()
     /// Respect Low Power Mode and heat. The CLI turns this off.
     public var politeness = true
@@ -50,9 +48,10 @@ public actor Indexer {
         self.vectors = vectors
         self.embedder = embedder
         self.settings = settings
-        self.initialSettings = settings
         self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
     }
+
+    func watchConfiguration() -> (SourceSettings, Int) { (settings, settingsRevision) }
 
     public func setProgressHandler(_ handler: @escaping @Sendable (IndexProgress) -> Void) {
         onProgress = handler
@@ -92,6 +91,7 @@ public actor Indexer {
     @discardableResult
     public func scanFiles() throws -> Int {
         report { $0.phase = .scanning; $0.scanned = 0 }
+        defer { report { if $0.phase == .scanning { $0.phase = .idle } } }
         let scanStarted = Date()
         let scanner = FileScanner(settings: settings)
         var known = try store.paths(source: .file)
@@ -104,6 +104,7 @@ public actor Indexer {
         }
         let removed = try store.remove(itemIDs: Array(known.values))
         vectors.remove(ids: removed)
+        try store.didCheck(.file)
         indexLog.info("Scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
         report { $0.scanned = found; $0.phase = .idle }
         return found
@@ -127,6 +128,7 @@ public actor Indexer {
             try store.record(item, signature: FileScanner.signature(item))
         }
         vectors.remove(ids: try store.remove(itemIDs: Array(known.values)))
+        try store.didCheck(.notes)
         return notes.count
     }
 
@@ -208,6 +210,7 @@ public actor Indexer {
         }
         messageCursor = cursor
         messagesCheckedAt = started
+        try store.didCheck(.messages, at: started)
         return found
     }
 
