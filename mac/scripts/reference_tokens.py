@@ -5,7 +5,7 @@
 #
 #   uv run --with tokenizers==0.22.1 python -I mac/scripts/reference_tokens.py
 #
-# Writes mac/Packages/WhoSaidModel/Tests/GemmaEmbedderTests/Resources/reference-tokens.json.
+# Writes mac/Packages/AppearsModel/Tests/GemmaEmbedderTests/Resources/reference-tokens.json.
 # Texts are stored as code points so nothing normalizes them on the way into Swift.
 
 import json
@@ -16,7 +16,7 @@ from tokenizers import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "mac/Models/appears-model/tokenizer.json"
-OUT = ROOT / "mac/Packages/WhoSaidModel/Tests/GemmaEmbedderTests/Resources/reference-tokens.json"
+OUT = ROOT / "mac/Packages/AppearsModel/Tests/GemmaEmbedderTests/Resources/reference-tokens.json"
 
 EDGE = [
     " ", "  ", "a", "a" * 45, "\n" * 40, "\t\t\t\t x", " " * 45 + "end", "trailing space ", " leading",

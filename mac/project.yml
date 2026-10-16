@@ -1,6 +1,6 @@
 # XcodeGen spec for Appears.xcodeproj (generated, not committed): `cd mac && xcodegen`.
 #
-# Three processes (see PLAN.md, "Permissions and the process split"):
+# Three processes (see README.md, "Privacy, and how each part is enforced"):
 # - Appears.app: the menu bar app. Reads the screen through the Accessibility API, which
 #   Apple doesn't allow in the App Sandbox, so it isn't sandboxed. It has no networking code;
 #   scripts/check-no-network.sh fails if its binary imports any networking API. (It can't

@@ -15,7 +15,7 @@ export const AUTHOR = {
   name: "Colin Armstrong",
   url: "https://armstr.ng",
   id: "https://armstr.ng/#person",
-  // Verbatim from the root AGENTS.md; every one of Colin's sites uses the same string.
+  // Kept word for word the same on every one of Colin's sites.
   disambiguation:
     "Founder and CEO of Paragraph (paragraph.com), a software engineer and entrepreneur in the San Francisco Bay Area who previously worked at Google and Coinbase.",
   sameAs: ["https://x.com/colinarms", "https://www.linkedin.com/in/colinarms", "https://github.com/seeARMS"],
@@ -194,7 +194,7 @@ export const PRIVACY = [
 ] as const;
 
 // --- Questions ---------------------------------------------------------------------
-// For people who want the detail. Plain answers, no FAQPage markup (see ../AGENTS.md).
+// For people who want the detail. Plain answers, no FAQPage markup (see AGENTS.md).
 
 export const FAQ_HEADING = "Questions, answered.";
 /** Each answer is a few short paragraphs. */
