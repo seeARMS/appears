@@ -242,6 +242,29 @@ private actor MessageEmbedder: Embedder {
         #expect(try store.units(itemID: neighbour.id).first?.unit.text.contains("K-2291") == true)
     }
 
+    @Test func threadSeekPreservesTimestampTiesAndChatBoundaries() throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let date = fixture.old.addingTimeInterval(600)
+        for id in Int64(8)...14 {
+            try fixture.add(id, text: "Kitchen message \(id).", date: date)
+        }
+        // The interleaved chat must never enter the anchor's context.
+        try fixture.database.write { db in
+            try db.execute(sql: "UPDATE chat_message_join SET chat_id = 2 WHERE message_id IN (9, 12)")
+            try db.execute(sql: "CREATE INDEX chat_message_date ON chat_message_join(chat_id, message_date, message_id)")
+        }
+        let database = ChatDatabase(url: fixture.url)
+        let anchor = try #require(try database.message(rowID: 11))
+        let thread = try database.thread(around: anchor, before: 3, after: 2)
+        #expect(thread.map(\.rowID) == [6, 8, 10, 11, 13, 14])
+        #expect(try database.thread(around: anchor, before: 0, after: 0).map(\.rowID) == [11])
+        let first = try #require(try database.message(rowID: 1))
+        #expect(try database.thread(around: first, before: 5, after: 2).map(\.rowID) == [1, 2, 3])
+        let last = try #require(try database.message(rowID: 7))
+        #expect(try database.thread(around: last, before: 2, after: 5).map(\.rowID) == [13, 14, 7])
+    }
+
     @Test func respectsDemoModeAndPhotoExclusions() async throws {
         let fixture = try MessageFixture()
         defer { try? FileManager.default.removeItem(at: fixture.folder) }
