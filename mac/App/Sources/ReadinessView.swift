@@ -5,6 +5,11 @@ enum SettingsTab: Hashable { case general, updates, sources, privacy, stats }
 
 @MainActor
 extension AppModel {
+    /// A request can also reconnect or wait for the engine to finish starting.
+    var canRequestScan: Bool {
+        modelDownload.phase == .ready && !isRequestingScan && status?.progress.phase != .scanning
+    }
+
     var readinessTitle: String {
         guard modelDownload.phase == .ready else { return "Preparing Appears" }
         if engineStatusError != nil || status?.error != nil { return "Index needs attention" }
@@ -72,7 +77,7 @@ struct ReadinessView: View {
                             Task { await model.scanNow() }
                         }
                         .buttonStyle(OutlineButtonStyle())
-                        .disabled(model.isRequestingScan || model.status?.ready == false || model.status?.progress.phase == .scanning)
+                        .disabled(!model.canRequestScan)
                         .help("Check all enabled sources for new and changed items, then index them.")
                     }
                 }

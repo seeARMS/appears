@@ -356,6 +356,17 @@ let weaker = [
     precondition(model.readinessTitle == "Items queued for indexing")
     precondition(model.readinessDetail.contains("queued to index") && model.readinessDetail.contains("every minute"))
     render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-queued", width: 560)
+    var starting = EngineStatus()
+    starting.error = "The search engine couldn’t start. Use Scan now to retry."
+    model.showForSnapshot(nil, status: starting)
+    precondition(model.canRequestScan) // An unready engine must not disable recovery.
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-retry", width: 560)
+    var scanning = status
+    scanning.progress.phase = .scanning
+    scanning.progress.scanned = 1_500
+    model.showForSnapshot(nil, status: scanning)
+    precondition(!model.canRequestScan)
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-scanning", width: 560)
     var paused = status
     paused.progress.phase = .paused
     paused.progress.pausedReason = "Low Power Mode"
