@@ -1,5 +1,7 @@
 import AppKit
+import AppearsContext
 import AppearsCore
+import AppearsMessages
 import PDFKit
 import SwiftUI
 
@@ -190,6 +192,42 @@ let weaker = [
         }
     }, "confidence-ring", width: 400)
     let model = AppModel()
+    // Made-up contact results exercise both lists, including a photo, initials and
+    // an unknown address. Never open the user's Contacts or chat.db.
+    let avatar = NSImage(size: NSSize(width: 80, height: 80), flipped: false) { rect in
+        NSColor(calibratedRed: 0.3, green: 0.5, blue: 0.7, alpha: 1).setFill()
+        rect.fill()
+        NSColor.white.withAlphaComponent(0.9).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 27, y: 39, width: 26, height: 26)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 13, y: -17, width: 54, height: 54)).fill()
+        return true
+    }
+    let contactFixture = MessageContacts(people: [
+        .init(id: "dana", name: "Dana Ruiz", addresses: ["+14155550142"], photo: avatar.tiffRepresentation),
+        .init(id: "joan", name: "Joan Lee", addresses: ["joan@example.test"]),
+    ])
+    let contactModel = AppModel(contacts: ContactDirectory(snapshot: contactFixture))
+    let contactResults = ["+14155550142", "joan@example.test", "+14155550149"].enumerated().map { index, address in
+        let item = Item(id: Int64(101 + index), source: .messages, path: "messages:\(index)", kind: .message,
+                        title: address, size: 30, created: Date(), modified: Date(), lastUsed: nil,
+                        message: .init(rowID: Int64(index), guid: "fixture-\(index)", chatID: Int64(index), conversationURL: nil))
+        return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: "Me: The kitchen quote includes moving the outlet."),
+                          reason: "Related · from October 2026", snippet: "Me: The kitchen quote includes moving the outlet.",
+                          score: 1, confidence: 0.8, features: features)
+    }
+    var contactStatus = EngineStatus()
+    contactStatus.ready = true
+    contactModel.showForSnapshot(.init(mode: .pull, appName: "Messages", windowTitle: "Kitchen", fingerprint: "fixture",
+                                       suggestions: contactResults, evidenceTerms: ["quote"]), status: contactStatus)
+    render(PanelView(model: contactModel, close: {}), "panel-contacts", width: 400)
+    contactModel.sourcePreview = contactResults[0]
+    render(PanelView(model: contactModel, close: {}), "panel-contact-preview", width: 400)
+    contactModel.sourcePreview = nil
+    let contactSearch = SearchModel(app: contactModel)
+    contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults)
+    render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-contacts", width: 640)
+    contactSearch.sourcePreview = contactResults[0]
+    render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-contact-preview", width: 640)
     var status = EngineStatus()
     status.ready = true
     status.protectedFoldersReadable = true

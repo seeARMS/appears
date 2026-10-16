@@ -30,6 +30,8 @@
 	<string>Appears asks Safari and Chrome for the current page's address, and Chrome whether the window is private. Nothing leaves this Mac.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Appears looks at your next meeting a few minutes before it starts, to bring up related files you already have. It reads events in memory only, never changes them, and nothing leaves this Mac.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Appears shows contact names and photos instead of phone numbers in Messages results. Contacts are read in memory only, never changed, and nothing leaves this Mac.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Colin Armstrong. MIT License.</string>
 	<key>SUAllowsAutomaticUpdates</key>

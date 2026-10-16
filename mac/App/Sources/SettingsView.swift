@@ -172,10 +172,29 @@ struct SourcesPane: View {
                         Button("Open Settings") { FullDiskAccessGuide.open() }
                     }
                 }
+                if model.settings.sources.messages {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Contact names and photos")
+                            Text(model.contacts.access == .granted
+                                 ? (model.contacts.loadFailed ? "Couldn't load contacts. Try again." : "On")
+                                 : "Optional Contacts access replaces phone numbers with names and photos.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if model.contacts.access != .granted {
+                            Button(model.contacts.access == .notAsked ? "Allow Contacts…" : "Open Settings…") {
+                                Task { await model.contacts.allow() }
+                            }
+                        } else if model.contacts.loadFailed {
+                            Button("Retry") { Task { await model.contacts.refresh(force: true) } }
+                        }
+                    }
+                }
             } header: {
                 Text("Messages")
             } footer: {
-                Text("Indexes conversations and photos already on this Mac. Everything stays on your Mac. Turning this off removes Messages and their photos from the index.")
+                Text("Indexes conversations and photos already on this Mac. Contact names and photos are read in memory only. Everything stays on your Mac. Turning this off removes Messages and their photos from the index.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Also include") {

@@ -59,7 +59,8 @@ struct SearchView: View {
         } else if model.app.engineStatusError != nil || (model.app.status?.ready != true && model.results.isEmpty) {
             ReadinessView(model: model.app, openSources: openSettings).padding(24)
         } else if let preview = model.sourcePreview {
-            SourcePreviewView(suggestion: preview, back: { model.sourcePreview = nil }) {
+            SourcePreviewView(suggestion: preview, title: model.app.contacts.presentation(for: preview.item)?.title,
+                              back: { model.sourcePreview = nil }) {
                 if model.open(preview) { finish() }
             }
         } else if !model.hasQuery {
@@ -72,7 +73,7 @@ struct SearchView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(model.results.enumerated()), id: \.element.id) { index, suggestion in
-                            SearchResultRow(suggestion: suggestion, selected: model.selectedIndex == index) {
+                            SearchResultRow(suggestion: suggestion, contacts: model.app.contacts, selected: model.selectedIndex == index) {
                                 if model.open(suggestion) { finish() }
                             } reveal: {
                                 if model.open(suggestion, reveal: true) { finish() }
@@ -174,14 +175,16 @@ struct SearchView: View {
 
 private struct SearchResultRow: View {
     let suggestion: Suggestion
+    let contacts: ContactDirectory
     let selected: Bool
     let open: () -> Void
     let reveal: () -> Void
     let preview: () -> Void
     @State private var thumbnail: NSImage?
 
-    init(suggestion: Suggestion, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void, preview: @escaping () -> Void) {
+    init(suggestion: Suggestion, contacts: ContactDirectory, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void, preview: @escaping () -> Void) {
         self.suggestion = suggestion
+        self.contacts = contacts
         self.selected = selected
         self.open = open
         self.reveal = reveal
@@ -194,7 +197,9 @@ private struct SearchResultRow: View {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Theme.controlRadius).fill(Theme.muted)
-                    if let thumbnail {
+                    if suggestion.item.kind == .message {
+                        ContactAvatar(presentation: contacts.presentation(for: suggestion.item))
+                    } else if let thumbnail {
                         Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
                     } else {
                         Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Theme.mutedForeground)
@@ -203,7 +208,7 @@ private struct SearchResultRow: View {
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(suggestion.item.title).font(.system(size: 14, weight: .medium))
+                    Text(contacts.presentation(for: suggestion.item)?.title ?? suggestion.item.title).font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Theme.foreground).lineLimit(1).truncationMode(.middle)
                     Text(location).font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
                         .lineLimit(1).truncationMode(.middle)
@@ -232,7 +237,10 @@ private struct SearchResultRow: View {
             else { Button("Preview passage", action: preview) }
             if let line = suggestion.line { Button("Copy Line") { line.copyToPasteboard() } }
         }
-        .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
+        .task(id: suggestion.id) {
+            if suggestion.item.source == .messages { await contacts.refresh() }
+            thumbnail = await Thumbnails.image(for: suggestion)
+        }
     }
 
     private var location: String {

@@ -6,6 +6,7 @@ import SwiftUI
 /// permissions; closing the enclosing panel drops the preview with its results.
 struct SourcePreviewView: View {
     let suggestion: Suggestion
+    var title: String? = nil
     let back: () -> Void
     let open: () -> Void
 
@@ -21,7 +22,7 @@ struct SourcePreviewView: View {
                 Text(source).foregroundStyle(Theme.mutedForeground)
             }
             .font(.system(size: 12)).padding(.bottom, 14)
-            Text(suggestion.item.title)
+            Text(title ?? suggestion.item.title)
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.foreground)
                 .lineLimit(2)
             Text("Match from \(suggestion.item.created.formatted(date: .abbreviated, time: suggestion.item.source == .messages ? .shortened : .omitted))")
