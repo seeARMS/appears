@@ -84,7 +84,7 @@ final class AppModel {
         return args[index + 1]
     }()
 
-    /// The source settings sent to the engine (demo mode replaces home and skips Notes).
+    /// The source settings sent to the engine (demo mode replaces home and skips Notes and Messages).
     var engineSources: SourceSettings {
         var sources = settings.sources
         if let demo = Self.demoFolder {
@@ -399,7 +399,7 @@ final class AppModel {
         case .opened:
             if let url = suggestion.item.openURL { NSWorkspace.shared.open(url) }
         case .revealed:
-            if suggestion.item.source == .file { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: suggestion.item.path)]) }
+            if let url = suggestion.item.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         case .dismissed, .blocked:
             shown?.suggestions.removeAll { $0 == suggestion }
             shown?.weaker.removeAll { $0 == suggestion }
@@ -457,6 +457,10 @@ final class AppModel {
     // MARK: - Settings
 
     func sourcesChanged() {
+        if !settings.sources.messages {
+            shown?.suggestions.removeAll { $0.item.source == .messages }
+            shown?.weaker.removeAll { $0.item.source == .messages }
+        }
         Task { await engine.send(.settings, engineSources) }
     }
 

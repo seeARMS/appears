@@ -114,7 +114,7 @@ struct GeneralPane: View {
     }
 }
 
-private struct SourcesPane: View {
+struct SourcesPane: View {
     @Bindable var model: AppModel
 
     var body: some View {
@@ -144,21 +144,6 @@ private struct SourcesPane: View {
                 Text("Appears skips app data (~/Library), code checkouts, build output, caches and very large files. iCloud files that aren't on this Mac are indexed by name only.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Also include") {
-                FolderList(folders: $model.settings.sources.includes, empty: "Folders outside your home folder, or a code checkout you want indexed.") { model.sourcesChanged() }
-            }
-            Section("Never include") {
-                FolderList(folders: $model.settings.sources.excludes, empty: "Nothing excluded.") { model.sourcesChanged() }
-                ForEach(ItemKind.allCases.filter { $0 != .note }, id: \.self) { kind in
-                    Toggle("Skip \(kind.label.lowercased())s", isOn: Binding(
-                        get: { model.settings.sources.excludedKinds.contains(kind) },
-                        set: { skip in
-                            if skip { model.settings.sources.excludedKinds.insert(kind) } else { model.settings.sources.excludedKinds.remove(kind) }
-                            model.sourcesChanged()
-                        }
-                    ))
-                }
-            }
             Section("Apple Notes") {
                 Toggle("Include Apple Notes", isOn: Binding(get: { model.settings.sources.notes }, set: { model.settings.sources.notes = $0; model.sourcesChanged() }))
                 if model.settings.sources.notes, model.status?.notesReadable == false {
@@ -169,7 +154,39 @@ private struct SourcesPane: View {
                 }
             }
             Section {
-                Button("Look for new files now") { Task { await model.engine.send(.rescan) } }
+                Toggle("Include Messages and photos", isOn: Binding(
+                    get: { model.settings.sources.messages },
+                    set: { model.settings.sources.messages = $0; model.sourcesChanged() }
+                ))
+                if model.settings.sources.messages, model.status?.messagesReadable == false {
+                    HStack {
+                        Text("Needs Full Disk Access.").font(.caption).foregroundStyle(.secondary)
+                        Button("Open Settings") { FullDiskAccessGuide.open() }
+                    }
+                }
+            } header: {
+                Text("Messages")
+            } footer: {
+                Text("Indexes conversations and photos already on this Mac. Everything stays on your Mac. Turning this off removes Messages and their photos from the index.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Also include") {
+                FolderList(folders: $model.settings.sources.includes, empty: "Folders outside your home folder, or a code checkout you want indexed.") { model.sourcesChanged() }
+            }
+            Section("Never include") {
+                FolderList(folders: $model.settings.sources.excludes, empty: "Nothing excluded.") { model.sourcesChanged() }
+                ForEach(ItemKind.allCases.filter { $0 != .note && $0 != .message }, id: \.self) { kind in
+                    Toggle("Skip \(kind.label.lowercased())s", isOn: Binding(
+                        get: { model.settings.sources.excludedKinds.contains(kind) },
+                        set: { skip in
+                            if skip { model.settings.sources.excludedKinds.insert(kind) } else { model.settings.sources.excludedKinds.remove(kind) }
+                            model.sourcesChanged()
+                        }
+                    ))
+                }
+            }
+            Section {
+                Button("Look for new items now") { Task { await model.engine.send(.rescan) } }
             }
         }
         .formStyle(.grouped)
@@ -233,7 +250,7 @@ private struct PrivacyPane: View {
     var body: some View {
         Form {
             Section("What Appears keeps") {
-                Text("An index of your own files and notes, and a log of which suggestions you opened or dismissed. The log has a salted fingerprint of each context, never its text. Both stay in the engine's sandbox container and are excluded from backups.")
+                Text("An index of your own files, notes and Messages, and a log of which suggestions you opened or dismissed. The log has a salted fingerprint of each context, never its text. Both stay in the engine's sandbox container and are excluded from backups.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Delete the index…") { confirmIndex = true }
                     .confirmationDialog("Delete the index? Appears will read your files again from the start.", isPresented: $confirmIndex) {

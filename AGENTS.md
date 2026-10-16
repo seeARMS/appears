@@ -32,13 +32,14 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 
 - **`mac/Packages/AppearsKit`:** builds and tests with the Command Line Tools. Running `swift test` with `DEVELOPER_DIR` set to Xcode avoids a Testing-macro plugin error with the CLT toolchain.
   - `AppearsCore`:
-    - `Sources` (`FileScanner`, skip rules), `Extractors`, `NotesReader` (gzipped protobuf);
+    - `Sources` (`FileScanner`, skip rules), `Extractors`, `NotesReader` (gzipped protobuf), `MessagesReader` (direct chat.db and local photos);
     - `IndexStore` (GRDB, FTS5, float16 vectors), `VectorIndex` (brute force), `Indexer`;
     - `QueryBuilder`, `Recall` (ranking and `Confidence`), `Journal`, `SurfacePolicy`;
     - `Engine` (the engine's logic and XPC protocol, also used in-process by the CLI);
     - `CalendarEvent` (an upcoming meeting as a context, conferencing boilerplate stripped) and `CalendarSchedule` (when to look).
   - `AppearsContext`: `ContextReader` (AX), `Browsers`, `Exclusions`, `ScreenText` (OCR fallback).
   - `AppearsMCP`: `appears mcp`, an MCP server over stdio (`MCPServer`, `Tools`) and `AgentIndex`, which reads an index read-only. It never journals, and its stderr log never gets query text, results or file content.
+- **`AppearsMessages`** in AppearsKit: a copied read-only Messages database reader, dates, attributed-body decoding and conversation links. It does not read or share whosaid's index.
 - **`mac/Packages/AppearsModel`:** needs Xcode, since MLX compiles Metal shaders.
   - `EmbeddingGemma2`: copied unmodified from whosaid, which copied it from Obscyra-app/EmbeddingGemma2Swift.
   - `GemmaEmbedder`: loads the vision tower lazily and unloads it after indexing.

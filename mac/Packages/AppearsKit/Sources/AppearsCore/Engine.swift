@@ -7,6 +7,7 @@ public struct EngineStatus: Sendable, Codable, Equatable {
     public var counts = IndexCounts()
     public var progress = IndexProgress()
     public var notesReadable = false
+    public var messagesReadable = false
     /// Whether the engine could read the protected home folders (Desktop, Documents,
     /// Downloads). False usually means macOS is waiting on a permission.
     public var protectedFoldersReadable = false
@@ -65,6 +66,7 @@ public final class Engine: Sendable {
             try store.removeAll()
             try store.setMeta("model_id", embedder.modelID)
         }
+        if !settings.messages { try store.remove(itemIDs: store.itemIDs(source: .messages)) }
         try store.loadVectors(into: vectors)
     }
 
@@ -86,6 +88,8 @@ public final class Engine: Sendable {
                 tick += 1
                 // The watchdog: anything waiting and nothing running means a run ended early.
                 if (try? self.store.counts().waiting) ?? 0 > 0 { await self.indexPending() }
+                // New messages each minute; a full pass also catches deletions and local photos.
+                if (try? await self.indexer.scanMessages(full: tick % 10 == 0)) ?? 0 > 0 { await self.indexPending() }
                 // Notes have no file events we can watch from the sandbox: look every 10 minutes.
                 if tick % 10 == 0, (try? await self.indexer.scanNotes()) ?? 0 > 0 { await self.indexPending() }
                 // A full rescan every 6 hours catches anything FSEvents missed.
@@ -94,11 +98,12 @@ public final class Engine: Sendable {
         }
     }
 
-    /// One full pass: scan files and notes, then index what's new.
+    /// One full pass: scan files, notes and Messages, then index what's new.
     public func refresh() async {
         do {
             try await indexer.scanFiles()
             try await indexer.scanNotes()
+            try await indexer.scanMessages()
         } catch {
             indexLog.error("Scan failed: \(error.localizedDescription, privacy: .public)")
             await state.setError("Scanning failed: \(error.localizedDescription)")
@@ -138,6 +143,8 @@ public final class Engine: Sendable {
         status.counts = (try? store.counts()) ?? IndexCounts()
         status.progress = await indexer.progress
         status.notesReadable = NotesReader.isReadable
+        let sources = await indexer.settings
+        status.messagesReadable = sources.messages && sources.homeOverride == nil && MessagesReader().isReadable
         let home = FileScanner.realHome
         status.protectedFoldersReadable = (try? FileManager.default.contentsOfDirectory(atPath: home + "/Documents")) != nil
         status.modelID = embedder.modelID

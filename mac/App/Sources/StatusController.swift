@@ -150,9 +150,9 @@ final class StatusController: NSObject {
     }
 
     func quickLook() {
-        guard let selected = model.selected, selected.item.source == .file else { return }
+        guard let selected = model.selected, let url = selected.item.fileURL else { return }
         model.act(.previewed, on: selected)
-        panel.previewURL = URL(filePath: selected.item.path)
+        panel.previewURL = url
         let preview = QLPreviewPanel.shared()!
         if preview.isVisible { preview.orderOut(nil) } else { preview.makeKeyAndOrderFront(nil) }
     }

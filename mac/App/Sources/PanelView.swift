@@ -277,12 +277,12 @@ struct ResultRow: View {
         }
         .onDrag {
             model.act(.dragged, on: suggestion)
-            if suggestion.item.source == .file, let provider = NSItemProvider(contentsOf: URL(filePath: suggestion.item.path)) {
+            if let url = suggestion.item.fileURL, let provider = NSItemProvider(contentsOf: url) {
                 return provider
             }
             return NSItemProvider(object: suggestion.snippet as NSString)
         }
-        .help(suggestion.item.source == .file ? "\(suggestion.item.path)\nDrag it into anything." : "Apple Notes")
+        .help(suggestion.item.fileURL.map { "\($0.path)\nDrag it into anything." } ?? (suggestion.item.source == .messages ? "Messages" : "Apple Notes"))
         .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
     }
 
@@ -296,6 +296,7 @@ struct ResultRow: View {
     private var reasonText: Text {
         var parts = suggestion.reason.components(separatedBy: " · ")
         if suggestion.item.source == .notes { parts.insert("Notes", at: min(1, parts.count)) }
+        if suggestion.item.source == .messages { parts.insert("Messages", at: min(1, parts.count)) }
         let first = parts.first ?? ""
         let generic = first == "Related" || first == "Looks related"
         let why = Text(first).foregroundStyle(generic ? Theme.mutedForeground : Theme.foreground)
@@ -324,11 +325,11 @@ struct ResultRow: View {
                             model.act(.copiedLine, on: suggestion)
                         }
                     }
-                    if suggestion.item.source == .file {
+                    if let url = suggestion.item.fileURL {
                         Button("Show in Finder") { model.act(.revealed, on: suggestion); close() }
                         Button("Copy Path") {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(suggestion.item.path, forType: .string)
+                            NSPasteboard.general.setString(url.path, forType: .string)
                             model.act(.copied, on: suggestion)
                         }
                     }
@@ -361,6 +362,7 @@ struct ResultRow: View {
     private var icon: String {
         switch suggestion.item.kind {
         case .note: "note.text"
+        case .message: "bubble.left.and.bubble.right"
         case .pdf: "doc.richtext"
         case .image: "photo"
         case .document: "doc.text"
@@ -414,8 +416,7 @@ enum Thumbnails {
 
     static func image(for suggestion: Suggestion) async -> NSImage? {
         if let cached = cache[suggestion.item.id] { return cached }
-        guard suggestion.item.source == .file, !suggestion.item.metadataOnly else { return nil }
-        let url = URL(filePath: suggestion.item.path)
+        guard let url = suggestion.item.fileURL, !suggestion.item.metadataOnly else { return nil }
         if suggestion.item.kind == .pdf, let page = suggestion.unit.locator.page,
            let document = PDFDocument(url: url), let pdfPage = document.page(at: page - 1) {
             return pdfPage.thumbnail(of: NSSize(width: 80, height: 80), for: .mediaBox)

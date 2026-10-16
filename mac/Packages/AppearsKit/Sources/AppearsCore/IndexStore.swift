@@ -110,6 +110,9 @@ public final class IndexStore: Sendable {
                 )
                 """)
         }
+        migrator.registerMigration("v3-messages") { db in
+            try db.execute(sql: "ALTER TABLE item ADD COLUMN message BLOB")
+        }
         return migrator
     }
 
@@ -164,13 +167,13 @@ public final class IndexStore: Sendable {
                     sql: """
                         UPDATE item SET title = ?, kind = ?, size = ?, created = ?, modified = ?,
                             last_used = MAX(COALESCE(last_used, 0), COALESCE(?, 0)), metadata_only = ?,
-                            signature = ?, state = CASE WHEN ? THEN state ELSE 0 END
+                            message = ?, signature = ?, state = CASE WHEN ? THEN state ELSE 0 END
                         WHERE id = ?
                         """,
                     arguments: [
                         item.title, item.kind.rawValue, item.size, item.created.timeIntervalSince1970,
                         item.modified.timeIntervalSince1970, item.lastUsed?.timeIntervalSince1970,
-                        item.metadataOnly, signature, unchanged, id,
+                        item.metadataOnly, try item.message.map { try JSONEncoder().encode($0) }, signature, unchanged, id,
                     ]
                 )
                 return (id, !unchanged || (row["state"] as Int) == 0)
@@ -178,13 +181,13 @@ public final class IndexStore: Sendable {
             try db.execute(
                 sql: """
                     INSERT INTO item (source, path, kind, title, size, created, modified, last_used,
-                                      metadata_only, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      metadata_only, signature, message)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [
                     item.source.rawValue, item.path, item.kind.rawValue, item.title, item.size,
                     item.created.timeIntervalSince1970, item.modified.timeIntervalSince1970,
-                    item.lastUsed?.timeIntervalSince1970, item.metadataOnly, signature,
+                    item.lastUsed?.timeIntervalSince1970, item.metadataOnly, signature, try item.message.map { try JSONEncoder().encode($0) },
                 ]
             )
             return (db.lastInsertedRowID, true)
@@ -226,6 +229,36 @@ public final class IndexStore: Sendable {
             let rows = try Row.fetchCursor(db, sql: "SELECT id, path FROM item WHERE source = ?", arguments: [source.rawValue])
             while let row = try rows.next() { paths[row["path"]] = row["id"] }
             return paths
+        }
+    }
+
+    /// Skip unchanged Messages entries without opening a write transaction for every message.
+    func sourceRecords(_ source: ItemSource) throws -> [String: (id: Int64, signature: String)] {
+        try pool.read { db in
+            var result: [String: (id: Int64, signature: String)] = [:]
+            let rows = try Row.fetchCursor(db, sql: "SELECT id, path, signature FROM item WHERE source = ?", arguments: [source.rawValue])
+            while let row = try rows.next() { result[row["path"]] = (row["id"], row["signature"]) }
+            return result
+        }
+    }
+
+    func messageRecords(rowID: Int64) throws -> [String: (id: Int64, signature: String)] {
+        try pool.read { db in
+            var result: [String: (id: Int64, signature: String)] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT id, path, signature FROM item WHERE source = 'messages' AND (path = ? OR path GLOB ?)",
+                                        arguments: [MessagesReader.path(rowID), MessagesReader.path(rowID) + ":photo:*"]) {
+                result[row["path"]] = (row["id"], row["signature"])
+            }
+            return result
+        }
+    }
+
+    func markMessagesPending(rowIDs: [Int64]) throws {
+        try pool.write { db in
+            for rowID in Set(rowIDs) {
+                try db.execute(sql: "UPDATE item SET state = 0 WHERE source = 'messages' AND (path = ? OR path GLOB ?)",
+                               arguments: [MessagesReader.path(rowID), MessagesReader.path(rowID) + ":photo:*"])
+            }
         }
     }
 
@@ -496,7 +529,8 @@ public final class IndexStore: Sendable {
             created: Date(timeIntervalSince1970: row["created"]),
             modified: Date(timeIntervalSince1970: row["modified"]),
             lastUsed: (row["last_used"] as Double?).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil },
-            metadataOnly: row["metadata_only"]
+            metadataOnly: row["metadata_only"],
+            message: (row.hasColumn("message") ? row["message"] as Data? : nil).flatMap { try? JSONDecoder().decode(MessageReference.self, from: $0) }
         )
     }
 

@@ -56,16 +56,18 @@ struct Common: ParsableArguments {
 }
 
 struct Index: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Scan and index (home folder and Notes by default).")
+    static let configuration = CommandConfiguration(abstract: "Scan and index (home folder, Notes and Messages with photos by default).")
     @OptionGroup var common: Common
     @Option(help: "Index only this folder instead of the home folder.")
     var root: String?
     @Flag(help: "Skip Apple Notes.")
     var noNotes = false
+    @Flag(help: "Skip Messages and their photos.")
+    var noMessages = false
 
     func run() async throws {
         let embedder = try await common.makeEmbedder()
-        var settings = SourceSettings(notes: !noNotes)
+        var settings = SourceSettings(notes: !noNotes, messages: !noMessages)
         let engine: Engine
         if let root {
             let folder = URL(filePath: root).standardizedFileURL.path
@@ -80,7 +82,8 @@ struct Index: AsyncParsableCommand {
             print("Scanning \(FileScanner.realHome)…")
             let found = try await engine.indexer.scanFiles()
             let notes = try await engine.indexer.scanNotes()
-            print("Found \(found) files and \(notes) notes.")
+            let messages = try await engine.indexer.scanMessages()
+            print("Found \(found) files, \(notes) notes and \(messages) Messages items.")
         }
         let started = Date()
         await engine.indexer.setProgressHandler { progress in

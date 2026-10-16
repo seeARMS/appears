@@ -26,10 +26,10 @@ enum Tools {
                 "items": [
                     "type": "object",
                     "properties": [
-                        "path": ["type": "string", "description": "The file's path, or notes:<id> for an Apple Note."],
-                        "url": ["type": "string", "description": "Opens it: a file URL, or a notes:// URL."],
+                        "path": ["type": "string", "description": "A file path, notes:<id>, or messages:<id>."],
+                        "url": ["type": "string", "description": "Opens the file, note or Messages conversation."],
                         "title": ["type": "string"],
-                        "kind": ["type": "string", "enum": ["document", "pdf", "image", "note"]],
+                        "kind": ["type": "string", "enum": ["document", "pdf", "image", "note", "message"]],
                         "reason": ["type": "string", "description": "Why it matched, in one line."],
                         "snippet": ["type": "string", "description": "The matching text (OCR text for an image)."],
                         "lastOpened": ["type": ["string", "null"], "description": "When the user last opened it (from Spotlight, or Appears seeing it on screen), ISO 8601; null if unknown."],
@@ -52,7 +52,7 @@ enum Tools {
         [
             "name": "related",
             "title": "Find what the user already has",
-            "description": "Search the user's own files on this Mac (documents, PDFs, images and screenshots, Apple Notes) for anything about some text: a question, a topic, people's names, or a passage you're working on. Matches by meaning and by names, numbers and rare words, so it finds a photo of a wifi card from \"what's the cabin wifi password\". Each result has its path, why it matched, the matching text and when it was last opened.",
+            "description": "Search the user's own files on this Mac (documents, PDFs, images and screenshots, Apple Notes, Messages and their local photos) for anything about some text: a question, a topic, people's names, or a passage you're working on. Matches by meaning and by names, numbers and rare words, so it finds a photo of a wifi card from \"what's the cabin wifi password\". Each result has its path, why it matched, the matching text and when it was last opened.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -69,7 +69,7 @@ enum Tools {
         [
             "name": "related_to_file",
             "title": "Find what relates to a file",
-            "description": "Find the user's other files and notes that relate to one file Appears has indexed, using that file's own index entry. Give an absolute path, or ~/ for the home folder.",
+            "description": "Find the user's other indexed items that relate to one file Appears has indexed, using that file's own index entry. Give an absolute path, or ~/ for the home folder.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -126,7 +126,7 @@ enum Tools {
 
     /// An absolute path from what an agent sent: `~/…`, a file URL, or a path. Notes pass through.
     static func path(_ raw: String) -> String {
-        if raw.hasPrefix("notes:") { return raw }
+        if raw.hasPrefix("notes:") || raw.hasPrefix("messages:") { return raw }
         if let url = URL(string: raw), url.isFileURL { return url.standardizedFileURL.path }
         let expanded = raw.hasPrefix("~") ? FileScanner.realHome + raw.dropFirst() : raw
         return URL(filePath: expanded).standardizedFileURL.path
@@ -137,7 +137,7 @@ enum Tools {
         guard !suggestions.isEmpty else {
             return Answer(text: "Appears found nothing in the user's files \(heading). More words, or names and numbers, give it more to go on.", structured: ["results": []])
         }
-        var lines = ["\(suggestions.count) of the user's own files and notes \(heading), best first:"]
+        var lines = ["\(suggestions.count) of the user's own indexed items \(heading), best first:"]
         for (number, suggestion) in suggestions.enumerated() {
             let item = suggestion.item
             lines.append("")
