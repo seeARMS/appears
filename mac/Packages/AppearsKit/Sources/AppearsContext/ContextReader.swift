@@ -26,6 +26,7 @@ public final class ContextReader {
 
     private var observer: AXObserver?
     private var observedPID: pid_t = 0
+    private var observedField: AXUIElement?
     private var activationToken: NSObjectProtocol?
     private var enabledManualAccessibility: Set<pid_t> = []
 
@@ -76,7 +77,10 @@ public final class ContextReader {
         let callback: AXObserverCallback = { _, _, _, refcon in
             guard let refcon else { return }
             let reader = Unmanaged<ContextReader>.fromOpaque(refcon).takeUnretainedValue()
-            MainActor.assumeIsolated { reader.onChange?() }
+            MainActor.assumeIsolated {
+                reader.observeFocusedField()
+                reader.onChange?()
+            }
         }
         guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
@@ -85,6 +89,25 @@ public final class ContextReader {
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
         observer = created
+        observeFocusedField()
+    }
+
+    /// Value and selection notifications belong to the editable element. Subscribing
+    /// only to the app does not reliably report typing inside Messages or other apps.
+    private func observeFocusedField() {
+        guard let observer else { return }
+        let app = AXUIElementCreateApplication(observedPID)
+        let focused: AXUIElement? = attribute(app, kAXFocusedUIElementAttribute)
+        if let focused, let observedField, CFEqual(focused, observedField) { return }
+        let notifications = [kAXValueChangedNotification, kAXSelectedTextChangedNotification]
+        if let observedField {
+            for name in notifications { AXObserverRemoveNotification(observer, observedField, name as CFString) }
+        }
+        observedField = focused
+        if let focused {
+            let refcon = Unmanaged.passUnretained(self).toOpaque()
+            for name in notifications { AXObserverAddNotification(observer, focused, name as CFString, refcon) }
+        }
     }
 
     private func detach() {
@@ -92,6 +115,7 @@ public final class ContextReader {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
         observer = nil
+        observedField = nil
         observedPID = 0
     }
 

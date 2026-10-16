@@ -219,6 +219,16 @@
       "expect": [
         "Downloads/EOB-Delta-Dental-2025-03.pdf"
       ]
+    },
+    {
+      "name": "A new draft in the same chat: recent rent payment",
+      "app": "Messages",
+      "title": "Jordan Vale",
+      "focused": "Did you pay the final Harbor Oaks apartment rent bill?",
+      "visible": "Jordan: Want to walk around the lake on Saturday?",
+      "expect": [
+        "messages:demo-rent-payment"
+      ]
     }
   ],
   "negative": [
@@ -356,6 +366,13 @@
       "app": "Safari",
       "title": "Change your password",
       "visible": "Choose a new password. Use at least 12 characters with a mix of letters, numbers and symbols. You'll be signed out of other devices."
+    },
+    {
+      "name": "Same chat, unrelated question with no answer",
+      "app": "Messages",
+      "title": "Jordan Vale",
+      "focused": "Did you pick a movie for tonight?",
+      "visible": "Jordan: Want to walk around the lake on Saturday?"
     }
   ]
 }
