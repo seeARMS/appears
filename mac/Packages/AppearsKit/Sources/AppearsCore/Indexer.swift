@@ -42,13 +42,30 @@ public actor Indexer {
     private var settingsRevision = 0
     private var messageSeconds = (read: 0.0, embed: 0.0, write: 0.0)
     private var onProgress: (@Sendable (IndexProgress) -> Void)?
+    private var fileScan: Task<Int, any Error>?
+    private var scanAgain = false
+    private let fileWalk: @Sendable (FileScanner, @Sendable (Int) -> Void) throws -> [Item]
+    private var activeWalk: UUID?
 
-    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil) {
+    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil,
+                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil) {
         self.store = store
         self.vectors = vectors
         self.embedder = embedder
         self.settings = settings
         self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
+        if let fileWalk { self.fileWalk = { scanner, _ in try fileWalk(scanner) } }
+        else {
+            self.fileWalk = { scanner, progress in
+                var items: [Item] = []
+                try scanner.scan { item in
+                    try Task.checkCancellation()
+                    items.append(item)
+                    if items.count % 500 == 0 { progress(items.count) }
+                }
+                return items
+            }
+        }
     }
 
     func watchConfiguration() -> (SourceSettings, Int) { (settings, settingsRevision) }
@@ -69,6 +86,7 @@ public actor Indexer {
         let old = self.settings
         self.settings = settings
         settingsRevision += 1
+        if fileScan != nil { scanAgain = true }
         var removed = try store.itemIDs(under: settings.excludes.filter { !old.excludes.contains($0) })
         if old.notes, !settings.notes { removed += try store.itemIDs(source: .notes) }
         if !settings.messages {
@@ -89,30 +107,77 @@ public actor Indexer {
     /// Walks the home folder and included folders, recording new and changed files and
     /// removing ones that are gone. Returns how many files it found.
     @discardableResult
-    public func scanFiles() throws -> Int {
-        // A rescan can enter while indexing awaits the embedder. Keep that run's
-        // indexing or paused state, just as scanMessages does.
+    public func scanFiles() async throws -> Int {
+        // One active walk and at most one follow-up, regardless of FSEvents volume.
+        scanAgain = true
+        if let fileScan { return try await fileScan.value }
+        let task = Task {
+            defer { fileScan = nil }
+            var found = 0
+            repeat {
+                scanAgain = false
+                found = try await performFileScan()
+            } while scanAgain
+            return found
+        }
+        fileScan = task
+        return try await task.value
+    }
+
+    private func performFileScan() async throws -> Int {
+        // A rescan can enter while indexing awaits the embedder. Preserve that
+        // run's progress, including its scanned count and paused state.
         let showsScanProgress = progress.phase == .idle
         if showsScanProgress { report { $0.phase = .scanning; $0.scanned = 0 } }
         defer {
             if showsScanProgress, progress.phase == .scanning { report { $0.phase = .idle } }
         }
         let scanStarted = Date()
+        let revision = settingsRevision
+        let walkID = UUID()
+        activeWalk = walkID
+        defer { activeWalk = nil }
         let scanner = FileScanner(settings: settings)
-        var known = try store.paths(source: .file)
-        var found = 0
-        try scanner.scan { item in
-            known.removeValue(forKey: item.path)
-            try store.record(item, signature: FileScanner.signature(item))
-            found += 1
-            if showsScanProgress, found % 500 == 0 { report { $0.scanned = found } }
+        let walk = fileWalk
+        let store = store
+        // FileProvider metadata and directory enumeration can block for seconds. Keep
+        // that work off this actor so settings, status, and indexing can still advance.
+        let traversal = Task.detached(priority: .utility) {
+            let known = try store.paths(source: .file)
+            return (known, try walk(scanner) { count in
+                Task { await self.reportFileWalk(count, id: walkID) }
+            })
         }
+        let (snapshot, items) = try await withTaskCancellationHandler {
+            try await traversal.value
+        } onCancel: { traversal.cancel() }
+        activeWalk = nil
+        guard revision == settingsRevision else { scanAgain = true; return 0 }
+        if showsScanProgress, progress.phase == .scanning { report { $0.scanned = items.count } }
+        var known = snapshot
+        var found = 0
+        for batch in items.chunked(100) {
+            try Task.checkCancellation()
+            guard revision == settingsRevision else { scanAgain = true; return found }
+            for item in batch {
+                known.removeValue(forKey: item.path)
+                try store.record(item, signature: FileScanner.signature(item))
+                found += 1
+            }
+            await Task.yield()
+        }
+        guard revision == settingsRevision else { scanAgain = true; return found }
         let removed = try store.remove(itemIDs: Array(known.values))
         vectors.remove(ids: removed)
         try store.didCheck(.file)
         indexLog.info("Scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
-        if showsScanProgress { report { $0.scanned = found } }
+        if showsScanProgress, progress.phase == .scanning { report { $0.scanned = found } }
         return found
+    }
+
+    private func reportFileWalk(_ count: Int, id: UUID) {
+        guard activeWalk == id, progress.phase == .scanning else { return }
+        report { $0.scanned = count }
     }
 
     /// Reads Apple Notes, if they're on and readable. Returns how many notes it found.
@@ -221,6 +286,7 @@ public actor Indexer {
 
     /// Files that FSEvents says changed: record them, or remove them if they're gone.
     public func filesChanged(_ paths: [String]) throws {
+        if fileScan != nil { scanAgain = true }
         let scanner = FileScanner(settings: settings)
         var removed: [Int64] = []
         for path in Set(paths) {
