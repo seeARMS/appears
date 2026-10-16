@@ -39,6 +39,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
   It can't sandbox itself either. A self-applied `sandbox_init` profile, even one that allows everything except IP networking, makes macOS refuse the process Accessibility, and on macOS 27 the built-in named `no-network` profile kills the process outright. Both found 2026-10-15.
 - **`appears mcp`,** the CLI's server for agents, has no networking code either and runs only when an agent you set up starts it. What that agent does with the results is up to the agent; see [For agents](#for-agents).
 - **Nothing about what was on screen is stored,** and the same goes for calendar events, which are read through EventKit in memory and never logged. Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
+- **The model download** runs in `AppearsDownloader.xpc`, a separate sandbox with network.client only and no access to your files or screen. On first launch it downloads about 914 MB of pinned model files while you go through onboarding. Every file must match its bundled size and SHA-256 before an atomic install makes the model available to the engine. Completed files and resume data survive download failures; Retry continues setup. Once installed, the app works offline. The app and engine never download anything themselves.
 
 ## Repository
 
@@ -46,6 +47,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
 mac/
   App/                      the menu bar app (AppKit + SwiftUI): status item, panel, settings, onboarding
   Engine/                   the sandboxed XPC service
+  Downloader/               the sandboxed first-run model downloader, no user-file access
   Packages/AppearsKit/      builds and tests with the Command Line Tools
     AppearsCore/            sources, extractors, Notes reader, index, ranking, journal, surface policy
     AppearsContext/         Accessibility reader, browser URLs, exclusions, OCR fallback
@@ -63,16 +65,17 @@ brand/                      the mark and app icon
 
 You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [uv](https://docs.astral.sh/uv/). If `xcode-select -p` points at the Command Line Tools, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
-1. The model (about 1.5 GB down, 870 MB bundled). `mac/Models/` is git-ignored; on this Mac it was copied from whosaid's prepared model. Otherwise:
-
-   ```bash
-   mac/scripts/fetch-model.sh
-   ```
-
-2. Build the app (Release is much faster than Debug: MLX runs unoptimized in Debug):
+1. Build the lightweight app (Release is much faster than Debug: MLX runs unoptimized in Debug):
 
    ```bash
    cd mac && xcodegen && xcodebuild -project Appears.xcodeproj -scheme Appears -configuration Release -derivedDataPath build/DerivedData ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
+   ```
+
+2. For local development before the model is hosted, prepare and seed the verified cache once, from the repo root. `mac/Models/` is git-ignored. This isn't needed by people downloading the released app:
+
+   ```bash
+   mac/scripts/fetch-model.sh
+   python3 -I mac/scripts/install-local-model.py
    ```
 
 3. Run it from a stable place, so permissions stick:
@@ -187,7 +190,7 @@ command = "/path/to/appears/mac/build/ModelDerivedData/Build/Products/Release/ap
 args = ["mcp"]
 ```
 
-The app keeps its index in the engine's sandbox container, and macOS doesn't let other apps read containers. The app that runs the agent (Terminal, iTerm, Claude, Codex) needs Full Disk Access, or `appears mcp` answers every question with an error saying so. The model comes from `mac/Models/appears-model` in the checkout, or from inside an installed Appears.app; `--model` picks another.
+The app keeps its index in the engine's sandbox container, and macOS doesn't let other apps read containers. The app that runs the agent (Terminal, iTerm, Claude, Codex) needs Full Disk Access, or `appears mcp` answers every question with an error saying so. The model comes from `mac/Models/appears-model` in the checkout, or from the app's verified downloaded model cache; `--model` picks another.
 
 To try it on the demo without the app, index `demo/files` into a folder of its own and point the server at it:
 
@@ -205,15 +208,29 @@ Or pipe it a question by hand:
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"related","arguments":{"text":"what is the wifi password at the cabin"}}}' | mac/build/ModelDerivedData/Build/Products/Release/appears mcp --data /tmp/appears-demo
 ```
 
+## Releasing to appea.rs
+
+`.github/workflows/release.yml` runs on a pushed `vX.Y.Z` tag (which must match `VERSION`), or manually against an existing tag. It tests the core and web routes, prepares the separately hosted model, builds the arm64 app, checks the privacy boundaries, signs with Developer ID, notarizes and staples the app and DMG, then uploads to the private `appears-downloads` R2 bucket in the personal Cloudflare account. `mac/scripts/release.sh` only builds; the upload steps are separate.
+
+The site Worker exposes `https://appea.rs/app.dmg`, an uncached redirect to an immutable `/downloads/vX.Y.Z/Appears.dmg`. The landing page, Markdown and llms.txt share that link. The upload script reads back and hashes the R2 files before switching `latest.json`. Previous version URLs keep working, including paused downloads. The thin app is eligible for the Worker's edge cache; model files above Cloudflare's 512 MB standard limit stream from R2. Nothing private from the source repository is published.
+
+One-time setup, before the first release:
+
+1. In `web/`, use the personal profile to create the private bucket: `npm run cf -- r2 bucket create appears-downloads`. Keep public bucket access disabled; the Worker has an R2 binding. Deploy the updated site Worker once so `/downloads/*` and `/models/*` are served.
+2. Add GitHub repository secrets: `APPLE_CERTIFICATE_BASE64` (exported Developer ID Application `.p12`, base64 encoded), `APPLE_CERTIFICATE_PASSWORD`, `NOTARY_KEY_P8` (App Store Connect private key), `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (Object Read & Write, scoped to this bucket). Optional `HF_TOKEN` is used only to prepare the upstream model. Keep long-term credential copies in 1Password; never put values in the repo, shell history or chat.
+3. Add repository variables: `DEVELOPER_ID` (full Developer ID Application identity), `APPLE_TEAM_ID`, and `NOTARY_KEY_ID`. Set `NOTARY_ISSUER` for a Team API key; leave it unset for an Individual key.
+4. When ready to release, update `VERSION`, commit the intended release, and push its `vX.Y.Z` tag. Signing credentials live only in a temporary runner keychain and are removed after the job.
+
+No R2 bucket, credentials, deployment or first release is created by adding these files. For rollback, put a previously verified version and its SHA-256 back into the bucket's `latest.json`; don't overwrite immutable version or model files. A failed upload never promotes an unverified DMG. A version that was already uploaded is not overwritten on rerun.
+
 ## Not done yet
 
 - **Calibration:** not learned yet. The confidence weights are hand-set from the eval; fitting them to the journal is next.
 - **Notes attachments** (scans, photos in notes) aren't indexed; note text is.
 - **Folders added under Include** are scanned, but not watched for changes until the next full rescan (every 6 hours) or a relaunch.
 - **Releases:**
-  - signing with a team, notarization;
+  - configure the Apple signing/notarization credentials, R2 bucket and GitHub settings above, then verify the first live workflow and download;
   - Sparkle (`web/public/appcast.xml` is ready and empty; the app must use Sparkle's Downloader XPC service, since it can't reach the network itself);
-  - `release.sh` with its entitlement checks;
   - the Homebrew cask.
 - **`appears mcp` without a checkout or Full Disk Access:** the CLI isn't in the app or the Homebrew cask yet. Reading the app's index needs Full Disk Access for the agent's app. Tested 2026-10-15 on macOS 27: nothing signed with the self-signed dev certificate gets into the engine's container, even with the engine's exact identifier. Apple lets apps with the same Team ID read each other's containers, so shipping the CLI inside Appears.app under the release Team ID should work, but it's untested until there is a Team ID. Moving the index out of the container would let any process read Notes and Documents text, so it stays where it is.
 - **Not in v0:** voice memos and audio, video, Mail, Photos (see PLAN.md).

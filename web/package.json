@@ -12,6 +12,7 @@
     "build": "astro build",
     "preview": "astro build && XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler dev",
     "check": "astro check",
+    "test": "esbuild src/worker.ts --bundle --format=esm --outfile=.data/worker-test.mjs --log-level=warning && node --test tests/download.test.mjs",
     "astro": "astro",
     "cf": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler",
     "cf:login": "XDG_CONFIG_HOME=\"$HOME/.config/wrangler-personal\" wrangler login",
@@ -29,8 +30,10 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@cloudflare/workers-types": "^5.20261015.1",
     "@resvg/resvg-wasm": "^2.6.2",
     "esbuild": "^0.28.2",
+    "miniflare": "^5.20261012.0-beta",
     "typescript": "^6.0.3",
     "wrangler": "^4.151.0"
   }

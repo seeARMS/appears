@@ -10,11 +10,11 @@
 	"assets": {
 		"directory": "./dist",
 		"binding": "ASSETS",
-		// Only the page and its Markdown go through the Worker, which picks
-		// between them by Accept header. Keep asset folders out: everything
-		// else (appcast.xml, og.png, /_astro/) is served straight from the files.
-		"run_worker_first": ["/", "/index.md"]
+		// Pages negotiate Markdown; downloads stream from R2. Site assets
+		// (appcast.xml, og.png, /_astro/) stay on the static asset path.
+		"run_worker_first": ["/", "/index.md", "/app.dmg", "/downloads/*", "/models/*"]
 	},
+	"r2_buckets": [{ "binding": "DOWNLOADS", "bucket_name": "appears-downloads" }],
 	"routes": [{ "pattern": "appea.rs", "custom_domain": true }],
 	// Keep the workers.dev URL too; handy for checking a deploy before DNS catches up.
 	"workers_dev": true,

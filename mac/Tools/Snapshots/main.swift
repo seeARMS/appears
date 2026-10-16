@@ -143,6 +143,15 @@ let weaker = [
         UserDefaults.standard.set(step, forKey: "onboardingStep")
         render(OnboardingView(model: model, done: {}), "onboarding-\(step)", width: 560)
     }
+    model.showDownloadForSnapshot(.init(phase: .downloading, received: 310_000_000, total: 914_469_773))
+    for step in 0..<4 {
+        UserDefaults.standard.set(step, forKey: "onboardingStep")
+        render(OnboardingView(model: model, done: {}), "onboarding-download-\(step)", width: 560)
+    }
+    model.showForSnapshot(nil, status: nil)
+    model.showDownloadForSnapshot(.init(phase: .failed, error: "Check your internet connection, then retry. Setup is saved."))
+    render(PanelView(model: model, close: {}), "panel-download-retry", width: 400)
+    model.showDownloadForSnapshot(.init(phase: .ready))
     UserDefaults.standard.removeObject(forKey: "onboardingStep")
     // The General pane alone: a TabView doesn't draw its tab bar offscreen.
     render(GeneralPane(model: model).frame(width: 560, height: 600), "settings-general", width: 560)

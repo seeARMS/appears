@@ -7,7 +7,8 @@ import AppearsCore
 /// EmbeddingGemma 2 on this Mac's GPU, through MLX: queries, documents and images in one
 /// 768-dimensional space.
 ///
-/// Loads from a local folder prepared by `mac/scripts/prepare_model.py` (bundled in the app).
+/// Loads from a local folder prepared by `mac/scripts/prepare_model.py`, installed by
+/// the separate downloader. The embedder and engine never download anything.
 /// Never downloads anything.
 public final class GemmaEmbedder: Embedder {
     public let modelID: String

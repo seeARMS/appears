@@ -30,7 +30,8 @@ struct Common: ParsableArguments {
     func modelFolder() throws -> URL { try Self.modelFolder(model) }
 
     /// `--model`, then `APPEARS_MODEL`, then `mac/Models/appears-model` above the current folder
-    /// or this binary, then the model inside an installed Appears.app.
+    /// or this binary, then the app's verified downloaded model cache. Keep the old
+    /// bundle fallback for installations made before the lightweight download.
     static func modelFolder(_ model: String?) throws -> URL {
         if let model { return URL(filePath: model) }
         if let path = ProcessInfo.processInfo.environment["APPEARS_MODEL"] { return URL(filePath: path) }
@@ -48,7 +49,9 @@ struct Common: ParsableArguments {
             let folder = URL(filePath: applications + "/Appears.app/Contents/XPCServices/AppearsEngine.xpc/Contents/Resources/appears-model")
             if FileManager.default.fileExists(atPath: folder.appending(path: "model.safetensors").path) { return folder }
         }
-        throw ValidationError("No model found. Run mac/scripts/fetch-model.sh, or pass --model.")
+        let descriptor = try ModelDescriptor.bundled()
+        if ModelAssets.isInstalled(descriptor) { return ModelAssets.folder(for: descriptor) }
+        throw ValidationError("No model found. Finish the model download in Appears, run mac/scripts/fetch-model.sh, or pass --model.")
     }
 }
 

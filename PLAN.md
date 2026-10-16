@@ -28,6 +28,7 @@ These are the product. Each one is enforced in code, by macOS, or by the release
    - **The engine** (indexing, the model, the index, file parsing) runs in an App Sandbox with no network entitlement, so macOS blocks every connection.
    - **The app** reads your screen through the Accessibility API, which Apple doesn't allow inside the sandbox. It is small and has no networking code, checked by a build script that fails if its binary imports a networking API. (Update 2026-10-15: the planned self-applied `sandbox_init` no-network profile makes macOS refuse Accessibility, so it was dropped.)
    - **Updates** go through Sparkle's separately sandboxed downloader.
+   - **First-run model download (Colin, 2026-10-15):** keep the app download lightweight. A separate sandboxed `AppearsDownloader.xpc`, with network.client only and no user-file access, fetches the model pinned inside the signed app. Onboarding continues during download; indexing waits for verified completion. The app and engine retain their network restrictions.
    - The README says exactly which part is enforced how.
 2. **It doesn't record your screen.** It reads only the current context, in memory, when something changes, and then throws it away. It keeps an index of files you already own, and a log of which suggestions you opened or dismissed. The log never holds the context's text (see Measuring).
 3. **Silence is the default.** No notifications, no sounds, no pop-ups, ever. Most of the time it shows nothing.
@@ -52,13 +53,13 @@ Reused, copied in as needed (no shared package, no provenance note):
 - **Release plumbing:**
   - XcodeGen, Developer ID signing, notarization and the DMG;
   - Sparkle built with a sandboxed downloader;
-  - a `release.sh` that refuses to ship if a network entitlement appears;
+  - a `release.sh` that enforces the engine's network prohibition and the downloader's isolation;
   - the Homebrew cask and the `SandboxProbe` tool.
 - **Site conventions** from the root `../AGENTS.md`. These are shared by all of Colin's sites, not whosaid's design.
 
 **What's different:**
 
-- **The sandbox.** whosaid is one sandboxed app. Appears has to be two processes (see Permissions).
+- **The sandbox.** whosaid is one sandboxed app. Appears separates the UI, engine and first-run model downloader (see Permissions).
 - **Everything new for Appears:** context capture, the file extractors, the ranker (forgottenness, novelty, diversity, calibration), the surface policy, the journal and eval harness, and all of the UI.
 
 ## Repository
@@ -276,7 +277,7 @@ This is the core of the product. There are three modes, and all three are in v0'
   - **Calendar:** optional, for looking ahead to meetings (added 2026-10-15).
   - **Screen Recording:** optional, for OCR on pull.
 
-### 7. Permissions and the two-process split
+### 7. Permissions and the process split
 
 Apple doesn't allow the Accessibility API inside the App Sandbox, even after the user grants the permission (Apple DTS, 2024 and 2025). Mac App Store window managers that use it only survive because they predate the rule. So Appears can't be one sandboxed app like whosaid. The agreed split:
 
@@ -289,9 +290,14 @@ Apple doesn't allow the Accessibility API inside the App Sandbox, even after the
   - **Does:** file parsing, the model, `index.sqlite`, `journal.sqlite` and search.
   - **File access:** the home folder and any Include folders, through bookmarks passed from the app, plus the read-only Notes exception.
   - **Why sandbox it:** the code that opens PDFs, images and documents from your disk is exactly the code that should be locked down.
+- **`AppearsDownloader.xpc`: App Sandbox, network.client only.**
+  - Downloads the model from pinned appea.rs URLs into its own container. Its no-payload XPC interface can't receive screen text, paths or arbitrary URLs.
+  - Has no home-folder, user-selected-file or Automation entitlement. The engine reads the installed model using its existing read-only home access.
+  - Checks every size and SHA-256, then installs the complete model atomically. Progress and Retry remain visible while onboarding continues independently.
 - **`release.sh` refuses to ship if:**
   - the engine gains a network entitlement;
   - the app's binary links networking symbols it shouldn't;
+  - the model downloader gains user-file access or any network entitlement besides network.client;
   - Sparkle's Downloader entitlements change.
 - **M0 checks how macOS attributes permissions across the split.** Full Disk Access is checked against the "responsible" app, which should be `Appears.app` for its embedded XPC service.
   - **Fallback if attribution doesn't work:** a sandboxed main app, plus a tiny unsandboxed login-item helper (via `SMAppService`) that only reads Accessibility.
@@ -442,3 +448,4 @@ These are targets to measure in M0, not guesses to trust:
 9. **Browsers:** Arc and Dia aren't supported targets.
 10. **Sources:** index as much as makes sense by default; Include and Exclude lists give control to anyone who wants it.
 11. **Logo:** Orbit, chosen on 2026-10-15. Keep the shadcn zinc/blue direction; use an open ring with a detached dot at the upper right, and monochrome menu bar states. See `brand/README.md` for geometry and regeneration.
+12. **Distribution (2026-10-15):** a lightweight DMG at `appea.rs/app.dmg`, built and notarized in GitHub Actions, stored in Cloudflare R2. The model downloads separately in the background on first launch while the user completes onboarding. This supersedes bundling model weights in the engine.

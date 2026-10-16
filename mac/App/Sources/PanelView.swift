@@ -93,6 +93,8 @@ struct PanelView: View {
                 text: "It reads the window you're in, in memory, to know what's related. Nothing is stored or sent anywhere.",
                 action: ("Open Settings", { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!) })
             )
+        } else if model.modelDownload.phase != .ready {
+            ModelDownloadView(status: model.modelDownload, retry: model.retryModelDownload).padding(14)
         } else if let reason = model.skippedReason, model.shown == nil {
             Message(title: "Not here", text: reason, action: nil)
         } else if let error = model.pullError {

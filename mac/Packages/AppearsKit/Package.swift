@@ -11,7 +11,8 @@ import PackageDescription
 // - AppearsMCP: `appears mcp`, a Model Context Protocol server over stdio that lets local
 //   agents search the index. Runs in the CLI, never in the app or the engine.
 //
-// Privacy rule for every target here: no networking code.
+// AppearsCore and AppearsContext have no networking code. AppearsDownloads is linked
+// ONLY into the sandboxed model downloader, never the app or the engine.
 
 let package = Package(
     name: "AppearsKit",
@@ -20,6 +21,7 @@ let package = Package(
         .library(name: "AppearsCore", targets: ["AppearsCore"]),
         .library(name: "AppearsContext", targets: ["AppearsContext"]),
         .library(name: "AppearsMCP", targets: ["AppearsMCP"]),
+        .library(name: "AppearsDownloads", targets: ["AppearsDownloads"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.11.1"),
@@ -27,7 +29,12 @@ let package = Package(
     targets: [
         .target(
             name: "AppearsCore",
-            dependencies: [.product(name: "GRDB", package: "GRDB.swift")]
+            dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
+            resources: [.copy("Resources/model-download.json")]
+        ),
+        .target(
+            name: "AppearsDownloads",
+            dependencies: ["AppearsCore"]
         ),
         .target(
             name: "AppearsContext",
@@ -39,7 +46,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AppearsCoreTests",
-            dependencies: ["AppearsCore", .product(name: "GRDB", package: "GRDB.swift")]
+            dependencies: ["AppearsCore", "AppearsDownloads", .product(name: "GRDB", package: "GRDB.swift")]
         ),
         .testTarget(
             name: "AppearsMCPTests",

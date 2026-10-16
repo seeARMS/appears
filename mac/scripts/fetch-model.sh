@@ -1,7 +1,8 @@
 #!/bin/sh
 # Downloads Google's EmbeddingGemma 2 (Apache 2.0) at a pinned revision, checks its SHA-256,
-# and prepares mac/Models/appears-model, which the app bundles. The app itself never
-# downloads anything; this runs once on a developer's Mac. Run from anywhere in the repo.
+# and prepares mac/Models/appears-model for separate R2 hosting (or a developer's
+# verified local cache). The app and engine never download anything; the restricted
+# downloader helper installs these files on first launch. Run from anywhere in the repo.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
