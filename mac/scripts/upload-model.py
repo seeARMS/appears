@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 
 root = Path(__file__).resolve().parents[2]
 descriptor_path = root / "mac/Packages/AppearsKit/Sources/AppearsCore/Resources/model-download.json"
@@ -33,9 +34,14 @@ for file in descriptor["files"]:
         "--content-type", "application/octet-stream", "--cache-control", "public, max-age=31536000, immutable",
         "--metadata", f"sha256={file['sha256']}")
     # Read back the uploaded bytes before making a new app version available.
-    with subprocess.Popen(["aws", "--endpoint-url", f"https://{account}.r2.cloudflarestorage.com", "s3", "cp",
-                           f"s3://{bucket}/{key}", "-", "--only-show-errors"], stdout=subprocess.PIPE) as process:
-        actual = hashlib.file_digest(process.stdout, "sha256").hexdigest()
-        if process.wait() != 0 or actual != file["sha256"]:
+    # Some AWS CLI versions stall multipart downloads to stdout. A direct GetObject
+    # into a temporary file avoids that transfer path and still verifies every byte.
+    with tempfile.TemporaryDirectory(prefix="appears-model-verify-") as temporary:
+        downloaded = Path(temporary) / file["name"]
+        aws("s3api", "get-object", "--bucket", bucket, "--key", key, str(downloaded),
+            stdout=subprocess.DEVNULL)
+        with downloaded.open("rb") as stream:
+            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+        if downloaded.stat().st_size != file["size"] or actual != file["sha256"]:
             raise SystemExit(f"R2 verification failed: {file['name']}")
 print(f"Uploaded and verified {len(descriptor['files'])} pinned model files.")
