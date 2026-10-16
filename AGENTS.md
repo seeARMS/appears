@@ -25,7 +25,8 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
   - **Rows:** each has a thumbnail, a name, and a reason whose "why" is in the foreground colour, with when and where muted.
   - **Selection:** the selected row gets the muted background and its snippet, or the quoted line that answers. Pictures show no snippet: OCR text reads as noise.
   - **Footer:** at most three keys on one line (↩ open, ␣ preview or ⌥⌘C copy, ⌫ hide at the far end), and gone when there's no list.
-- **Wordmark:** the mark (a zinc tile, a white ring, a blue dot) plus lowercase "appears" in a bold weight. In sentences the name is "Appears", capitalized. The domain is appea.rs.
+- **Logo:** "Orbit", chosen by Colin on 2026-10-15. An open ring with a detached dot in its upper-right gap. `Orbit.swift` shares the app geometry; `web/src/lib/orbit.ts` shares the site's geometry and asset generation. The five menu bar states are monochrome: idle, indexing (shorter arc), found (dot), paused (pause bars), and needs setup (exclamation mark).
+- **Wordmark:** the Orbit mark (a zinc tile, an open white ring, a blue dot at the upper right) plus lowercase "appears" in a bold weight. In sentences the name is "Appears", capitalized. The domain is appea.rs.
 
 ## Layout
 

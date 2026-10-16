@@ -87,21 +87,16 @@ struct Badge: View {
     }
 }
 
-/// The mark: a zinc-950 tile, a white ring, and a blue dot rising at its top.
+/// Orbit: a zinc tile, an open white ring, and a detached blue dot at the upper right.
 struct Mark: View {
     var size: CGFloat = 40
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.25, style: .continuous).fill(Color(light: 0x18181B, dark: 0x27272A))
-            Circle()
-                .stroke(Color(light: 0xFAFAFA, dark: 0xFAFAFA), lineWidth: size * 0.069)
-                .frame(width: size * 0.44, height: size * 0.44)
-                .offset(y: size * 0.069)
-            Circle()
-                .fill(Theme.accent)
-                .frame(width: size * 0.2, height: size * 0.2)
-                .offset(y: -size * 0.25)
+            RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
+                .fill(Color(light: 0x18181B, dark: 0x18181B))
+            OrbitSymbol(size: size * 0.66, ink: Color(light: 0xFAFAFA, dark: 0xFAFAFA),
+                        accent: Color(light: 0x2563EB, dark: 0x2563EB))
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

@@ -1,7 +1,6 @@
 ---
-// Appears' mark, inlined from brand/mark.svg at the repo root: a zinc-950 tile
-// with a white ring (what you're looking at) and a blue dot rising at its top
-// (something you already had). public/favicon.svg is the same drawing.
+// Orbit, from the same artwork as brand/mark.svg and public/favicon.svg.
+import { orbitMarkArtwork } from "../lib/orbit";
 interface Props {
   size?: number;
   class?: string;
@@ -10,7 +9,5 @@ const { size = 24, class: className } = Astro.props;
 ---
 
 <svg class:list={["mark", className]} width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <rect class="mark-tile" x="0.5" y="0.5" width="47" height="47" rx="11.5" fill="#18181B"></rect>
-  <circle cx="24" cy="27.3" r="10.6" stroke="#FAFAFA" stroke-width="3.3"></circle>
-  <circle cx="24" cy="12" r="4.9" fill="#2563EB"></circle>
+  <Fragment set:html={orbitMarkArtwork()} />
 </svg>

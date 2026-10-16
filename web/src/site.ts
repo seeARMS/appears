@@ -107,6 +107,8 @@ export const GLYPHS = [
   { state: "idle", label: "Nothing to show" },
   { state: "indexing", label: "Getting to know your files" },
   { state: "found", label: "Something's here" },
+  { state: "paused", label: "Paused" },
+  { state: "setup", label: "Needs setup" },
 ] as const;
 
 // --- Privacy -----------------------------------------------------------------------

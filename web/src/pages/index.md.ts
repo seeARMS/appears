@@ -48,7 +48,7 @@ const MARKDOWN = `${[
   ...HOW.map((item) => `### ${item.title}\n\n${item.text}`),
   `## ${QUIET_HEADING}`,
   QUIET,
-  `The ring in the menu bar has three states: ${GLYPHS.map((g) => g.label.toLowerCase()).join(", ")}.`,
+  `The ring in the menu bar has ${GLYPHS.length} states: ${GLYPHS.map((g) => g.label.toLowerCase()).join(", ")}.`,
   `## ${PRIVACY_HEADING}`,
   PRIVACY_TEXT,
   PRIVACY.map((row) => `- **${row.label}:** ${row.text}`).join("\n"),
