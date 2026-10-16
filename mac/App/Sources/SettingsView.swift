@@ -4,81 +4,191 @@ import AppearsCore
 import KeyboardShortcuts
 import SwiftUI
 
-struct SettingsView: View {
-    @Bindable var model: AppModel
+/// Settings: native toolbar tabs, each a grouped form of the same size.
+@MainActor
+final class SettingsTabsController: NSTabViewController {
+    static let size = NSSize(width: 560, height: 580)
+    private let model: AppModel
+    private let tabs: [SettingsTab] = [.general, .suggestions, .sources, .privacy, .activity]
 
-    var body: some View {
-        TabView(selection: $model.settingsTab) {
-            GeneralPane(model: model).tag(SettingsTab.general).tabItem { Label("General", systemImage: "circle.dotted") }
-            UpdatesPane(updater: model.updater).tag(SettingsTab.updates).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
-            SourcesPane(model: model).tag(SettingsTab.sources).tabItem { Label("Sources", systemImage: "folder") }
-            PrivacyPane(model: model).tag(SettingsTab.privacy).tabItem { Label("Privacy", systemImage: "lock") }
-            StatsPane(model: model).tag(SettingsTab.stats).tabItem { Label("Stats", systemImage: "chart.bar") }
+    init(model: AppModel) {
+        self.model = model
+        super.init(nibName: nil, bundle: nil)
+        tabStyle = .toolbar
+        transitionOptions = []
+        for tab in tabs {
+            let item = NSTabViewItem(viewController: NSHostingController(rootView: pane(tab).frame(width: Self.size.width, height: Self.size.height)))
+            item.label = tab.title
+            item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
+            addTabViewItem(item)
         }
-        .frame(width: 560, height: 620)
-        .padding(.top, 8)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func select(_ tab: SettingsTab) {
+        selectedTabViewItemIndex = tabs.firstIndex(of: tab) ?? 0
+    }
+
+    private func pane(_ tab: SettingsTab) -> AnyView {
+        switch tab {
+        case .general: AnyView(GeneralPane(model: model))
+        case .suggestions: AnyView(SuggestionsPane(model: model))
+        case .sources: AnyView(SourcesPane(model: model))
+        case .privacy: AnyView(PrivacyPane(model: model))
+        case .activity: AnyView(ActivityPane(model: model))
+        }
     }
 }
 
+extension SettingsTab {
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .suggestions: "Suggestions"
+        case .sources: "Sources"
+        case .privacy: "Privacy"
+        case .activity: "Activity"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .suggestions: "circle.dotted"
+        case .sources: "folder"
+        case .privacy: "hand.raised"
+        case .activity: "chart.bar"
+        }
+    }
+}
+
+/// A row's secondary line, under its label.
+private struct Caption: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A label with a caption beneath it, for toggles and pickers that need a sentence of explanation.
+private struct Titled: View {
+    let title: String
+    let caption: String?
+    init(_ title: String, caption: String? = nil) {
+        self.title = title
+        self.caption = caption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            if let caption { Caption(caption) }
+        }
+    }
+}
+
+/// A row that asks for a macOS permission: a short reason and one button.
+private struct PermissionRow: View {
+    let text: String
+    let button: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack {
+            Label(text, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button(button, action: action).controlSize(.small)
+        }
+    }
+}
+
+// MARK: - General
+
 struct GeneralPane: View {
     @Bindable var model: AppModel
-    @State private var calendarAccess = CalendarWatcher.access
 
     var body: some View {
         Form {
             Section {
-                Toggle("Launch at login", isOn: Binding(get: { model.loginItem.enabled }, set: { model.loginItem.setEnabled($0) }))
-                    .disabled(model.loginItem.updating)
+                Toggle(isOn: Binding(get: { model.loginItem.enabled }, set: { model.loginItem.setEnabled($0) })) {
+                    Titled("Open at login", caption: "Starts quietly in the menu bar.")
+                }
+                .disabled(model.loginItem.updating)
                 if model.loginItem.status == .requiresApproval {
-                    HStack {
-                        Text("Allow Appears in Login Items to finish enabling it.").font(.caption).foregroundStyle(.secondary)
-                        Button("Open Login Items…") { model.loginItem.openSettings() }
-                    }
+                    PermissionRow(text: "Allow Appears in Login Items to finish.", button: "Open Login Items…") { model.loginItem.openSettings() }
                 }
                 if let error = model.loginItem.error { Text(error).font(.caption).foregroundStyle(.red) }
-                Text("Starts quietly in the menu bar. Open Appears again to search.")
-                    .font(.caption).foregroundStyle(.secondary)
-                LabeledContent("Ask Appears") { KeyboardShortcuts.Recorder(for: .pull) }
-                LabeledContent("Search Appears") { KeyboardShortcuts.Recorder(for: .search) }
-                Picker("Suggest on its own", selection: Binding(get: { model.settings.ambientMode }, set: { model.setAmbientMode($0) })) {
+            }
+            Section("Keyboard shortcuts") {
+                LabeledContent {
+                    KeyboardShortcuts.Recorder(for: .pull)
+                } label: {
+                    Titled("Show related", caption: "What do you already have about this window?")
+                }
+                LabeledContent {
+                    KeyboardShortcuts.Recorder(for: .search)
+                } label: {
+                    Titled("Search", caption: "Find anything by describing it.")
+                }
+            }
+            UpdatesSection(updater: model.updater)
+        }
+        .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.loginItem.refresh()
+        }
+    }
+}
+
+// MARK: - Suggestions
+
+struct SuggestionsPane: View {
+    @Bindable var model: AppModel
+    @State private var calendarAccess = CalendarWatcher.access
+
+    private var suggesting: Bool { model.settings.ambientMode != .off }
+
+    var body: some View {
+        Form {
+            Section {
+                #if DEBUG
+                Picker(selection: Binding(get: { model.settings.ambientMode }, set: { model.setAmbientMode($0) })) {
                     Text("On").tag(AmbientMode.on)
-                    Text("Log only (shadow)").tag(AmbientMode.shadow)
+                    Text("Log only").tag(AmbientMode.shadow)
                     Text("Off").tag(AmbientMode.off)
+                } label: {
+                    Titled("Suggest on its own", caption: "“Log only” records what it would have shown, for Activity, without changing the menu bar.")
                 }
-                LabeledContent("Match selectivity") {
-                    HStack {
-                        Text("Stricter").font(.caption).foregroundStyle(.secondary)
-                        Slider(value: $model.settings.sensitivity, in: 0...1)
-                        Text("Broader").font(.caption).foregroundStyle(.secondary)
-                    }
+                #else
+                Toggle(isOn: Binding(get: { model.settings.ambientMode == .on }, set: { model.setAmbientMode($0 ? .on : .off) })) {
+                    Titled("Suggest on its own", caption: "When something you have is related to what you’re working on, the menu bar icon shows a dot. No notifications or sounds.")
                 }
-                LabeledContent("Wait while reading") {
-                    Picker("", selection: $model.settings.dwell) {
+                #endif
+                Group {
+                    Picker("Look after reading for", selection: $model.settings.dwell) {
                         Text("5 seconds").tag(5.0)
                         Text("15 seconds").tag(15.0)
                         Text("30 seconds").tag(30.0)
                         Text("1 minute").tag(60.0)
                     }
-                    .labelsHidden()
-                    .frame(width: 140)
+                    LabeledContent("Suggest") {
+                        HStack(spacing: 8) {
+                            Text("Fewer").font(.caption).foregroundStyle(.secondary)
+                            Slider(value: $model.settings.sensitivity, in: 0...1).frame(width: 180)
+                            Text("More").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle(isOn: $model.settings.ambientInSafari) {
+                        Titled("Include Safari", caption: "Safari doesn’t say which windows are private, so Appears reads it only when you ask unless this is on.")
+                    }
                 }
-            } footer: {
-                Text("After typing, Appears looks after a two-second pause. New suggestions signal at least one minute apart. Ignoring or closing one doesn’t slow the next.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("“Log only” looks on its own and records what it would have shown, without changing the menu bar. Useful for checking whether it would be right before letting it interrupt.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .disabled(!suggesting)
             }
             Section {
-                Toggle("Read the window with OCR when it has no readable text (on ask only)", isOn: $model.settings.ocrOnPull)
-                if !ScreenText.isAllowed {
-                    Button("Allow Screen Recording…") { FullDiskAccessGuide.openScreenRecording() }
-                }
-                Toggle("Suggest on its own in Safari", isOn: $model.settings.ambientInSafari)
-                Text("Safari can't say whether a window is private, so Appears only reads Safari when you ask, unless this is on.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Picker("Look ahead to meetings", selection: Binding(
+                Picker(selection: Binding(
                     get: { model.settings.calendarContext ? model.settings.calendarLead : 0 },
                     set: { lead in
                         if lead > 0 { model.setCalendarLead(lead) }
@@ -90,36 +200,49 @@ struct GeneralPane: View {
                     Text("10 minutes before").tag(600.0)
                     Text("15 minutes before").tag(900.0)
                     Text("30 minutes before").tag(1_800.0)
+                } label: {
+                    Titled("Before meetings", caption: "Looks for what you have about a meeting with other people. Events are never stored.")
                 }
-                if model.settings.calendarContext, calendarAccess != .granted {
-                    HStack {
-                        Text("Needs access to your calendar.").foregroundStyle(.secondary)
-                        Spacer()
-                        Button(calendarAccess == .notAsked ? "Allow…" : "Open Settings…") {
-                            Task {
-                                await CalendarWatcher.requestAccess()
-                                calendarAccess = CalendarWatcher.access
-                                model.startCalendar()
-                            }
+                .disabled(!suggesting)
+                if suggesting, model.settings.calendarContext, calendarAccess != .granted {
+                    PermissionRow(text: "Needs access to your calendar.", button: calendarAccess == .notAsked ? "Allow…" : "Open Settings…") {
+                        Task {
+                            await CalendarWatcher.requestAccess()
+                            calendarAccess = CalendarWatcher.access
+                            model.startCalendar()
                         }
                     }
                 }
-            } footer: {
-                Text("Before a meeting with other people, Appears looks for what you already have about it, by the same rules as everything else. Events are read in memory and never stored.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                HStack {
+                LabeledContent {
                     if model.settings.isPaused {
-                        Text("Paused until \(model.settings.pausedUntil!.formatted(date: .omitted, time: .shortened))")
-                        Spacer()
                         Button("Resume") { model.pause(for: nil) }
                     } else {
-                        Text("Pause")
-                        Spacer()
-                        Button("For an hour") { model.pause(for: 3_600) }
+                        Menu("Pause") {
+                            Button("For an hour") { model.pause(for: 3_600) }
+                            Button("Until tomorrow") { model.pauseUntilTomorrow() }
+                        }
+                        .fixedSize()
+                    }
+                } label: {
+                    if let until = model.settings.pausedUntil, model.settings.isPaused {
+                        Titled("Paused", caption: "Until \(until.formatted(date: until.timeIntervalSinceNow > 43_200 ? .abbreviated : .omitted, time: .shortened))")
+                    } else {
+                        Titled("Pause suggestions", caption: "Asking and searching keep working.")
                     }
                 }
+                .disabled(!suggesting && !model.settings.isPaused)
+            }
+            Section {
+                Toggle(isOn: $model.settings.ocrOnPull) {
+                    Titled("Read text in images", caption: "When you ask about a window with no readable text, Appears recognizes the text on screen, on this Mac.")
+                }
+                if model.settings.ocrOnPull, !ScreenText.isAllowed {
+                    PermissionRow(text: "Needs Screen Recording.", button: "Allow…") { FullDiskAccessGuide.openScreenRecording() }
+                }
+            } header: {
+                Text("When you ask")
             }
         }
         .formStyle(.grouped)
@@ -127,10 +250,11 @@ struct GeneralPane: View {
         .onChange(of: model.settings.dwell) { model.ambientSettingsChanged() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             calendarAccess = CalendarWatcher.access
-            model.loginItem.refresh()
         }
     }
 }
+
+// MARK: - Sources
 
 struct SourcesPane: View {
     @Bindable var model: AppModel
@@ -140,83 +264,71 @@ struct SourcesPane: View {
             Section {
                 ReadinessView(model: model, details: true)
                 if let status = model.status, status.ready, !status.protectedFoldersReadable {
-                    HStack(alignment: .top) {
-                        Text("Documents needs access. Allow it when macOS asks, or give Appears Full Disk Access.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Button("Open Settings") { FullDiskAccessGuide.open() }
-                    }
-                }
-            } header: {
-                Text("Everything sensible in your home folder, by default")
-            } footer: {
-                Text("Appears skips app data (~/Library), code checkouts, build output, caches and very large files. iCloud files that aren't on this Mac are indexed by name only.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Apple Notes") {
-                Toggle("Include Apple Notes", isOn: Binding(get: { model.settings.sources.notes }, set: { model.settings.sources.notes = $0; model.sourcesChanged() }))
-                if model.settings.sources.notes, model.status?.notesReadable == false {
-                    HStack {
-                        Text("Needs Full Disk Access.").font(.caption).foregroundStyle(.secondary)
-                        Button("Open Settings") { FullDiskAccessGuide.open() }
-                    }
+                    PermissionRow(text: "Documents needs access. Allow it when macOS asks.", button: "Open Settings…") { FullDiskAccessGuide.open() }
                 }
             }
             Section {
-                Toggle("Include Messages and photos", isOn: Binding(
-                    get: { model.settings.sources.messages },
-                    set: { model.settings.sources.messages = $0; model.sourcesChanged() }
-                ))
-                if model.settings.sources.messages, model.status?.messagesReadable == false {
-                    HStack {
-                        Text("Needs Full Disk Access.").font(.caption).foregroundStyle(.secondary)
-                        Button("Open Settings") { FullDiskAccessGuide.open() }
-                    }
+                Toggle(isOn: Binding(get: { model.settings.sources.notes }, set: { model.settings.sources.notes = $0; model.sourcesChanged() })) {
+                    Label("Apple Notes", systemImage: "note.text")
+                }
+                if model.settings.sources.notes, model.status?.notesReadable == false {
+                    PermissionRow(text: "Needs Full Disk Access.", button: "Open Settings…") { FullDiskAccessGuide.open() }
+                }
+                Toggle(isOn: Binding(get: { model.settings.sources.messages }, set: { model.settings.sources.messages = $0; model.sourcesChanged() })) {
+                    Label("Messages and photos", systemImage: "message")
                 }
                 if model.settings.sources.messages {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Contact names and photos")
-                            Text(model.contacts.access == .granted
-                                 ? (model.contacts.loadFailed ? "Couldn't load contacts. Try again." : "On")
-                                 : "Optional Contacts access replaces phone numbers with names and photos.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if model.contacts.access != .granted {
-                            Button(model.contacts.access == .notAsked ? "Allow Contacts…" : "Open Settings…") {
-                                Task { await model.contacts.allow() }
-                            }
-                        } else if model.contacts.loadFailed {
-                            Button("Retry") { Task { await model.contacts.refresh(force: true) } }
-                        }
+                    if model.status?.messagesReadable == false {
+                        PermissionRow(text: "Needs Full Disk Access.", button: "Open Settings…") { FullDiskAccessGuide.open() }
                     }
+                    contactsRow
                 }
             } header: {
-                Text("Messages")
+                Text("Apps")
             } footer: {
-                Text("Indexes conversations and photos already on this Mac. Contact names and photos are read in memory only. Everything stays on your Mac. Turning this off removes Messages and their photos from the index.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Caption("Turning a source off removes it from the index.")
             }
-            Section("Also include") {
-                FolderList(folders: $model.settings.sources.includes, empty: "Folders outside your home folder, or a code checkout you want indexed.", watched: model.status?.watchedFolders, unreadable: model.status?.unreadableFolders ?? []) { model.sourcesChanged() }
-            }
-            Section("Never include") {
-                FolderList(folders: $model.settings.sources.excludes, empty: "Nothing excluded.") { model.sourcesChanged() }
+            Section {
                 ForEach(ItemKind.allCases.filter { $0 != .note && $0 != .message }, id: \.self) { kind in
-                    Toggle("Skip \(kind.label.lowercased())s", isOn: Binding(
-                        get: { model.settings.sources.excludedKinds.contains(kind) },
-                        set: { skip in
-                            if skip { model.settings.sources.excludedKinds.insert(kind) } else { model.settings.sources.excludedKinds.remove(kind) }
+                    Toggle(kind == .pdf ? "PDFs" : "\(kind.label)s", isOn: Binding(
+                        get: { !model.settings.sources.excludedKinds.contains(kind) },
+                        set: { include in
+                            if include { model.settings.sources.excludedKinds.remove(kind) } else { model.settings.sources.excludedKinds.insert(kind) }
                             model.sourcesChanged()
                         }
                     ))
                 }
+            } header: {
+                Text("Files in your home folder")
+            } footer: {
+                Caption("Appears skips app data, code checkouts, build output, caches and very large files. iCloud files that aren’t downloaded are found by name.")
+            }
+            Section("Also include") {
+                FolderList(folders: $model.settings.sources.includes, empty: "Add folders outside your home folder, or a code checkout.", watched: model.status?.watchedFolders, unreadable: model.status?.unreadableFolders ?? []) { model.sourcesChanged() }
+            }
+            Section("Never include") {
+                FolderList(folders: $model.settings.sources.excludes, empty: "Add folders Appears should leave alone.") { model.sourcesChanged() }
             }
         }
         .formStyle(.grouped)
     }
 
-
+    @ViewBuilder private var contactsRow: some View {
+        let contacts = model.contacts
+        LabeledContent {
+            if contacts.access != .granted {
+                Button(contacts.access == .notAsked ? "Allow…" : "Open Settings…") { Task { await contacts.allow() } }
+                    .controlSize(.small)
+            } else if contacts.loadFailed {
+                Button("Retry") { Task { await contacts.refresh(force: true) } }.controlSize(.small)
+            }
+        } label: {
+            Titled("Contact names and photos", caption: contacts.access != .granted
+                   ? "Show names instead of phone numbers."
+                   : contacts.loadFailed ? "Couldn’t load your contacts." : "On")
+        }
+        .padding(.leading, 24)
+    }
 }
 
 private struct FolderList: View {
@@ -227,89 +339,129 @@ private struct FolderList: View {
     let changed: () -> Void
 
     var body: some View {
-        if folders.isEmpty {
-            Text(empty).font(.caption).foregroundStyle(.secondary)
-        }
         ForEach(folders, id: \.self) { folder in
             HStack {
-                Image(systemName: "folder").foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: folder)).resizable().frame(width: 18, height: 18)
+                VStack(alignment: .leading, spacing: 2) {
                     Text((folder as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
-                    if let watched {
-                        Text(unreadable.contains(folder) ? "Folder unavailable — check that it’s connected and readable" : watched.contains(folder) ? "Watching for changes" : "Waiting for live updates")
-                            .font(.caption).foregroundStyle(.secondary)
+                    if unreadable.contains(folder) {
+                        Caption("Unavailable. Check that it’s connected and readable.")
+                    } else if let watched, !watched.contains(folder) {
+                        Caption("Waiting for live updates")
                     }
                 }
                 Spacer()
                 Button {
                     folders.removeAll { $0 == folder }
                     changed()
-                } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
+                } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.borderless)
+                    .help("Remove")
             }
         }
-        Button("Add Folder…") {
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.allowsMultipleSelection = true
-            guard panel.runModal() == .OK else { return }
-            for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
-            changed()
+        HStack {
+            if folders.isEmpty { Caption(empty) }
+            Spacer()
+            Button("Add Folder…") {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = true
+                guard panel.runModal() == .OK else { return }
+                for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
+                changed()
+            }
+            .controlSize(.small)
         }
     }
 }
 
-private struct PrivacyPane: View {
+// MARK: - Privacy
+
+struct PrivacyPane: View {
     @Bindable var model: AppModel
     @State private var confirmIndex = false
     @State private var confirmJournal = false
 
     var body: some View {
         Form {
-            Section("What Appears keeps") {
-                Text("An index of your own files, notes and Messages, and a log of which suggestions you opened or dismissed. The log has a salted fingerprint of each context, never its text. Both stay in the engine's sandbox container and are excluded from backups.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Button("Delete the index…") { confirmIndex = true }
-                    .confirmationDialog("Delete the index? Appears will read your files again from the start.", isPresented: $confirmIndex) {
-                        Button("Delete", role: .destructive) { Task { await model.engine.send(.deleteIndex) } }
-                    }
-                Button("Delete the suggestion log…") { confirmJournal = true }
-                    .confirmationDialog("Delete the log of suggestions and what you did with them?", isPresented: $confirmJournal) {
-                        Button("Delete", role: .destructive) { Task { await model.engine.send(.deleteJournal) } }
-                    }
-            }
-            Section("Network") {
-                LabeledContent("Engine") { Text("Sandboxed, no network entitlement: macOS blocks it") }
-                LabeledContent("This app") { Text("No networking code (it can't be sandboxed: Accessibility isn't allowed there)") }
-                Text("Check the engine yourself: codesign -d --entitlements - /Applications/Appears.app/Contents/XPCServices/AppearsEngine.xpc")
-                    .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            Section("Apps Appears never reads") {
-                Text("Password managers, Keychain Access, System Settings and secure text fields, always.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Section {
                 ForEach(model.settings.excludedApps, id: \.self) { bundle in
                     HStack {
+                        appIcon(bundle)
                         Text(appName(bundle))
                         Spacer()
-                        Button { model.settings.excludedApps.removeAll { $0 == bundle } } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
+                        Button { model.settings.excludedApps.removeAll { $0 == bundle } } label: {
+                            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove")
                     }
                 }
-                Menu("Add Running App") {
-                    ForEach(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }, id: \.processIdentifier) { app in
-                        Button(app.localizedName ?? app.bundleIdentifier!) {
-                            if let bundle = app.bundleIdentifier, !model.settings.excludedApps.contains(bundle) { model.settings.excludedApps.append(bundle) }
+                HStack {
+                    if model.settings.excludedApps.isEmpty { Caption("Add apps Appears should never read.") }
+                    Spacer()
+                    Menu("Add App") {
+                        ForEach(NSWorkspace.shared.runningApplications.filter {
+                            $0.activationPolicy == .regular && $0.bundleIdentifier != nil && $0.bundleIdentifier != Bundle.main.bundleIdentifier
+                                && !model.settings.excludedApps.contains($0.bundleIdentifier!)
+                        }, id: \.processIdentifier) { app in
+                            Button(app.localizedName ?? app.bundleIdentifier!) { model.settings.excludedApps.append(app.bundleIdentifier!) }
                         }
                     }
+                    .fixedSize()
+                    .controlSize(.small)
+                }
+            } header: {
+                Text("Never read")
+            } footer: {
+                Caption("Appears also always skips password managers, Keychain Access, System Settings, password fields and private browser windows.")
+            }
+            Section {
+                promise("What’s on your screen is never stored.", "eye.slash")
+                promise("Your index and history stay on this Mac, out of backups.", "lock.laptopcomputer")
+                promise("No analytics or tracking.", "hand.raised")
+            } header: {
+                Text("Your data")
+            }
+            Section {
+                LabeledContent {
+                    Button("Clear…") { confirmJournal = true }
+                        .confirmationDialog("Clear the history of suggestions and what you did with them?", isPresented: $confirmJournal) {
+                            Button("Clear History", role: .destructive) { Task { await model.engine.send(.deleteJournal) } }
+                        }
+                } label: {
+                    Titled("Suggestion history", caption: "Which suggestions you opened or dismissed, so Appears can learn. Used for Activity.")
+                }
+                LabeledContent {
+                    Button("Delete…") { confirmIndex = true }
+                        .confirmationDialog("Delete the index? Appears will read your files again from the start.", isPresented: $confirmIndex) {
+                            Button("Delete Index", role: .destructive) { Task { await model.engine.send(.deleteIndex) } }
+                        }
+                } label: {
+                    Titled("Index", caption: "What Appears has read from your sources. It’s rebuilt from scratch.")
                 }
             }
             #if DEBUG
             Section("Development") {
-                Toggle("Keep context snippets in the log for 14 days (dogfooding only)", isOn: $model.settings.keepDebugContext)
+                Toggle("Keep context snippets in the log for 14 days", isOn: $model.settings.keepDebugContext)
             }
             #endif
         }
         .formStyle(.grouped)
+    }
+
+    private func promise(_ text: String, _ symbol: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 20)
+            Text(text)
+        }
+    }
+
+    private func appIcon(_ bundle: String) -> some View {
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
+        return Image(nsImage: url.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(named: NSImage.applicationIconName)!)
+            .resizable().frame(width: 18, height: 18)
     }
 
     private func appName(_ bundle: String) -> String {
@@ -318,7 +470,9 @@ private struct PrivacyPane: View {
     }
 }
 
-private struct StatsPane: View {
+// MARK: - Activity
+
+struct ActivityPane: View {
     @Bindable var model: AppModel
     @State private var stats: JournalStats?
     @State private var days = 7
@@ -332,38 +486,54 @@ private struct StatsPane: View {
                     Text("30 days").tag(30)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .frame(maxWidth: .infinity)
             }
-            if let stats {
-                Section("What Appears has shown you") {
-                    row("Useful a day", String(format: "%.1f", stats.usefulPerDay))
-                    row("Asked (pulls)", "\(stats.pulls)")
-                    row("Suggested on its own", "\(stats.ambient)")
-                    row("Logged only (shadow)", "\(stats.shadow)")
-                    row("Before meetings", "\(stats.calendar)")
-                    row("Opened, previewed or dragged", "\(stats.useful)")
-                    row("Dismissed", "\(stats.dismissed)")
-                    row("Ignored", "\(stats.ignored)")
+            if let stats, stats.pulls + stats.ambient + stats.shadow + stats.calendar > 0 {
+                Section("Shown") {
+                    row("When you asked", stats.pulls)
+                    row("On its own", stats.ambient)
+                    row("Before meetings", stats.calendar)
+                    #if DEBUG
+                    row("Logged only", stats.shadow)
+                    #endif
                 }
-                Section("Precision") {
-                    row("First result used, when asked", percent(stats.pullPrecisionAt1))
-                    row("Any result used, when asked", percent(stats.pullPrecisionAt3))
-                    row("Used, when suggested", percent(stats.ambientPrecision))
-                    row("Shadow pick matched a later ask", percent(stats.shadowPrecision))
-                    row("Used, before meetings", percent(stats.calendarPrecision))
+                Section {
+                    row("Opened or previewed", stats.useful)
+                    row("Dismissed", stats.dismissed)
+                    row("Ignored", stats.ignored)
+                    LabeledContent("Useful a day") { Text(stats.usefulPerDay, format: .number.precision(.fractionLength(1))).monospacedDigit() }
+                } header: {
+                    Text("What you did")
+                }
+                Section {
+                    percentRow("Top result used, when you asked", stats.pullPrecisionAt1)
+                    percentRow("Any result used, when you asked", stats.pullPrecisionAt3)
+                    percentRow("Used, when suggested", stats.ambientPrecision)
+                    percentRow("Used, before meetings", stats.calendarPrecision)
+                    #if DEBUG
+                    percentRow("Log-only pick matched a later ask", stats.shadowPrecision)
+                    #endif
+                } header: {
+                    Text("How often it helped")
                 }
             } else {
-                Text("No numbers yet.").foregroundStyle(.secondary)
+                Section {
+                    ContentUnavailableView("Nothing yet", systemImage: "chart.bar", description: Text("Ask Appears about a window, and what it showed you appears here."))
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .formStyle(.grouped)
         .task(id: days) { stats = await model.engine.stats(days: days) }
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
-        LabeledContent(label) { Text(value).monospacedDigit() }
+    private func row(_ label: String, _ value: Int) -> some View {
+        LabeledContent(label) { Text(value.formatted()).monospacedDigit() }
     }
 
-    private func percent(_ value: Double?) -> String {
-        value.map { "\(Int(($0 * 100).rounded()))%" } ?? "–"
+    private func percentRow(_ label: String, _ value: Double?) -> some View {
+        LabeledContent(label) { Text(value.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "–").monospacedDigit() }
     }
 }

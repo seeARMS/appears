@@ -1,7 +1,7 @@
 import AppearsCore
 import SwiftUI
 
-enum SettingsTab: Hashable { case general, updates, sources, privacy, stats }
+enum SettingsTab: Hashable { case general, suggestions, sources, privacy, activity }
 
 @MainActor
 extension AppModel {

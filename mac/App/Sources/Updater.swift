@@ -41,10 +41,8 @@ final class Updater: NSObject {
     func start() {
         #if canImport(Sparkle)
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
-        guard Data(base64Encoded: key)?.count == 32 else {
-            configurationError = "Update checks will be available in signed releases."
-            return
-        }
+        // Development builds have no update key; they simply never check.
+        guard Data(base64Encoded: key)?.count == 32 else { return }
         do {
             try controller.updater.start()
             observations = [
@@ -60,8 +58,6 @@ final class Updater: NSObject {
         } catch {
             configurationError = "Couldn't start update checks. \(error.localizedDescription)"
         }
-        #else
-        configurationError = "Update checks aren't included in this preview."
         #endif
     }
 

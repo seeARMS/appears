@@ -225,10 +225,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     @objc private func pullFromMenu() { Task { await model.pull() } }
     @objc private func searchFromMenu() { openSearch?() }
     @objc private func pauseHour() { model.pause(for: 3_600) }
-    @objc private func pauseDay() {
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!.addingTimeInterval(8 * 3_600)
-        model.pause(for: tomorrow.timeIntervalSinceNow)
-    }
+    @objc private func pauseDay() { model.pauseUntilTomorrow() }
     @objc private func resume() { model.pause(for: nil) }
     @objc private func settingsFromMenu() { openSettings?() }
     @objc private func sourcesFromMenu() { openSources?() }

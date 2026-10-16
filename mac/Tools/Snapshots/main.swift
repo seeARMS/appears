@@ -300,11 +300,13 @@ let weaker = [
     render(PanelView(model: model, close: {}), "panel-download-retry", width: 400)
     model.showDownloadForSnapshot(.init(phase: .ready))
     UserDefaults.standard.removeObject(forKey: "onboardingStep")
-    // The General pane alone: a TabView doesn't draw its tab bar offscreen.
-    render(GeneralPane(model: model).frame(width: 560, height: 600), "settings-general", width: 560)
+    // Each pane alone: the toolbar tabs belong to the window, which isn't drawn offscreen.
+    render(GeneralPane(model: model).frame(width: 560, height: 580), "settings-general", width: 560)
+    render(SuggestionsPane(model: model).frame(width: 560, height: 580), "settings-suggestions", width: 560)
+    render(PrivacyPane(model: model).frame(width: 560, height: 580), "settings-privacy", width: 560)
+    render(ActivityPane(model: model).frame(width: 560, height: 580), "settings-activity", width: 560)
     model.showForSnapshot(nil, status: status)
-    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources", width: 560)
-    render(UpdatesPane(updater: model.updater).frame(width: 560, height: 600), "settings-updates", width: 560)
+    render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources", width: 560)
     verifyLaunchBehavior()
     await verifySearchUpdates(model, suggestions: suggestions)
     let search = SearchModel(app: model)
@@ -343,7 +345,7 @@ let weaker = [
     partial.messagesReadable = false
     model.showForSnapshot(nil, status: partial)
     precondition(model.readinessDetail.contains("left to index"))
-    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-indexing", width: 560)
+    render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources-indexing", width: 560)
     search.showForSnapshot(query: "our trip", results: [])
     searchSnapshot("search-partial-index")
     // An existing index can predate scan-date metadata. A missing date must not
@@ -355,18 +357,18 @@ let weaker = [
     model.showForSnapshot(nil, status: queued)
     precondition(model.readinessTitle == "Items queued for indexing")
     precondition(model.readinessDetail.contains("queued to index") && model.readinessDetail.contains("every minute"))
-    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-queued", width: 560)
+    render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources-queued", width: 560)
     var starting = EngineStatus()
     starting.error = "The search engine couldn’t start. Use Scan now to retry."
     model.showForSnapshot(nil, status: starting)
     precondition(model.canRequestScan) // An unready engine must not disable recovery.
-    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-retry", width: 560)
+    render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources-retry", width: 560)
     var scanning = status
     scanning.progress.phase = .scanning
     scanning.progress.scanned = 1_500
     model.showForSnapshot(nil, status: scanning)
     precondition(!model.canRequestScan)
-    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-scanning", width: 560)
+    render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources-scanning", width: 560)
     var paused = status
     paused.progress.phase = .paused
     paused.progress.pausedReason = "Low Power Mode"

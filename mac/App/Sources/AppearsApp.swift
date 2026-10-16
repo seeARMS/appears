@@ -78,18 +78,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showSearch() { search?.show() }
 
     func showSettings(tab: SettingsTab = .general) {
-        model.settingsTab = tab
         if settingsWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
-                styleMask: [.titled, .closable], backing: .buffered, defer: false
-            )
-            window.title = "Appears"
+            let tabs = SettingsTabsController(model: model)
+            let window = NSWindow(contentViewController: tabs)
+            window.styleMask = [.titled, .closable]
+            window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model))
             window.center()
             settingsWindow = window
         }
+        (settingsWindow?.contentViewController as? SettingsTabsController)?.select(tab)
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
     }

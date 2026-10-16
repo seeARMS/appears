@@ -1,36 +1,39 @@
 import SwiftUI
 
-struct UpdatesPane: View {
+/// The Updates section of Settings' General pane. Kept free of the app's other types so
+/// `mac/scripts/test-updates.sh` can build it alone with `Updater`.
+struct UpdatesSection: View {
     @Bindable var updater: Updater
 
     var body: some View {
-        Form {
-            Section("Updates") {
-                Toggle("Automatically check for updates", isOn: $updater.checksAutomatically)
-                Text("Checks once a day while Appears is running. You choose when to download and install an update. A new app version downloads its required model automatically.")
-                    .font(.caption).foregroundStyle(.secondary)
-                LabeledContent("Installed version", value: updater.currentVersion)
-                if let version = updater.availableVersion {
-                    Text("Version \(version) is available! You have version \(updater.currentVersion).")
-                        .font(.callout.weight(.medium))
-                    Button("View Changelog and Update…") { updater.checkNow() }
+        Section("Updates") {
+            LabeledContent {
+                if updater.availableVersion != nil {
+                    Button("Update…") { updater.checkNow() }
+                        .keyboardShortcut(.defaultAction)
                         .disabled(!updater.canCheck)
                 } else {
-                    Button("Check for Updates…") { updater.checkNow() }
+                    Button("Check Now") { updater.checkNow() }
                         .disabled(!updater.canCheck)
                 }
-                if let date = updater.lastChecked {
-                    LabeledContent("Last checked") { Text(date, format: .dateTime.month().day().hour().minute()) }
-                }
-                if let error = updater.configurationError {
-                    Text(error).font(.caption).foregroundStyle(.secondary)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let version = updater.availableVersion {
+                        Text("Version \(version) is available")
+                        Text("You have \(updater.currentVersion).").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Appears \(updater.currentVersion)")
+                        if let error = updater.configurationError {
+                            Text(error).font(.caption).foregroundStyle(.secondary)
+                        } else if let date = updater.lastChecked {
+                            Text("Last checked \(date.formatted(.relative(presentation: .named)))")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .help(date.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    }
                 }
             }
-            Section("Changelog") {
-                Text("See what's changed in each GitHub release before installing. Update checks never include your files or screen content.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
+            Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
         }
-        .formStyle(.grouped)
     }
 }

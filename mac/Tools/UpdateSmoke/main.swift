@@ -51,7 +51,7 @@ final class UpdateStateCoder: NSCoder {
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             updater.standardUserDriverWillHandleShowingUpdate(false, forUpdate: update, state: state)
-            let settings = NSHostingView(rootView: UpdatesPane(updater: updater).frame(width: 560, height: 600))
+            let settings = NSHostingView(rootView: Form { UpdatesSection(updater: updater) }.formStyle(.grouped).frame(width: 560, height: 600))
             settings.frame = NSRect(x: 0, y: 0, width: 560, height: 600)
             capture(settings, to: output.appending(path: "settings-\(name).png"))
             let driver = SPUStandardUserDriver(hostBundle: .main, delegate: updater)

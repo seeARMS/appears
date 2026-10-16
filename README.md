@@ -170,13 +170,13 @@ With Calendar access, Appears looks once before each meeting, 10 minutes ahead b
 
 #### Measuring
 
-The journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). Settings → Stats and `appears stats` turn it into precision numbers.
+The journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). Settings → Activity and `appears stats` turn it into precision numbers.
 
 #### Launch, sources and updates
 
-- **Launch at login** is in Settings → General, off until you turn it on.
+- **Open at login** is in Settings → General, off until you turn it on.
 - **Index & Sources…** in the menu shows readiness, counts per source, permissions, scan dates and live folder updates. Search stays usable while indexing continues.
-- **Updates:** Sparkle checks once a day and never opens a window on its own. **View Changelog and Update…** shows the GitHub release's notes, rendered as native text without remote content. Models stay pinned to compatible app releases; a new pin downloads and verifies on the next launch.
+- **Updates:** Sparkle checks once a day and never opens a window on its own. **Update…** in Settings shows the GitHub release's notes, rendered as native text without remote content. Models stay pinned to compatible app releases; a new pin downloads and verifies on the next launch.
 
 </details>
 

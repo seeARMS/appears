@@ -57,7 +57,6 @@ final class AppModel {
     private(set) var scanRequestMessage: String?
     private(set) var scanRequestError: String?
     let loginItem = LoginItem()
-    var settingsTab = SettingsTab.general
     var sourcePreview: Suggestion?
     /// What the panel shows.
     private(set) var shown: Shown? {
@@ -644,6 +643,12 @@ final class AppModel {
         waiting = nil
         if interval == nil { contextChanged() }
         updateGlyph()
+    }
+
+    /// Pause until 8 AM tomorrow.
+    func pauseUntilTomorrow() {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!.addingTimeInterval(8 * 3_600)
+        pause(for: tomorrow.timeIntervalSinceNow)
     }
 
     func setAmbientMode(_ mode: AmbientMode) {
