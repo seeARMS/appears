@@ -78,15 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showSearch() { search?.show() }
 
     func showSettings(tab: SettingsTab = .general) {
-        if settingsWindow == nil {
-            let tabs = SettingsTabsController(model: model)
-            let window = NSWindow(contentViewController: tabs)
-            window.styleMask = [.titled, .closable]
-            window.toolbarStyle = .preference
-            window.isReleasedWhenClosed = false
-            window.center()
-            settingsWindow = window
-        }
+        if settingsWindow == nil { settingsWindow = SettingsTabsController.makeWindow(model: model) }
         (settingsWindow?.contentViewController as? SettingsTabsController)?.select(tab)
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)

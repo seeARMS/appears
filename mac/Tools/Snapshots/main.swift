@@ -307,6 +307,7 @@ let weaker = [
     render(ActivityPane(model: model).frame(width: 560, height: 580), "settings-activity", width: 560)
     model.showForSnapshot(nil, status: status)
     render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources", width: 560)
+    verifySettingsWindow(model, out: out)
     verifyLaunchBehavior()
     await verifySearchUpdates(model, suggestions: suggestions)
     let search = SearchModel(app: model)

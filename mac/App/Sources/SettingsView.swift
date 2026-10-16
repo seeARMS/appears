@@ -7,9 +7,22 @@ import SwiftUI
 /// Settings: native toolbar tabs, each a grouped form of the same size.
 @MainActor
 final class SettingsTabsController: NSTabViewController {
+    /// The content area below the toolbar. Every pane fills it and scrolls within it.
     static let size = NSSize(width: 560, height: 580)
     private let model: AppModel
     private let tabs: [SettingsTab] = [.general, .suggestions, .sources, .privacy, .activity]
+
+    /// The Settings window. The tab controller sizes the window from the selected pane's
+    /// `preferredContentSize` and titles it from the pane's `title`, so both are set here.
+    static func makeWindow(model: AppModel) -> NSWindow {
+        let window = NSWindow(contentViewController: SettingsTabsController(model: model))
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
+        window.isReleasedWhenClosed = false
+        window.setContentSize(size)
+        window.center()
+        return window
+    }
 
     init(model: AppModel) {
         self.model = model
@@ -17,7 +30,11 @@ final class SettingsTabsController: NSTabViewController {
         tabStyle = .toolbar
         transitionOptions = []
         for tab in tabs {
-            let item = NSTabViewItem(viewController: NSHostingController(rootView: pane(tab).frame(width: Self.size.width, height: Self.size.height)))
+            let host = NSHostingController(rootView: pane(tab))
+            host.sizingOptions = []
+            host.preferredContentSize = Self.size
+            host.title = tab.title
+            let item = NSTabViewItem(viewController: host)
             item.label = tab.title
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
             addTabViewItem(item)
