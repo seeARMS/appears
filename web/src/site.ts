@@ -39,9 +39,9 @@ export const LEDE =
   "Appears lives in your menu bar and follows along while you work. When you already have something that helps, like an old screenshot, a photo of a quote or a PDF from two years ago, it shows up. No searching, no typing.";
 export const STATUS = "Free for Mac";
 /** Where the Download buttons go. The release script puts the latest build here. */
-export const DOWNLOAD_URL = "/Appears.dmg";
+export const DOWNLOAD_URL = `${SITE}/app.dmg`;
 export const DOWNLOAD_LABEL = "Download for Mac";
-export const REQUIREMENTS = `Free and open source. Needs a ${HARDWARE} running ${OPERATING_SYSTEM}.`;
+export const REQUIREMENTS = `Free and open source. Needs a ${HARDWARE} running ${OPERATING_SYSTEM}. The on-device model downloads during setup.`;
 
 /** Under the hero mock. Everything in the mock is made up. */
 export const MOCK_CAPTION =
@@ -118,6 +118,11 @@ export const PRIVACY_TEXT = "Appears sees a lot of what you do, so it's built to
 /** Each row's `icon` names an icon in src/components/Icon.astro. */
 export const PRIVACY = [
   {
+    icon: "download",
+    label: "The model downloads during setup",
+    text: "On first launch, a separate sandboxed helper downloads the on-device model while you set up. It has no access to your files or screen, and checks every pinned file before the engine uses it. After that, Appears works offline.",
+  },
+  {
     icon: "laptop",
     label: "Everything happens on your Mac",
     text: "Appears does all its work on your Mac. No account, no cloud, nothing uploaded.",
@@ -142,7 +147,7 @@ export const PRIVACY = [
 // --- Get it ------------------------------------------------------------------------
 
 export const GET_HEADING = "Try it on your Mac.";
-export const GET_TEXT = "Download Appears, give it a few minutes to get to know your files, and get back to work. It'll speak up when it has something.";
+export const GET_TEXT = "Download the small app and get started. The on-device model downloads while you set up, then Appears gets to know your files. Get back to work; it'll speak up when it has something.";
 
 // --- Share card --------------------------------------------------------------------
 

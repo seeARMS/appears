@@ -1,6 +1,6 @@
 # XcodeGen spec for Appears.xcodeproj (generated, not committed): `cd mac && xcodegen`.
 #
-# Two processes (see PLAN.md, "Permissions and the two-process split"):
+# Three processes (see PLAN.md, "Permissions and the process split"):
 # - Appears.app: the menu bar app. Reads the screen through the Accessibility API, which
 #   Apple doesn't allow in the App Sandbox, so it isn't sandboxed. It has no networking code;
 #   scripts/check-no-network.sh fails if its binary imports any networking API. (It can't
@@ -9,6 +9,8 @@
 # - AppearsEngine.xpc: indexing, the model, search and the journal. App Sandbox with NO
 #   network entitlement; read-only access to the home folder and /Volumes. Never add
 #   com.apple.security.network.client or network.server to it.
+# - AppearsDownloader.xpc: first-run pinned model download, sandboxed with only
+#   network.client. No access to user files or screen data.
 name: Appears
 options:
   bundleIdPrefix: rs.appea
@@ -52,6 +54,9 @@ targets:
       - target: AppearsEngine
         embed: true
         codeSign: true
+      - target: AppearsDownloader
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_NAME: Appears
@@ -84,9 +89,6 @@ targets:
     platform: macOS
     sources:
       - path: Engine
-      - path: Models/appears-model
-        type: folder
-        buildPhase: resources
     dependencies:
       - package: AppearsKit
         product: AppearsCore
@@ -117,6 +119,35 @@ targets:
           - /
         com.apple.security.temporary-exception.files.absolute-path.read-only:
           - /Volumes/
+  # This is the only process allowed to download. No home-folder entitlement,
+  # no screen access, and an XPC interface with no data or URL arguments.
+  AppearsDownloader:
+    type: xpc-service
+    platform: macOS
+    sources:
+      - path: Downloader
+    dependencies:
+      - package: AppearsKit
+        product: AppearsDownloads
+    settings:
+      base:
+        PRODUCT_NAME: AppearsDownloader
+        PRODUCT_BUNDLE_IDENTIFIER: rs.appea.appears.downloader
+    info:
+      path: Downloader/Info.plist
+      properties:
+        CFBundleName: AppearsDownloader
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundlePackageType: XPC!
+        XPCService:
+          ServiceType: Application
+          RunLoopType: NSRunLoop
+    entitlements:
+      path: Downloader/AppearsDownloader.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
   # Developer tool: renders the panel and onboarding with demo results to PNGs in
   # build/snapshots (light and dark). Never shipped.
   appears-snapshots:

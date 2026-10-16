@@ -34,6 +34,10 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 16)
+            if model.modelDownload.phase != .ready {
+                ModelDownloadView(status: model.modelDownload, retry: model.retryModelDownload)
+                    .padding(.bottom, 14)
+            }
             HStack(spacing: 10) {
                 HStack(spacing: 6) {
                     ForEach(0..<pages, id: \.self) { i in
@@ -167,7 +171,9 @@ struct OnboardingView: View {
     private var ready: some View {
         VStack(alignment: .leading, spacing: 0) {
             title("You're all set")
-            paragraph("Appears is getting to know your files now; the first pass takes a little while. Keep working, and when something useful turns up, a dot appears in the menu bar.")
+            paragraph(model.modelDownload.phase == .ready
+                ? "Appears is getting to know your files now; the first pass takes a little while. Keep working, and when something useful turns up, a dot appears in the menu bar."
+                : "You can finish setup now. The model will keep downloading in the background, then Appears will start getting to know your files automatically.")
             VStack(spacing: 0) {
                 HStack {
                     Text("Ask anytime").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.foreground)

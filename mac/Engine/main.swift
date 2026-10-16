@@ -12,6 +12,7 @@ actor EngineHost {
     private var engine: Engine?
     private var loading: Task<Engine, Error>?
     private var pendingSettings: SourceSettings?
+    private var loadError: String?
 
     /// The app's data lives in this service's container.
     static var dataFolder: URL {
@@ -23,9 +24,9 @@ actor EngineHost {
         if let loading { return try await loading.value }
         let settings = pendingSettings ?? SourceSettings()
         let task = Task<Engine, Error> {
-            guard let folder = Bundle.main.url(forResource: "appears-model", withExtension: nil) else {
-                throw NSError(domain: "Appears", code: 1, userInfo: [NSLocalizedDescriptionKey: "The model is missing from the engine's bundle."])
-            }
+            let descriptor = try ModelDescriptor.bundled()
+            guard ModelAssets.isInstalled(descriptor) else { throw ModelAssetError.missing }
+            let folder = ModelAssets.folder(for: descriptor)
             let embedder = try await GemmaEmbedder.load(from: folder)
             // Demo mode keeps its own index, apart from your real one.
             let data = settings.homeOverride == nil ? Self.dataFolder : Self.dataFolder.deletingLastPathComponent().appending(path: "Appears-Demo")
@@ -34,14 +35,26 @@ actor EngineHost {
             return engine
         }
         loading = task
-        let engine = try await task.value
-        self.engine = engine
-        return engine
+        defer { loading = nil } // A missing model on first launch must be retryable.
+        do {
+            let engine = try await task.value
+            self.engine = engine
+            loadError = nil
+            return engine
+        } catch {
+            loadError = error.localizedDescription
+            throw error
+        }
     }
 
     /// Settings can arrive before the engine has loaded; keep them for the load.
     func remember(_ settings: SourceSettings) { pendingSettings = settings }
     var isLoaded: Bool { engine != nil }
+    var startupStatus: EngineStatus {
+        var status = EngineStatus()
+        status.error = loadError
+        return status
+    }
 }
 
 final class EngineService: NSObject, EngineXPC {
@@ -58,7 +71,7 @@ final class EngineService: NSObject, EngineXPC {
                 // Status before the model has loaded: say so rather than wait for it.
                 if method == .status, await !EngineHost.shared.isLoaded {
                     Task { _ = try? await EngineHost.shared.get() }
-                    reply(try JSONEncoder().encode(EngineStatus()), nil)
+                    reply(try JSONEncoder().encode(await EngineHost.shared.startupStatus), nil)
                     return
                 }
                 let engine = try await EngineHost.shared.get()

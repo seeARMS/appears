@@ -170,7 +170,11 @@ final class StatusController: NSObject {
             menu.addItem(withTitle: "Pause until tomorrow", action: #selector(pauseDay), keyEquivalent: "").target = self
         }
         menu.addItem(.separator())
-        if let status = model.status {
+        if model.modelDownload.phase != .ready {
+            let state = model.modelDownload
+            let title = state.phase == .failed ? "Model download needs attention" : "Preparing model · \(Int(state.fraction * 100))%"
+            menu.addItem(withTitle: title, action: nil, keyEquivalent: "").isEnabled = false
+        } else if let status = model.status {
             menu.addItem(withTitle: Self.indexLine(status), action: nil, keyEquivalent: "").isEnabled = false
         }
         menu.addItem(withTitle: "Settings…", action: #selector(settingsFromMenu), keyEquivalent: ",").target = self

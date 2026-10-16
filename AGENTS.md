@@ -6,13 +6,13 @@ Never push, deploy, publish a release or commit unless Colin asks. The repo is p
 
 ## Rules that protect the product's promise
 
-- **The engine never gets the network.** `mac/project.yml` gives `AppearsEngine` the App Sandbox with no `com.apple.security.network.client` or `network.server`. Never add them, and never add networking code, analytics or crash reporting anywhere in `mac/`.
+- **The engine never gets the network.** `mac/project.yml` gives `AppearsEngine` the App Sandbox with no `com.apple.security.network.client` or `network.server`. Never add them. Networking code is allowed only in `AppearsDownloads`, linked exclusively into `AppearsDownloader.xpc` for the first-run model download. Never add analytics or crash reporting anywhere in `mac/`.
 - **The app has no networking code.** It can't be sandboxed (Accessibility isn't allowed in the sandbox), and it can't sandbox itself: any self-applied `sandbox_init` profile makes macOS refuse it Accessibility (found 2026-10-15). So `mac/scripts/check-no-network.sh` is the guard: run it on every build you hand over, and keep it passing. Don't link Network.framework, URLSession or sockets into the app or `AppearsContext`.
 - **Nothing about the screen is stored.** Context text lives in memory only, and calendar events are context too. The journal keeps item ids, scores, outcomes and a salted fingerprint. The one exception is `debugContext`, behind a Debug-build setting that dogfooding uses, kept for 14 days. Don't log context text, even with `NSLog`.
 - **Silence is the default.** No notifications, sounds or pop-ups. Ambient suggestions only change the menu bar glyph, behind `SurfacePolicy` (dwell, confidence, budget, backoff). Don't loosen these without checking `appears eval`'s false-surface rate.
 - **Exclusions stay on:** password managers and secure fields (`Exclusions.swift`), private windows, Safari in ambient mode unless the setting allows.
 - **No real data** in the repo, tests, screenshots or the site. Use `demo/` (made by `demo/make-demo.py`; phone numbers in 555-01xx).
-- **The model ships in the engine's bundle.** Neither process downloads it.
+- **The app download stays small.** Colin changed this on 2026-10-15: `AppearsDownloader.xpc` downloads the pinned model during onboarding. It is sandboxed with network.client only and no user-file access. Its XPC interface takes no screen text, file paths or URLs. The app and engine still have no networking code or network entitlement respectively. The signed `model-download.json` pins every URL, size and SHA-256; the engine reads only a verified, completely installed model. Onboarding must never wait for the download.
 
 ## Design
 

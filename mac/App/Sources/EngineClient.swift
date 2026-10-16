@@ -29,7 +29,7 @@ final class EngineClient: @unchecked Sendable {
     func call<Response: Decodable>(_ method: EngineMethod, _ payload: some Encodable, as: Response.Type) async throws -> Response {
         let data = try JSONEncoder().encode(payload)
         let reply: Data = try await withCheckedThrowingContinuation { continuation in
-            let once = Once()
+            let once = XPCReplyOnce()
             guard let proxy = proxy({ error in once.run { continuation.resume(throwing: error) } }) else {
                 continuation.resume(throwing: EngineError(message: "Couldn't reach the engine"))
                 return
@@ -63,7 +63,7 @@ final class EngineClient: @unchecked Sendable {
 }
 
 /// Resumes a continuation at most once (XPC can call both the reply and the error handler).
-private final class Once: @unchecked Sendable {
+final class XPCReplyOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
     func run(_ body: () -> Void) {

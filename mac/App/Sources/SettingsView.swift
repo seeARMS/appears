@@ -120,6 +120,9 @@ private struct SourcesPane: View {
     var body: some View {
         Form {
             Section {
+                if model.modelDownload.phase != .ready {
+                    ModelDownloadView(status: model.modelDownload, retry: model.retryModelDownload)
+                }
                 if let status = model.status {
                     LabeledContent("Indexed") {
                         Text(summary(status.counts))

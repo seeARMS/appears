@@ -1,0 +1,56 @@
+{
+  "id": "embeddinggemma-2-914f7f89142e",
+  "baseURL": "https://appea.rs/models/embeddinggemma-2-914f7f89142e/",
+  "files": [
+    {
+      "name": "appears-model.json",
+      "size": 1169,
+      "sha256": "bfc531e2ea0bbbad2303a119ed9aa75ae186aae0df8f6321386a8d50e0daec95"
+    },
+    {
+      "name": "chat_template.jinja",
+      "size": 1016,
+      "sha256": "4b852efc0b9960283e735363331e6f325b33bc74bdbaa076f595bc4e9b94d85e"
+    },
+    {
+      "name": "config.json",
+      "size": 4455,
+      "sha256": "b8f1e9931b57fbc054acdb445c41765d55b0074c58d145fa82839941ad1b5bb3"
+    },
+    {
+      "name": "model.safetensors",
+      "size": 542056448,
+      "sha256": "237f4fe221be9a1df6667ffc1cf98bc59ef341e33298ee28c4a9862c4523f3e3"
+    },
+    {
+      "name": "preprocessor_config.json",
+      "size": 511,
+      "sha256": "ea2ae257e901064abdd98dceb19f2b0da06af600bed15e0f99f5c85c37ee9d78"
+    },
+    {
+      "name": "processor_config.json",
+      "size": 1788,
+      "sha256": "168f6a08522f3ce5dea596d94d003af2fd691742d4f41fe1f9d8cce76bfbf69c"
+    },
+    {
+      "name": "tokenizer.json",
+      "size": 32170510,
+      "sha256": "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4"
+    },
+    {
+      "name": "tokenizer.model",
+      "size": 4689013,
+      "sha256": "e594c8a90eb08d8bda498ff4747977dc827ae0c3c56b5c0d41a605a22d02ef03"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "size": 1599,
+      "sha256": "17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874"
+    },
+    {
+      "name": "vision.safetensors",
+      "size": 335543264,
+      "sha256": "769bed49d990fd4808379e63dcc9c02a0c855bf7d03c8a0f8925ec9d4d60c45a"
+    }
+  ]
+}

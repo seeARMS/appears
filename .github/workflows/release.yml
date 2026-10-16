@@ -1,0 +1,126 @@
+name: Release Mac app
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag, such as v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      # Same personal account and bucket as web/wrangler.jsonc.
+      CLOUDFLARE_ACCOUNT_ID: 68d615b353a7fe2663d3e7154366864a
+      R2_BUCKET: appears-downloads
+      DEVELOPER_ID: ${{ vars.DEVELOPER_ID }}
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
+      NOTARY_ISSUER: ${{ vars.NOTARY_ISSUER }}
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8 }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Use a stable vX.Y.Z tag." >&2; exit 1; }
+          [[ "${TAG#v}" == "$(cat VERSION)" ]] || { echo "Tag must match VERSION." >&2; exit 1; }
+          [[ "$(git rev-parse "refs/tags/$TAG^{commit}")" == "$(git rev-parse HEAD)" ]]
+          for setting in DEVELOPER_ID TEAM_ID NOTARY_KEY_ID CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            [[ -n "${!setting}" ]] || { echo "Missing release setting: $setting" >&2; exit 1; }
+          done
+
+      - name: Install build tools
+        run: |
+          brew install xcodegen uv
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Test core
+        working-directory: mac/Packages/AppearsKit
+        run: swift test
+
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: mac/Models/appears-model
+          key: appears-model-${{ hashFiles('mac/scripts/fetch-model.sh', 'mac/scripts/prepare_model.py') }}
+
+      - name: Prepare model for separate hosting
+        if: steps.model.outputs.cache-hit != 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: mac/scripts/fetch-model.sh
+
+      - name: Verify web and download routes
+        working-directory: web
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm run build
+
+      - name: Install signing credentials
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          umask 077
+          keychain="$RUNNER_TEMP/appears-signing.keychain-db"
+          password=$(openssl rand -base64 32)
+          echo "::add-mask::$password"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/appears-signing.p12"
+          printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/appears-notary.p8"
+          printf 'NOTARY_KEY_PATH=%s/appears-notary.p8\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 7200 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/appears-signing.p12" -P "$CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          rm "$RUNNER_TEMP/appears-signing.p12"
+
+      - name: Build signed and notarized DMG
+        run: mac/scripts/release.sh "${TAG#v}"
+
+      - name: Upload to R2 and update latest download
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          python3 -I mac/scripts/upload-model.py
+          mac/scripts/upload-release.sh "${TAG#v}"
+          echo 'Download: https://appea.rs/app.dmg' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/appears-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/appears-signing.p12" "$RUNNER_TEMP/appears-notary.p8"

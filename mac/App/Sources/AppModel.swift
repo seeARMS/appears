@@ -14,6 +14,8 @@ import os
 final class AppModel {
     var settings = AppSettings()
     let engine = EngineClient()
+    @ObservationIgnored let modelDownloader = ModelDownloadClient()
+    private(set) var modelDownload = ModelDownloadStatus()
     @ObservationIgnored let reader = ContextReader()
     @ObservationIgnored let calendar = CalendarWatcher()
     @ObservationIgnored private var policy = SurfacePolicy()
@@ -100,6 +102,7 @@ final class AppModel {
         calendar.onDue = { [weak self] event in Task { await self?.meetingCheck(event) } }
         startCalendar()
         statusTask = Task { [weak self] in
+            if let self { self.modelDownload = await self.modelDownloader.update(.start) }
             // Settings first, so the engine loads with them.
             if let self { await self.engine.send(.settings, self.engineSources) }
             if let text = Self.scriptedAsk {
@@ -108,7 +111,7 @@ final class AppModel {
             while !Task.isCancelled {
                 await self?.refreshStatus()
                 let busy = self?.status.map { $0.progress.phase != .idle || !$0.ready } ?? true
-                try? await Task.sleep(for: .seconds(busy ? 3 : 20))
+                try? await Task.sleep(for: .seconds(self?.modelDownload.phase != .ready ? 1 : (busy ? 3 : 20)))
             }
         }
         contextChanged()
@@ -119,8 +122,18 @@ final class AppModel {
         if accessibilityTrusted { reader.start() }
         // Calendar access granted in System Settings since launch.
         if settings.calendarContext, !calendar.isRunning, Self.demoFolder == nil, CalendarWatcher.access == .granted { startCalendar() }
-        status = await engine.status()
+        let wasReady = modelDownload.phase == .ready
+        modelDownload = await modelDownloader.update(.status)
+        if modelDownload.phase == .waiting { modelDownload = await modelDownloader.update(.start) }
+        if modelDownload.phase == .ready {
+            if !wasReady { await engine.send(.settings, engineSources) }
+            status = await engine.status()
+        }
         updateGlyph()
+    }
+
+    func retryModelDownload() {
+        Task { modelDownload = await modelDownloader.update(.retry); updateGlyph() }
     }
 
     private func updateGlyph() {
@@ -128,6 +141,10 @@ final class AppModel {
             glyph = .needsSetup
         } else if settings.isPaused {
             glyph = .paused
+        } else if modelDownload.phase == .failed {
+            glyph = .needsSetup
+        } else if modelDownload.phase != .ready {
+            glyph = .working
         } else if waiting != nil {
             glyph = .found
         } else if let status, status.ready, status.progress.phase == .idle {
@@ -181,7 +198,7 @@ final class AppModel {
 
     /// You've stayed in one context long enough: look, quietly.
     private func ambientCheck() async {
-        guard settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted, waiting?.meeting == nil,
+        guard modelDownload.phase == .ready, settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted, waiting?.meeting == nil,
               let captured = reader.capture(includeBrowserURL: true) else { return }
         if let reason = Exclusions.reason(for: captured, excludedApps: Set(settings.excludedApps), allowUnknownPrivacy: settings.ambientInSafari) {
             skippedReason = reason
@@ -218,7 +235,7 @@ final class AppModel {
     /// lead time is the moment. Its suggestion waits behind the glyph until shortly after the
     /// meeting starts, whatever window you're in.
     private func meetingCheck(_ event: CalendarEvent) async {
-        guard settings.calendarContext, settings.ambientMode != .off, !settings.isPaused,
+        guard modelDownload.phase == .ready, settings.calendarContext, settings.ambientMode != .off, !settings.isPaused,
               settings.onboarded || CalendarWatcher.isInjecting else { return }
         let snapshot = event.snapshot()
         let fingerprint = snapshot.fingerprint(salt: settings.salt)
@@ -299,6 +316,11 @@ final class AppModel {
         }
         pullError = nil
         skippedReason = nil
+        guard modelDownload.phase == .ready else {
+            shown = nil
+            onShow?(true)
+            return
+        }
         guard accessibilityTrusted else {
             shown = nil
             onShow?(true)
@@ -478,6 +500,9 @@ final class AppModel {
     func showForSnapshot(_ shown: Shown?, status: EngineStatus?, trusted: Bool = true) {
         self.shown = shown
         self.status = status
+        modelDownload = ModelDownloadStatus(phase: .ready)
         accessibilityTrusted = trusted
     }
+
+    func showDownloadForSnapshot(_ download: ModelDownloadStatus) { modelDownload = download }
 }

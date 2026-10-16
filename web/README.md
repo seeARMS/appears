@@ -18,11 +18,14 @@ Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.tx
 | Markdown for agents | `src/pages/index.md.ts` → `/index.md`; `src/worker.ts` also serves it at `/` when the Accept header prefers `text/markdown` (`src/lib/negotiate.ts`) |
 | `llms.txt` | `src/pages/llms.txt.ts` |
 | Sparkle update feed | `public/appcast.xml` (no items yet; `public/_headers` gives it a 5-minute cache) |
+| Latest app, versioned downloads and model files | `src/lib/download.ts`, `src/worker.ts`, private `DOWNLOADS` R2 binding in `wrangler.jsonc`; `/app.dmg` redirects to the latest immutable version |
 | Share card | `public/og.png`, drawn by `scripts/og.ts` and `src/lib/og/` |
 | Headers, robots, sitemap | `public/_headers`, `public/robots.txt`, `public/sitemap.xml` (just `/`) |
 | www.appea.rs → appea.rs | `redirect/` |
 
-The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. Only `/` and `/index.md` go through the Worker (`assets.run_worker_first`); everything else is served straight from the files. For `/`, the Worker fetches the built file with the original request, so redirects and conditional requests keep working, and adds `Accept` to `Vary`.
+The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. `/`, `/index.md`, `/app.dmg`, `/downloads/*` and `/models/*` go through the Worker (`assets.run_worker_first`); other assets are served straight from the files. For `/`, the Worker fetches the built file with the original request, so redirects and conditional requests keep working, and adds `Accept` to `Vary`.
+
+The R2 bucket stays private. `/app.dmg` reads `latest.json` and returns a `no-store` redirect to a versioned DMG. Versioned downloads support GET, HEAD, ETags and single byte ranges for resuming. The Worker caches small versioned app downloads (up to 64 MB) through the Cache API; model files stream without buffering into the cache. The release workflow uploads and verifies the separately hosted model before making the new app the latest. See the root README for setup and credentials. Don't deploy the download CTA before the first signed app and model files are ready.
 
 ## Develop
 
@@ -30,6 +33,7 @@ The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc`
 npm install
 npm run dev          # astro dev; from the repo root, the "web" config in .claude/launch.json runs it on port 4341
 npm run check        # type-check
+npm test             # real local Worker/R2 integration: redirects, ranges, caching headers and model routes
 npm run build        # dist/
 npm run brand        # regenerate Orbit's SVGs, favicon and all Mac app icon sizes
 npm run og           # re-render public/og.png after changing HEADLINE, CARD or MOCK_RESULTS in src/site.ts
