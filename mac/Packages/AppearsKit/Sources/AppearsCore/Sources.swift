@@ -155,16 +155,17 @@ public struct FileScanner: Sendable {
         while folder.path.count > 1 {
             if roots.contains(folder.path) { return true }
             if !shouldEnter(folder, isRoot: false) { return false }
+            if (try? folder.resourceValues(forKeys: [.isPackageKey]).isPackage) == true { return false }
             folder.deleteLastPathComponent()
         }
         return false
     }
 
-    /// Walks every root and calls `found` for each indexable file.
-    public func scan(_ found: (Item) throws -> Void) rethrows {
-        for root in roots {
+    /// Walks every root, or just the changed directories, with the same skip rules.
+    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) rethrows {
+        for root in directories ?? roots {
             let rootURL = URL(filePath: root)
-            guard shouldEnter(rootURL, isRoot: true) else { continue }
+            guard shouldWatchFolder(root) else { continue }
             try walk(rootURL, found)
         }
     }

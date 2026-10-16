@@ -235,7 +235,9 @@ Typed search also reports preparation, model queue wait, model execution, vector
 log stream --level info --predicate 'subsystem == "rs.appea.appears" AND category == "search"'
 ```
 
-Search keeps its 180 ms typing debounce. A new query cancels the previous request through XPC and replaces queued model work. The shared model finishes its current forward safely, then serves waiting queries ahead of indexing batches and individual images. Filesystem walks run separately from the indexing actor, repeated rescans share one active walk and one pending follow-up, and source-setting changes invalidate older scans and searches. Results arrive after semantic matching completes.
+Search keeps its 180 ms typing debounce. A new query cancels the previous request through XPC and replaces queued model work. The shared model finishes its current forward safely, then serves waiting queries ahead of indexing batches and individual images. Results arrive after semantic matching completes.
+
+Filesystem walks run separately from the indexing actor. Folder events are combined over a short window and reconcile only the affected subtrees; overlapping requests share one active walk and merge their pending directories. Full scans still run at startup, on request, after source-setting changes, for filesystem recovery, and every six hours. Unchanged files keep their metadata and embeddings without an item update. Status totals are maintained in the same database transactions as index changes, so polling does not recount the history. The count migration preserves existing embeddings. Source-setting changes invalidate older scans and searches.
 
 </details>
 

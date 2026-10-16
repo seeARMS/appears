@@ -159,12 +159,15 @@ public final class Engine: Sendable {
         let (settings, revision) = await indexer.watchConfiguration()
         let scanner = FileScanner(settings: settings)
         let roots = scanner.roots
-        let watcher = FileWatcher(paths: roots, acceptsDirectory: scanner.shouldWatchFolder) { [weak self] paths, rescan in
+        let watcher = FileWatcher(paths: roots, acceptsDirectory: scanner.shouldWatchFolder) { [weak self] changes in
             guard let self else { return }
             Task {
                 do {
-                    if rescan { try await self.indexer.scanFiles() }
-                    else { try await self.indexer.filesChanged(paths) }
+                    if changes.fullScan { try await self.indexer.scanFiles() }
+                    else {
+                        if !changes.directories.isEmpty { try await self.indexer.scanFiles(in: Array(changes.directories)) }
+                        try await self.indexer.filesChanged(Array(changes.files))
+                    }
                     await self.indexPending()
                 } catch {
                     await self.state.setScanError("Couldn’t check changed files. Use Scan now in Sources to retry.")
@@ -306,6 +309,38 @@ private actor EngineState {
     }
 }
 
+/// Directory changes retain their scope; dropped events and root changes require recovery.
+struct FileChanges: Sendable {
+    var files = Set<String>()
+    var directories = Set<String>()
+    var fullScan = false
+
+    init() {}
+
+    init(paths: [String], flags: [FSEventStreamEventFlags], acceptsDirectory: (String) -> Bool) {
+        for (path, rawFlag) in zip(paths, flags) {
+            let flag = Int(rawFlag)
+            if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
+                       | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped) != 0,
+               acceptsDirectory(path) { fullScan = true }
+            if flag & kFSEventStreamEventFlagItemIsDir != 0,
+               flag & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0,
+               acceptsDirectory(path) { directories.insert(path) }
+            if flag & kFSEventStreamEventFlagItemIsFile != 0,
+               FileScanner.kind(forExtension: (path as NSString).pathExtension) != nil,
+               acceptsDirectory((path as NSString).deletingLastPathComponent) { files.insert(path) }
+        }
+    }
+
+    mutating func merge(_ other: FileChanges) {
+        files.formUnion(other.files)
+        directories.formUnion(other.directories)
+        fullScan = fullScan || other.fullScan
+    }
+
+    var isEmpty: Bool { !fullScan && files.isEmpty && directories.isEmpty }
+}
+
 /// FSEvents for the current roots. Replacing the watcher drains its callback queue.
 public final class FileWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
@@ -313,19 +348,41 @@ public final class FileWatcher: @unchecked Sendable {
     private let queueKey = DispatchSpecificKey<UInt8>()
     public private(set) var isRunning = false
 
-    private final class Callback: Sendable {
-        let handler: @Sendable ([String], Bool) -> Void
+    // All mutable state is confined to the watcher's serial callback queue.
+    private final class Callback: @unchecked Sendable {
+        let handler: @Sendable (FileChanges) -> Void
         let acceptsDirectory: @Sendable (String) -> Bool
-        init(acceptsDirectory: @escaping @Sendable (String) -> Bool, handler: @escaping @Sendable ([String], Bool) -> Void) {
+        let queue: DispatchQueue
+        private var pending = FileChanges()
+        private var scheduled = false
+
+        init(queue: DispatchQueue, acceptsDirectory: @escaping @Sendable (String) -> Bool,
+             handler: @escaping @Sendable (FileChanges) -> Void) {
+            self.queue = queue
             self.handler = handler
             self.acceptsDirectory = acceptsDirectory
         }
+
+        func receive(_ changes: FileChanges) {
+            guard !changes.isEmpty else { return }
+            pending.merge(changes)
+            guard !scheduled else { return }
+            scheduled = true
+            // A bounded window combines bursts without postponing updates indefinitely.
+            queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                let changes = self.pending
+                self.pending = FileChanges()
+                self.scheduled = false
+                self.handler(changes)
+            }
+        }
     }
 
-    public init(paths: [String], acceptsDirectory: @escaping @Sendable (String) -> Bool = { _ in false },
-                handler: @escaping @Sendable ([String], Bool) -> Void) {
+    init(paths: [String], acceptsDirectory: @escaping @Sendable (String) -> Bool = { _ in false },
+         handler: @escaping @Sendable (FileChanges) -> Void) {
         queue.setSpecific(key: queueKey, value: 1)
-        let callback = Callback(acceptsDirectory: acceptsDirectory, handler: handler)
+        let callback = Callback(queue: queue, acceptsDirectory: acceptsDirectory, handler: handler)
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(callback).toOpaque(),
             retain: { info in
@@ -341,21 +398,8 @@ public final class FileWatcher: @unchecked Sendable {
             guard let info else { return }
             let callback = Unmanaged<Callback>.fromOpaque(info).takeUnretainedValue()
             let array = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            var changed: [String] = []
-            var rescan = false
-            for index in 0..<min(count, array.count) {
-                let flag = Int(flags[index])
-                let path = array[index]
-                if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0 {
-                    if callback.acceptsDirectory(path) { rescan = true }
-                }
-                if flag & kFSEventStreamEventFlagItemIsDir != 0,
-                   flag & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0,
-                   callback.acceptsDirectory(path) { rescan = true }
-                if flag & kFSEventStreamEventFlagItemIsFile != 0,
-                   FileScanner.kind(forExtension: (path as NSString).pathExtension) != nil { changed.append(path) }
-            }
-            if rescan || !changed.isEmpty { callback.handler(changed, rescan) }
+            callback.receive(FileChanges(paths: Array(array.prefix(count)), flags: Array(UnsafeBufferPointer(start: flags, count: min(count, array.count))),
+                                         acceptsDirectory: callback.acceptsDirectory))
         }
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
                            | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot)

@@ -65,8 +65,12 @@ import Testing
         let nested = imported.appending(path: "permit.txt")
         try "A synthetic permit for the kitchen.".write(to: nested, atomically: true, encoding: .utf8)
         try await waitUntil("directory import") { try engine.store.item(path: nested.path) != nil }
-        try FileManager.default.removeItem(at: imported)
-        try await waitUntil("directory removal") { try engine.store.item(path: nested.path) == nil }
+        let renamed = included.appending(path: "Renamed")
+        try FileManager.default.moveItem(at: imported, to: renamed)
+        let moved = renamed.appending(path: "permit.txt")
+        try await waitUntil("directory rename") { try engine.store.item(path: nested.path) == nil && engine.store.item(path: moved.path) != nil }
+        try FileManager.default.removeItem(at: renamed)
+        try await waitUntil("directory removal") { try engine.store.item(path: moved.path) == nil }
         _ = try await engine.handle(.settings, payload: JSONEncoder().encode(settings))
         #expect(await !engine.status().watchedFolders.contains(included.path))
         try "This folder is no longer included.".write(to: path, atomically: true, encoding: .utf8)
