@@ -206,3 +206,32 @@ func verifyLaunchBehavior() {
     precondition(!LaunchBehavior.isBackground(event: event(AEEventID(kAEReopenApplication))))
     print("Verified quiet login/restoration and deliberate reopen behavior without registering a login item")
 }
+
+/// Open the real Settings window (invisibly) and check every tab: the window is titled after
+/// the tab, and the pane fills the area under the toolbar instead of being centered and
+/// clipped inside a smaller one.
+@MainActor
+func verifySettingsWindow(_ model: AppModel, out: URL) {
+    let window = SettingsTabsController.makeWindow(model: model)
+    let tabs = window.contentViewController as! SettingsTabsController
+    window.alphaValue = 0
+    window.orderFront(nil)
+    defer { window.close() }
+    for tab in [SettingsTab.general, .suggestions, .sources, .privacy, .activity] {
+        tabs.select(tab)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let content = window.contentLayoutRect.size
+        let pane = tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController!.view
+        let paneRect = pane.convert(pane.bounds, to: nil)
+        precondition(window.title == tab.title, "Settings window must be titled \(tab.title), not \(window.title)")
+        precondition(abs(content.width - SettingsTabsController.size.width) < 1 && abs(content.height - SettingsTabsController.size.height) < 1,
+                     "Settings content area is \(content), expected \(SettingsTabsController.size)")
+        precondition(window.contentLayoutRect.insetBy(dx: -1, dy: -1).contains(paneRect) && abs(paneRect.width - content.width) < 1 && abs(paneRect.height - content.height) < 1,
+                     "\(tab.title) pane is \(paneRect), expected to fill \(window.contentLayoutRect)")
+        if tab == .general, let frame = window.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: out.appending(path: "settings-window.png"))
+        }
+    }
+    print("Verified the Settings window's size, titles and pane layout for every tab")
+}
