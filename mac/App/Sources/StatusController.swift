@@ -24,7 +24,9 @@ final class StatusController: NSObject, NSMenuItemValidation {
         self.model = model
         panel = ResultsPanel()
         super.init()
-        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, openSources: { [weak self] in
+        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, openSettings: { [weak self] in
+            self?.close(); self?.openSettings?()
+        }, openSources: { [weak self] in
             self?.close(); self?.openSources?()
         }, openSearch: { [weak self] in self?.openSearch?() }, resize: { [weak self] size in
             guard let self, self.panel.isVisible else { return }

@@ -9,6 +9,7 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: AppModel
     let close: () -> Void
+    var openSettings: () -> Void = {}
     var openSources: () -> Void = {}
     var openSearch: () -> Void = {}
     var resize: (CGSize) -> Void = { _ in }
@@ -51,6 +52,16 @@ struct PanelView: View {
             }
             Spacer(minLength: 4)
             if model.isPulling { ProgressView().controlSize(.mini) }
+            Button(action: openSettings) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.mutedForeground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 14)
         .frame(height: 40)
