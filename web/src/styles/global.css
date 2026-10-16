@@ -558,6 +558,205 @@ h1 {
   margin-top: 0.5em;
 }
 
+/* Windows open and close by fading and shrinking a little, as on a Mac. The
+   email stays in the layout when it's closed, so the desktop keeps its size. */
+.compose {
+  position: relative;
+  z-index: 1;
+}
+.win {
+  transition:
+    opacity 0.2s,
+    scale 0.2s cubic-bezier(0.2, 0.7, 0.2, 1),
+    visibility 0s;
+}
+.win.is-closed {
+  opacity: 0;
+  scale: 0.96;
+  visibility: hidden;
+  transition:
+    opacity 0.18s,
+    scale 0.18s,
+    visibility 0s 0.18s;
+}
+
+/* Preview, showing the photo from the desktop. */
+.viewer {
+  position: absolute;
+  top: 2.25rem;
+  left: 2.5rem;
+  z-index: 1;
+  width: min(46%, 27rem);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-window);
+  overflow: hidden;
+}
+.viewer-photo {
+  position: relative;
+  aspect-ratio: 4 / 3;
+}
+.plant-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Appears looking at the picture: one soft blue sweep, top to bottom. */
+.v-scan {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(to bottom, transparent, rgb(37 99 235 / 0.22) 50%, transparent) 0 -60% / 100% 35% no-repeat;
+}
+.is-looking .v-scan {
+  animation: v-scan 1.5s ease-in-out forwards;
+}
+@keyframes v-scan {
+  15%,
+  85% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    background-position: 0 160%;
+  }
+}
+
+/* On the desktop, under the windows: the photo's file and a Calendar widget. */
+.desk-file {
+  position: absolute;
+  right: 1.75rem;
+  bottom: 6rem;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: 7rem;
+}
+.df-thumb {
+  width: 56px;
+  height: 42px;
+  border: 2px solid #ffffff;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: outline-color 0.1s;
+  outline: 3px solid transparent;
+  outline-offset: 2px;
+}
+.df-name {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.desk-file.is-selected .df-thumb {
+  outline-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+.desk-file.is-selected .df-name {
+  background: var(--accent);
+  color: #ffffff;
+}
+.widget {
+  position: absolute;
+  top: 2.25rem;
+  left: 2.5rem;
+  width: 12rem;
+  padding: 0.7rem 0.85rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-window);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.w-day {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ef4444;
+}
+.w-event {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+.w-event > span:last-child {
+  display: grid;
+}
+.w-bar {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: #f97316;
+}
+.w-title {
+  font-weight: 600;
+}
+.w-time,
+.w-with {
+  color: var(--muted-foreground);
+}
+.w-soon {
+  margin-top: 0.5rem;
+  font-size: 11px;
+  font-weight: 500;
+  color: #ea580c;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.is-soon .w-soon {
+  opacity: 1;
+}
+
+/* The tabs above the mock, one per scenario. */
+.mock-tabs {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 1rem;
+  padding: 3px;
+  gap: 2px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  scrollbar-width: none;
+}
+.mock-tabs[hidden] {
+  display: none;
+}
+.mock-tab {
+  flex: none;
+  padding: 0.35rem 0.8rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+.mock-tab:hover {
+  color: var(--foreground);
+}
+.mock-tab[aria-selected="true"] {
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(9 9 11 / 0.08);
+}
+.mock-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* The panel hangs from the menu bar glyph. It's visible from the first frame:
    the drop-in animation only moves it, never fades it in. */
 .panel {
@@ -588,6 +787,15 @@ h1 {
 .panel-sub {
   font-size: 12px;
   color: var(--muted-foreground);
+}
+.panel-sub .icon {
+  display: inline;
+  margin-right: 4px;
+  vertical-align: -1.5px;
+}
+/* One panel per scenario; only the current one shows. */
+.panel:not(.is-current) {
+  display: none;
 }
 .panel .badge {
   height: 1.375rem;
@@ -722,6 +930,11 @@ h1 {
 .paper i:nth-child(4) {
   width: 80%;
   margin-top: 3px;
+}
+/* The houseplant photo from the second scenario, as it was two years ago. */
+.thumb-plant .plant-photo {
+  position: absolute;
+  inset: 0;
 }
 /* A PDF page with lines of text, one highlighted. */
 .thumb-pdf {
@@ -873,6 +1086,20 @@ h1 {
   line-height: 1;
   color: #18181b;
 }
+.app-preview {
+  background: linear-gradient(to bottom, #e0f2fe, #93c5fd);
+}
+.app-preview i {
+  width: 24px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 70% 30%, #fde047 0 2.5px, transparent 3px),
+    linear-gradient(160deg, #38bdf8 50%, #16a34a 50%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  rotate: -6deg;
+}
 .app-files {
   background: linear-gradient(to bottom, #93c5fd, #3b82f6);
 }
@@ -953,7 +1180,7 @@ h1 {
 .pointer.is-shown {
   opacity: 1;
 }
-.is-pressed .pointer path {
+.is-clicking .pointer path {
   scale: 0.88;
 }
 .replay {
@@ -1865,6 +2092,32 @@ h3 {
     right: 48px;
     width: min(calc(100% - 58px), 22.5rem);
   }
+  .viewer {
+    top: 14px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+  .widget {
+    top: 14px;
+    left: 10px;
+  }
+  .desk-file {
+    right: 0.5rem;
+    bottom: 1.5rem;
+  }
+  .mock-tab {
+    padding-inline: 0.6rem;
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .mock-tab {
+    padding-inline: 0.45rem;
+    font-size: 0.74rem;
+    letter-spacing: -0.01em;
+  }
   .compose {
     width: 100%;
     min-height: 23rem;
@@ -1895,6 +2148,7 @@ h3 {
     transition: none !important;
   }
   /* The scenes' finished frames. */
+  .v-scan,
   .n-scan {
     opacity: 0;
   }
