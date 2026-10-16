@@ -90,8 +90,13 @@ public actor Indexer {
     /// removing ones that are gone. Returns how many files it found.
     @discardableResult
     public func scanFiles() throws -> Int {
-        report { $0.phase = .scanning; $0.scanned = 0 }
-        defer { report { if $0.phase == .scanning { $0.phase = .idle } } }
+        // A rescan can enter while indexing awaits the embedder. Keep that run's
+        // indexing or paused state, just as scanMessages does.
+        let showsScanProgress = progress.phase == .idle
+        if showsScanProgress { report { $0.phase = .scanning; $0.scanned = 0 } }
+        defer {
+            if showsScanProgress, progress.phase == .scanning { report { $0.phase = .idle } }
+        }
         let scanStarted = Date()
         let scanner = FileScanner(settings: settings)
         var known = try store.paths(source: .file)
@@ -100,13 +105,13 @@ public actor Indexer {
             known.removeValue(forKey: item.path)
             try store.record(item, signature: FileScanner.signature(item))
             found += 1
-            if found % 500 == 0 { report { $0.scanned = found } }
+            if showsScanProgress, found % 500 == 0 { report { $0.scanned = found } }
         }
         let removed = try store.remove(itemIDs: Array(known.values))
         vectors.remove(ids: removed)
         try store.didCheck(.file)
         indexLog.info("Scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
-        report { $0.scanned = found; $0.phase = .idle }
+        if showsScanProgress { report { $0.scanned = found } }
         return found
     }
 
