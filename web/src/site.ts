@@ -164,7 +164,7 @@ export const FAQ = [
   {
     q: "Which files does it look through?",
     a: [
-      "Documents, PDFs, images and screenshots in your home folder, plus your Apple Notes. It skips system files, code projects and caches, and you can include or exclude folders in Settings.",
+      "Documents, PDFs, images and screenshots in your home folder, plus Apple Notes, Messages and their locally downloaded photos when you grant Full Disk Access. It skips system files, code projects and caches. Settings lets you include or exclude folders and turn Notes or Messages off.",
       "Mail, Photos, audio and video aren't supported yet.",
     ],
   },

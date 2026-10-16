@@ -50,6 +50,7 @@ if find "$APP" -name '*.safetensors' -print -quit | grep -q .; then
   echo "The lightweight app must not bundle model weights." >&2; exit 1
 fi
 "$ROOT/mac/scripts/check-no-network.sh" "$APP"
+python3 -I "$ROOT/mac/scripts/bundle-licenses.py" --verify "$APP/Contents/Resources/Licenses"
 
 # Check the actual signed entitlements, including Release builds accidentally signed
 # for debugging. The engine must have sandbox=true, not merely an entitlement key.

@@ -28,7 +28,8 @@ import Testing
     @Test func bundledPinsAndPathValidation() throws {
         let descriptor = try ModelDescriptor.bundled()
         try descriptor.validate()
-        #expect(descriptor.files.count == 10)
+        #expect(descriptor.files.count == 12)
+        #expect(Set(descriptor.files.map(\.name)).isSuperset(of: ["LICENSE.txt", "NOTICE.txt"]))
         #expect(descriptor.totalBytes > 800_000_000)
         let bad = ModelDescriptor(id: "escape", baseURL: URL(string: "https://other.example/models/escape/")!, files: descriptor.files)
         #expect(throws: (any Error).self) { try bad.validate() }

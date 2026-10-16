@@ -1,0 +1,15 @@
+EmbeddingGemma 2 (text and vision)
+
+Google DeepMind created the EmbeddingGemma 2 model.
+Source: https://huggingface.co/google/embeddinggemma-2
+Revision: 914f7f89142e33e77833254d9c9b90c3cef7303b
+License: Apache License 2.0; see LICENSE.txt in this distribution.
+
+Appears packages the text and vision tensors from that checkpoint into separate
+safetensors files and omits the audio encoder. Retained tensor values are copied
+byte for byte, without quantization or training. Tokenizer and configuration
+files are copied from the same revision. appears-model.json records the source,
+revision and file checksums; the app pins and verifies the complete download.
+
+This packaging is maintained by the Appears project. It does not imply
+affiliation with or endorsement by Google DeepMind.

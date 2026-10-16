@@ -15,8 +15,9 @@ private let demoFiles: URL = {
     fatalError("demo/files not found")
 }()
 
-/// An index of demo/files made the way `appears index --root demo/files` makes one, with the
-/// hashing embedder: it matches words, not meaning, and reads images through their OCR text.
+/// An index of demo/files with the hashing embedder: it matches words, not meaning.
+/// The cabin card has fixed OCR text so protocol tests also run on virtual Macs
+/// without Vision's hardware support. Real OCR is exercised by the model suite.
 private actor DemoIndex {
     static let shared = DemoIndex()
     private var built: Task<URL, Error>?
@@ -25,11 +26,27 @@ private actor DemoIndex {
         if built == nil {
             built = Task {
                 let folder = FileManager.default.temporaryDirectory.appending(path: "appears-mcp-tests-\(UUID().uuidString)")
-                let engine = try Engine(folder: folder, embedder: HashingEmbedder(), settings: SourceSettings(notes: false))
+                let embedder = HashingEmbedder()
+                let engine = try Engine(folder: folder, embedder: embedder, settings: SourceSettings(notes: false))
                 await engine.indexer.setPoliteness(false)
                 try FileScanner(settings: SourceSettings(notes: false), home: demoFiles.path).scan { item in
                     try engine.store.record(item, signature: FileScanner.signature(item))
                 }
+                let card = try #require(try engine.store.item(path: demoFiles.appending(path: "Desktop/IMG_2031.jpg").path))
+                // The invented card's content from demo/make-demo.py, before OCR.
+                let text = """
+                Welcome to Pine Hollow Cabin!
+                WiFi: PineHollow-Guest
+                Password: trout-meadow-88
+                Hot tub: cover back on please
+                Trash pickup Tuesday a.m.
+                Emergency: Joan (530) 555-0177
+                """
+                let vector = try await embedder.embed(documents: [EmbeddingDocument(title: card.title, text: text)])[0]
+                _ = try engine.store.replaceUnits(itemID: card.id, title: card.title, units: [
+                    (AppearsCore.Unit(kind: .text, locator: .whole, text: text), vector),
+                    (AppearsCore.Unit(kind: .image, locator: .whole, text: text), vector),
+                ])
                 try await engine.indexer.indexPending()
                 return folder
             }

@@ -134,6 +134,18 @@ test("R2 downloads, redirects and resumable transfers", async (t) => {
     assert.equal(await response.text(), "made-up");
     assert.equal((await fetch("/models/other/private.json")).status, 404);
   });
+  await t.test("model license files are downloadable without exposing arbitrary text files", async () => {
+    const prefix = "/models/embeddinggemma-2-914f7f89142e-licenses1/";
+    for (const name of ["LICENSE.txt", "NOTICE.txt"]) {
+      await bucket.put((prefix + name).slice(1), "made-up license fixture");
+      const response = await fetch(prefix + name);
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "made-up license fixture");
+    }
+    await bucket.put((prefix + "private.txt").slice(1), "private fixture");
+    assert.equal((await fetch(prefix + "private.txt")).status, 404);
+    assert.equal((await fetch(prefix + "../private.txt")).status, 404);
+  });
   await t.test("small immutable downloads are served from the Worker cache", async () => {
     const key = "releases/v3.0.0/Appears.dmg";
     await bucket.put(key, "small cached download");

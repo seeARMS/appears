@@ -22,6 +22,11 @@ SOURCE_REVISION = "914f7f89142e33e77833254d9c9b90c3cef7303b"
 SOURCE_SHA256 = "197a32965d4b1105faf060417baa899e193fb73cd401f42ec9295234d5553d79"
 SMALL_FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "tokenizer.model",
                "preprocessor_config.json", "processor_config.json", "chat_template.jinja"]
+ROOT = Path(__file__).resolve().parents[2]
+MODEL_NOTICES = {
+    "LICENSE.txt": ROOT / "mac/Packages/AppearsModel/ThirdParty/EmbeddingGemma2Swift/APACHE-2.0.txt",
+    "NOTICE.txt": ROOT / "mac/ModelNotices/NOTICE.txt",
+}
 
 
 def sha256(path: Path) -> str:
@@ -64,6 +69,21 @@ def write_subset(source: Path, destination: Path, keep) -> int:
     return len(names)
 
 
+def write_manifest(output: Path, text: int, vision: int) -> None:
+    for name, source in MODEL_NOTICES.items():
+        shutil.copy2(source, output / name)
+    files = {p.name: sha256(p) for p in sorted(output.iterdir()) if p.is_file() and p.name != "appears-model.json"}
+    manifest = {
+        "source": SOURCE_REPO,
+        "revision": SOURCE_REVISION,
+        "source_sha256": SOURCE_SHA256,
+        "license": "Apache-2.0",
+        "contents": f"text encoder ({text} tensors) and vision encoder ({vision} tensors), bf16, unchanged",
+        "files": files,
+    }
+    (output / "appears-model.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path)
@@ -86,16 +106,7 @@ def main() -> None:
     vision = write_subset(checkpoint, args.output / "vision.safetensors",
                           lambda n: n.startswith(("vision_tower.", "embed_vision.")))
 
-    files = {p.name: sha256(p) for p in sorted(args.output.iterdir()) if p.is_file()}
-    manifest = {
-        "source": SOURCE_REPO,
-        "revision": SOURCE_REVISION,
-        "source_sha256": SOURCE_SHA256,
-        "license": "Apache-2.0",
-        "contents": f"text encoder ({text} tensors) and vision encoder ({vision} tensors), bf16, unchanged",
-        "files": files,
-    }
-    (args.output / "appears-model.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_manifest(args.output, text, vision)
     total = sum(p.stat().st_size for p in args.output.iterdir())
     print(f"wrote {args.output} ({total / 1e6:.0f} MB): {text} text tensors, {vision} vision tensors")
 

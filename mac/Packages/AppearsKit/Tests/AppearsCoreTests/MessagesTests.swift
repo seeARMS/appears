@@ -15,7 +15,8 @@ private struct MessageFixture {
     let url: URL
     let photo: URL
     let latePhoto: URL
-    let old = Date().addingTimeInterval(-400 * 86_400)
+    // Whole seconds survive chat.db's Int64-nanosecond conversion exactly.
+    let old = Date(timeIntervalSince1970: 1_700_000_000)
 
     init() throws {
         folder = FileManager.default.temporaryDirectory.appending(path: "appears-messages-\(UUID().uuidString)")

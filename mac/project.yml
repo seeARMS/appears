@@ -47,6 +47,15 @@ targets:
     sources:
       - path: App/Sources
       - path: App/Resources/Assets.xcassets
+    postBuildScripts:
+      - name: Bundle third-party licenses
+        basedOnDependencyAnalysis: false
+        script: |
+          python3 -I "$SRCROOT/scripts/bundle-licenses.py" \
+            --checkouts "$BUILD_DIR/../../SourcePackages/checkouts" \
+            --resolved "$PROJECT_FILE_PATH/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" \
+            --sparkle "$SRCROOT/build/sparkle-src" \
+            --output "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Licenses"
     dependencies:
       - package: AppearsKit
         products: [AppearsCore, AppearsContext]

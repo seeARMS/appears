@@ -1,0 +1,6 @@
+self-hosted-runner:
+  labels:
+    # GitHub's documented Xcode 27 public-preview hosted label is newer than
+    # actionlint's built-in list. It is not a self-hosted runner.
+    - xcode-27
+    - appears-model
