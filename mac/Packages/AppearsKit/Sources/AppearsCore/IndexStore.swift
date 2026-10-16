@@ -113,6 +113,16 @@ public final class IndexStore: Sendable {
         migrator.registerMigration("v3-messages") { db in
             try db.execute(sql: "ALTER TABLE item ADD COLUMN message BLOB")
         }
+        migrator.registerMigration("v4-pending-order") { db in
+            // Match pending(limit:)'s order so each batch can read its first few rows
+            // directly, instead of sorting a large Messages backlog again. Leading with
+            // state lets SQLite choose this index without waiting for ANALYZE statistics.
+            try db.execute(sql: """
+                CREATE INDEX item_pending ON item (
+                    state, (CASE kind WHEN 'image' THEN 1 ELSE 0 END), modified DESC
+                ) WHERE state = 0
+                """)
+        }
         return migrator
     }
 

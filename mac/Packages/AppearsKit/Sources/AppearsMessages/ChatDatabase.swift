@@ -162,17 +162,19 @@ public struct ChatDatabase: Sendable {
     public func thread(around message: Message, before: Int, after: Int) throws -> [Message] {
         try read { db in
             let date = AppleDate.chatDBValue(from: message.date)
+            // Seek into Messages' (chat_id, message_date, message_id) index. An OR
+            // between dates and ids makes SQLite read and sort the chat's history.
             let earlier = try Self.fetchMessages(
                 db,
-                where: "cmj.chat_id = ? AND (cmj.message_date < ? OR (cmj.message_date = ? AND m.ROWID < ?))",
-                arguments: [message.chatID, date, date, message.rowID],
-                order: "cmj.message_date DESC, m.ROWID DESC", limit: before
+                where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) < (?, ?)",
+                arguments: [message.chatID, date, message.rowID],
+                order: "cmj.message_date DESC, cmj.message_id DESC", limit: before
             )
             let later = try Self.fetchMessages(
                 db,
-                where: "cmj.chat_id = ? AND (cmj.message_date > ? OR (cmj.message_date = ? AND m.ROWID >= ?))",
-                arguments: [message.chatID, date, date, message.rowID],
-                order: "cmj.message_date ASC, m.ROWID ASC", limit: after + 1
+                where: "cmj.chat_id = ? AND (cmj.message_date, cmj.message_id) >= (?, ?)",
+                arguments: [message.chatID, date, message.rowID],
+                order: "cmj.message_date ASC, cmj.message_id ASC", limit: after + 1
             )
             return earlier.reversed() + later
         }
