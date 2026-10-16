@@ -204,6 +204,13 @@ struct Eval: AsyncParsableCommand {
 
     struct Manifest: Decodable { var ages: [String: Double] }
 
+    struct DemoMessage: Decodable {
+        var path: String
+        var title: String
+        var text: String
+        var age: Double
+    }
+
     func demoFolder() throws -> URL {
         if let demo { return URL(filePath: demo) }
         var url = URL(filePath: FileManager.default.currentDirectoryPath)
@@ -240,6 +247,22 @@ struct Eval: AsyncParsableCommand {
             try store.record(item, signature: FileScanner.signature(item))
         }
         let indexed = try await indexer.indexPending()
+        // Synthetic conversations exercise Messages ranking without reading chat.db.
+        let messagesURL = demo.appending(path: "messages.json")
+        if FileManager.default.fileExists(atPath: messagesURL.path) {
+            let messages = try JSONDecoder().decode([DemoMessage].self, from: Data(contentsOf: messagesURL))
+            for message in messages {
+                let date = now.addingTimeInterval(-message.age * 86_400)
+                let item = Item(source: .messages, path: message.path, kind: .message, title: message.title,
+                                size: Int64(message.text.utf8.count), created: date, modified: date, lastUsed: nil)
+                let (id, _) = try store.record(item, signature: "demo")
+                let vector = try await embedder.embed(documents: [EmbeddingDocument(title: message.title, text: message.text)])[0]
+                let update = try store.replaceUnits(itemID: id, title: message.title, units: [
+                    (Unit(kind: .text, locator: .whole, text: message.text), vector),
+                ])
+                for unit in update.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: vector) }
+            }
+        }
         print("Indexed \(indexed) demo files in \(String(format: "%.1f", Date().timeIntervalSince(started)))s with \(embedder.modelID).\n")
 
         var recall = Recall(store: store, vectors: vectors, embedder: embedder)
@@ -288,7 +311,12 @@ struct Eval: AsyncParsableCommand {
             let found = expected.filter(paths.contains)
             recallSum += expected.isEmpty ? 1 : Double(found.count) / Double(min(expected.count, 3))
             if let rank = paths.firstIndex(where: expected.contains) { reciprocal += 1 / Double(rank + 1) }
-            if let top = response.suggestions.first, expected.contains(short(top.item.path)), top.confidence >= threshold { ambientHits += 1 }
+            let ambient = try await related(scenario, trigger: .ambient, limit: 3)
+            if let top = ambient.suggestions.first, expected.contains(short(top.item.path)), top.confidence >= threshold {
+                ambientHits += 1
+            } else {
+                print("    ambient: top confidence \(String(format: "%.2f", ambient.confidence)), expected result not surfaced")
+            }
             violations += (scenario.never ?? []).filter(paths.contains).count
             let mark = found.count == min(expected.count, 3) ? "✓" : (found.isEmpty ? "✗" : "~")
             print("\(mark) \(scenario.name): \(found.count)/\(min(expected.count, 3)) found, top confidence \(String(format: "%.2f", response.confidence))")

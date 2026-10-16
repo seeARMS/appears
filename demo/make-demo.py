@@ -21,6 +21,22 @@ FILES = ROOT / "files"
 random.seed(7)
 ages: dict[str, float] = {}
 
+# Synthetic Messages items are loaded directly into the eval's temporary index.
+MESSAGES = [
+    {
+        "path": "messages:demo-rent-payment",
+        "title": "Jordan Vale",
+        "text": "Me: Did you pay the final Harbor Oaks apartment rent bill?\nJordan: Yes, I paid the final Harbor Oaks rent bill of $640 this morning. The balance is zero.",
+        "age": 2,
+    },
+    {
+        "path": "messages:demo-weekend-plans",
+        "title": "Jordan Vale",
+        "text": "Jordan: Want to walk around the lake on Saturday?\nMe: Sure, let's meet after breakfast.",
+        "age": 1,
+    },
+]
+
 # Fictional planning example for the landing page, Markdown and share card.
 # Keep the message and source text here so the site never uses real information.
 LANDING = {
@@ -373,4 +389,5 @@ for i in range(14):
                age=random.uniform(40, 1000), dark=i % 3 == 0)
 
 (ROOT / "manifest.json").write_text(json.dumps({"about": "Days since each demo file was last touched. The eval sets modification dates from this.", "ages": dict(sorted(ages.items()))}, indent=2) + "\n")
+(ROOT / "messages.json").write_text(json.dumps(MESSAGES, indent=2) + "\n")
 print(f"wrote {len(ages)} files")

@@ -30,6 +30,7 @@ public struct Search: Sendable {
         if !sources.messages { excluded += try recall.store.itemIDs(source: .messages) }
         var recall = recall
         recall.settings.recentWeight = 1
+        recall.settings.recentMessageWeight = 1
         recall.settings.olderWeight = 1
         // Explicit search orders by relevance. Ambient diversity can otherwise promote an
         // unrelated item ahead of a second close match (especially a photo of the same thing).

@@ -1,0 +1,14 @@
+[
+  {
+    "path": "messages:demo-rent-payment",
+    "title": "Jordan Vale",
+    "text": "Me: Did you pay the final Harbor Oaks apartment rent bill?\nJordan: Yes, I paid the final Harbor Oaks rent bill of $640 this morning. The balance is zero.",
+    "age": 2
+  },
+  {
+    "path": "messages:demo-weekend-plans",
+    "title": "Jordan Vale",
+    "text": "Jordan: Want to walk around the lake on Saturday?\nMe: Sure, let's meet after breakfast.",
+    "age": 1
+  }
+]

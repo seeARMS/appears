@@ -111,6 +111,7 @@ public actor AgentIndex {
         var settings = RankingSettings()
         if !preferForgotten {
             settings.recentWeight = 1
+            settings.recentMessageWeight = 1
             settings.olderWeight = 1
         }
         return settings

@@ -54,12 +54,13 @@ public struct ContextSnapshot: Sendable, Codable, Equatable {
         selection.count + focusedText.count + visibleText.count + windowTitle.count
     }
 
-    /// Identifies "the same context" across small edits: the app, the window and the start
-    /// of the text, hashed with a per-install salt so it can't be reversed into words.
+    /// Identifies the current draft and selection, plus the start of the window's text.
+    /// Hashed with a per-install salt so it can't be reversed into words. Changes at the
+    /// end of a long draft count too; whitespace alone doesn't.
     public func fingerprint(salt: String) -> String {
         let normalized = [bundleID, windowTitle, documentPath ?? "", url ?? "",
-                          String(QueryBuilder.clean(focusedText).prefix(160)),
-                          String(selection.prefix(160)), String(visibleText.prefix(400))]
+                          QueryBuilder.clean(focusedText),
+                          QueryBuilder.clean(selection), String(visibleText.prefix(400))]
             .joined(separator: "\u{1F}")
             .lowercased()
             .filter { !$0.isWhitespace }

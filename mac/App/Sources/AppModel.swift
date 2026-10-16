@@ -20,6 +20,7 @@ final class AppModel {
     @ObservationIgnored let reader = ContextReader()
     @ObservationIgnored let calendar = CalendarWatcher()
     @ObservationIgnored private var policy = SurfacePolicy()
+    @ObservationIgnored private var ambientLookups = AmbientLookupSchedule()
 
     enum Glyph: Equatable {
         case idle, working, found, paused, needsSetup
@@ -166,6 +167,8 @@ final class AppModel {
 
     private func contextChanged() {
         settleTask?.cancel()
+        // Stop a pending lookup immediately while typing, and invalidate any answer in flight.
+        dwellTask?.cancel()
         settleTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
@@ -181,24 +184,26 @@ final class AppModel {
             // Files you have open count as recently used.
             Task { await engine.send(.touch, path) }
         }
-        guard snapshot.topic != topic else { return }
-        topic = snapshot.topic
-        topicSince = Date()
+        if snapshot.topic != topic {
+            topic = snapshot.topic
+            topicSince = Date()
+        }
         // A suggestion for the old context is stale now. One for a meeting waits for the meeting.
-        if let waiting, waiting.meeting == nil {
+        if let waiting, waiting.meeting == nil, waiting.fingerprint != snapshot.fingerprint(salt: settings.salt) {
             if !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
             self.waiting = nil
         }
         updateGlyph()
-        scheduleAmbient()
+        scheduleAmbient(for: snapshot)
     }
 
-    private func scheduleAmbient() {
+    private func scheduleAmbient(for snapshot: ContextSnapshot) {
         dwellTask?.cancel()
         guard settings.ambientMode != .off else { return }
-        let dwell = settings.dwell
+        guard let delay = ambientLookups.delay(fingerprint: snapshot.fingerprint(salt: settings.salt),
+                                              dwell: Date().timeIntervalSince(topicSince), requiredDwell: settings.dwell) else { return }
         dwellTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(dwell))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await self?.ambientCheck()
         }
@@ -217,9 +222,13 @@ final class AppModel {
         policy.settings = settings.policySettings
         let dwell = Date().timeIntervalSince(topicSince)
         guard policy.mayLook(dwell: dwell, fingerprint: fingerprint) == .show else { return }
+        ambientLookups.didStart()
         guard let response = try? await engine.related(RecallRequest(context: captured.snapshot, trigger: .ambient, limit: 3)) else { return }
         // The context may have moved on while the engine worked.
-        guard captured.snapshot.topic == topic else { return }
+        guard !Task.isCancelled, !settings.isPaused, settings.ambientMode != .off,
+              let current = reader.capture(includeBrowserURL: true),
+              current.snapshot.fingerprint(salt: settings.salt) == fingerprint else { return }
+        ambientLookups.didFinish(fingerprint: fingerprint)
         let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
         guard !confident.isEmpty else { return }
 
@@ -229,6 +238,7 @@ final class AppModel {
             fingerprint: fingerprint, suggestions: confident, weaker: []
         )
         entry.entryID = await engine.log(journalEntry(entry, dwell: dwell, context: captured.snapshot))
+        guard !Task.isCancelled else { return }
         policy.didSurface(fingerprint: fingerprint)
         if mode == .ambient {
             waiting = entry

@@ -122,8 +122,11 @@ public struct RankingSettings: Sendable, Codable, Equatable {
     public var recentDays = 3.0
     /// The forgotten weight of something recent, and of something just past `recentDays`.
     public var recentWeight = 0.35
+    /// A recent conversation can answer today's question. Age is only a small ranking
+    /// preference for Messages, fading from this weight to 1 over `forgottenDays`.
+    public var recentMessageWeight = 0.85
     public var olderWeight = 0.5
-    /// Ambient suggestions of recent things need twice the evidence.
+    /// Ambient confidence multiplier for recent files and Notes. Messages are exempt.
     public var recentAmbientConfidence = 0.5
     /// Where "forgotten" reaches full weight.
     public var forgottenDays = 90.0
@@ -183,7 +186,6 @@ public struct Recall: Sendable {
         add(imageHits.map(\.id), weight: settings.imageWeight)
         add(fullTextHits.map(\.unitID), weight: settings.fullTextWeight)
         for hit in textHits + imageHits { cosine[hit.id] = Double(hit.score) }
-        let vectorIDs = Set(textHits.map(\.id) + imageHits.map(\.id))
 
         // How unusual the best matches are for this context: z-scores within each list.
         let textStats = Stats(textHits.map { Double($0.score) })
@@ -222,6 +224,32 @@ public struct Recall: Sendable {
             }
         }
 
+        // The conversation title and visible history help find candidates, but can make
+        // an unrelated message seem confident. When there is a draft, judge Messages
+        // against what you're actually writing or selecting instead.
+        var messageQuery = query
+        var messageCosine = cosine
+        var messageTextStats = textStats
+        var messageImageStats = imageStats
+        var messageFullTextParts = fullTextParts
+        if candidates.values.contains(where: { $0.item.source == .messages }) {
+            let draft = QueryBuilder.build(ContextSnapshot(appName: context.appName, selection: context.selection, focusedText: context.focusedText)) { terms in
+                (try? store.documentFrequencies(terms)) ?? ([:], 0)
+            }
+            if draft.dense.count >= 12, draft.dense != query.dense {
+                messageQuery = draft
+                let vector = try await embedder.embed(queries: [draft.dense])[0]
+                let text = vectors.search(vector, kind: .text, limit: 200)
+                let images = vectors.search(vector, kind: .image, limit: 60)
+                messageCosine = Dictionary(uniqueKeysWithValues: (text + images).map { ($0.id, Double($0.score)) })
+                messageTextStats = Stats(text.map { Double($0.score) })
+                messageImageStats = Stats(images.map { Double($0.score) })
+                let hits = (try? store.fullText(draft.fullText, limit: 100)) ?? []
+                let matchedUnits = try store.units(ids: hits.map(\.unitID))
+                messageFullTextParts = Set(matchedUnits.values.map(part))
+            }
+        }
+
         let titleWords = Self.words(QueryBuilder.cleanTitle(context.windowTitle, app: context.appName))
         let documentFolder = context.documentPath.map { ($0 as NSString).deletingLastPathComponent }
 
@@ -237,9 +265,14 @@ public struct Recall: Sendable {
             }
             let days = max(0, now.timeIntervalSince(candidate.item.lastTouched) / 86_400)
             let recent = days < settings.recentDays
-            let forgotten = recent
-                ? settings.recentWeight
-                : settings.olderWeight + (1 - settings.olderWeight) * min(1, log(days / settings.recentDays) / log(settings.forgottenDays / settings.recentDays))
+            let forgotten: Double
+            if item.source == .messages {
+                forgotten = settings.recentMessageWeight + (1 - settings.recentMessageWeight) * min(1, days / settings.forgottenDays)
+            } else {
+                forgotten = recent
+                    ? settings.recentWeight
+                    : settings.olderWeight + (1 - settings.olderWeight) * min(1, log(days / settings.recentDays) / log(settings.forgottenDays / settings.recentDays))
+            }
             var novelty = 1.0
             if let documentFolder, item.folder == documentFolder { novelty *= settings.sameFolderPenalty }
             let itemWords = Self.words((item.title as NSString).deletingPathExtension)
@@ -255,13 +288,18 @@ public struct Recall: Sendable {
             let boost = strongMatch != nil ? settings.entityBoost : (contextMatch != nil ? settings.contextEntityBoost : 1)
             let rankScore = relevance * forgotten * novelty * boost
 
-            let unitCosine = cosine[candidate.unit.id] ?? 0
-            let stats = candidate.unit.kind == .image ? imageStats : textStats
+            let evidence = item.source == .messages ? messageCosine : cosine
+            let unitCosine = evidence[candidate.unit.id] ?? 0
+            let stats = item.source == .messages
+                ? (candidate.unit.kind == .image ? messageImageStats : messageTextStats)
+                : (candidate.unit.kind == .image ? imageStats : textStats)
+            let matchedParts = item.source == .messages ? messageFullTextParts : fullTextParts
+            let entityHit = item.source == .messages ? messageQuery.matchable.contains(where: haystack.contains) : strongMatch != nil
             let features = Features(
                 cosine: unitCosine,
-                zScore: cosine[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
-                agreement: vectorIDs.contains(candidate.unit.id) && fullTextParts.contains(part(candidate.unit)),
-                entityHit: strongMatch != nil,
+                zScore: evidence[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
+                agreement: evidence[candidate.unit.id] != nil && matchedParts.contains(part(candidate.unit)),
+                entityHit: entityHit,
                 daysSinceTouched: days,
                 fused: relevance,
                 forgotten: forgotten,
@@ -270,7 +308,7 @@ public struct Recall: Sendable {
             )
             // Rank fusion alone rewards whatever tops each list, however weak (the best image
             // match for a text-only context is usually noise), so weigh in how convincing it is.
-            let recentFactor = recent && request.trigger == .ambient ? settings.recentAmbientConfidence : 1
+            let recentFactor = recent && item.source != .messages && request.trigger == .ambient ? settings.recentAmbientConfidence : 1
             let confidence = Confidence.estimate(features) * recentFactor
             // Recall intent is about the context, not any one item: it makes Appears surer
             // without ranking anything higher.
