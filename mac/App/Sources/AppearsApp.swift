@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.status?.togglePull() }
         }
         model.start()
+        model.updater.start()
         Logger(subsystem: "rs.appea.appears", category: "app").info(
             "Launched. Accessibility: \(ContextReader.isTrusted, privacy: .public), Full Disk Access: \(FullDiskAccessGuide.isGranted, privacy: .public)"
         )

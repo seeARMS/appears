@@ -9,7 +9,7 @@ import SwiftUI
 /// - Hover while the glyph has something: peek, without taking focus.
 /// - Right-click: pause, settings, quit.
 @MainActor
-final class StatusController: NSObject {
+final class StatusController: NSObject, NSMenuItemValidation {
     private let model: AppModel
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel: ResultsPanel
@@ -178,6 +178,10 @@ final class StatusController: NSObject {
             menu.addItem(withTitle: Self.indexLine(status), action: nil, keyEquivalent: "").isEnabled = false
         }
         menu.addItem(withTitle: "Settings…", action: #selector(settingsFromMenu), keyEquivalent: ",").target = self
+        let updateTitle = model.updater.availableVersion.map { "Version \($0) Available…" } ?? "Check for Updates…"
+        let updateItem = menu.addItem(withTitle: updateTitle, action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        updateItem.isEnabled = model.updater.canCheck
         menu.addItem(withTitle: "Quit Appears", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         item.button?.performClick(nil)
@@ -206,6 +210,11 @@ final class StatusController: NSObject {
     }
     @objc private func resume() { model.pause(for: nil) }
     @objc private func settingsFromMenu() { openSettings?() }
+    @objc private func checkForUpdates() { model.updater.checkNow() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action != #selector(checkForUpdates) || model.updater.canCheck
+    }
 }
 
 /// A panel that can take keys without activating Appears, so the app you're in stays

@@ -51,6 +51,9 @@ targets:
       - package: AppearsKit
         products: [AppearsCore, AppearsContext]
       - package: KeyboardShortcuts
+      - framework: Vendor/Sparkle/Sparkle.framework
+        embed: true
+        codeSign: true
       - target: AppearsEngine
         embed: true
         codeSign: true
@@ -74,6 +77,17 @@ targets:
         # A menu bar app: no Dock icon, no main menu.
         LSUIElement: true
         NSHumanReadableCopyright: © 2026 Colin Armstrong. MIT License.
+        SUFeedURL: https://appea.rs/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: false
+        SUAllowsAutomaticUpdates: false
+        SUEnableSystemProfiling: false
+        SUEnableDownloaderService: true
+        SUVerifyUpdateBeforeExtraction: true
+        SURequireSignedFeed: true
+        SUSignedFeedFailureExpirationInterval: 0
         NSAppleEventsUsageDescription: Appears asks Safari and Chrome for the current page's address, and Chrome whether the window is private. Nothing leaves this Mac.
         # Reading events needs full access (macOS 14 and later); Appears never writes to the calendar.
         NSCalendarsFullAccessUsageDescription: Appears looks at your next meeting a few minutes before it starts, to bring up related files you already have. It reads events in memory only, never changes them, and nothing leaves this Mac.

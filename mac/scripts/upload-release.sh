@@ -16,6 +16,7 @@ aws_r2() { aws --endpoint-url "$ENDPOINT" "$@"; }
 
 cd "$OUT"
 shasum -a 256 -c Appears.dmg.sha256
+shasum -a 256 -c appcast.xml.sha256
 SHA=$(shasum -a 256 Appears.dmg | cut -d' ' -f1)
 # Listing must succeed; do not mistake a permission/network failure for a missing version.
 EXISTING=$(aws_r2 s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix "$KEY" --query 'Contents[].Key' --output text)
@@ -35,4 +36,7 @@ aws_r2 s3 cp Appears.dmg.sha256 "s3://$R2_BUCKET/$KEY.sha256" --only-show-errors
 printf '{"version":"%s","sha256":"%s"}\n' "$VERSION" "$SHA" > latest.json
 aws_r2 s3api put-object --bucket "$R2_BUCKET" --key latest.json --body latest.json \
   --content-type application/json --cache-control no-store >/dev/null
+# Only advertise the update after the immutable download has been read back.
+aws_r2 s3api put-object --bucket "$R2_BUCKET" --key appcast.xml --body appcast.xml \
+  --content-type 'application/rss+xml; charset=utf-8' --cache-control 'public, max-age=300' >/dev/null
 echo "Uploaded v$VERSION. Latest download: https://appea.rs/app.dmg"

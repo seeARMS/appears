@@ -157,6 +157,7 @@ let weaker = [
     render(GeneralPane(model: model).frame(width: 560, height: 600), "settings-general", width: 560)
     model.showForSnapshot(nil, status: status)
     render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources", width: 560)
+    render(UpdatesPane(updater: model.updater).frame(width: 560, height: 600), "settings-updates", width: 560)
     let scenes: [(Illustration.Scene, String, [Double])] = [
         (.moment, "moment", [1.5, 3.4, 5.5]), (.notice, "notice", [1.5, 4.0]),
         (.gather, "gather", [1.0, 2.2, 4.5]), (.ready, "ready", [0.5, 4.0]),

@@ -1,8 +1,8 @@
 name: Release Mac app
 
 on:
-  push:
-    tags: ["v[0-9]*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -22,7 +22,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
       # Same personal account and bucket as web/wrangler.jsonc.
       CLOUDFLARE_ACCOUNT_ID: 68d615b353a7fe2663d3e7154366864a
       R2_BUCKET: appears-downloads
@@ -30,11 +30,12 @@ jobs:
       TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
       NOTARY_ISSUER: ${{ vars.NOTARY_ISSUER }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -45,19 +46,32 @@ jobs:
           NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8 }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Use a stable vX.Y.Z tag." >&2; exit 1; }
           [[ "${TAG#v}" == "$(cat VERSION)" ]] || { echo "Tag must match VERSION." >&2; exit 1; }
           [[ "$(git rev-parse "refs/tags/$TAG^{commit}")" == "$(git rev-parse HEAD)" ]]
-          for setting in DEVELOPER_ID TEAM_ID NOTARY_KEY_ID CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+          for setting in DEVELOPER_ID TEAM_ID NOTARY_KEY_ID CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY SPARKLE_PUBLIC_ED_KEY SPARKLE_PRIVATE_KEY; do
             [[ -n "${!setting}" ]] || { echo "Missing release setting: $setting" >&2; exit 1; }
           done
+
+      - name: Read matching GitHub release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$RUNNER_TEMP/appears-release.json"
+          printf 'GITHUB_RELEASE_PATH=%s/appears-release.json\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install build tools
         run: |
           brew install xcodegen uv
           xcodebuild -version
           xcodebuild -downloadComponent MetalToolchain
+
+      - name: Build isolated Sparkle and test release metadata
+        run: |
+          mac/scripts/build-sparkle.sh
+          python3 -I -m unittest discover -s mac/scripts/tests
 
       - name: Test core
         working-directory: mac/Packages/AppearsKit
@@ -88,6 +102,7 @@ jobs:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8 }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           umask 077
           keychain="$RUNNER_TEMP/appears-signing.keychain-db"
@@ -95,7 +110,9 @@ jobs:
           echo "::add-mask::$password"
           printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/appears-signing.p12"
           printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/appears-notary.p8"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/appears-sparkle-key"
           printf 'NOTARY_KEY_PATH=%s/appears-notary.p8\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'SPARKLE_PRIVATE_KEY_PATH=%s/appears-sparkle-key\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 7200 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
@@ -123,4 +140,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/appears-signing.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/appears-signing.p12" "$RUNNER_TEMP/appears-notary.p8"
+          rm -f "$RUNNER_TEMP/appears-signing.p12" "$RUNNER_TEMP/appears-notary.p8" "$RUNNER_TEMP/appears-sparkle-key" "$RUNNER_TEMP/appears-release.json"

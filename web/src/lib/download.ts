@@ -6,6 +6,18 @@ export async function download(request: Request, bucket: R2Bucket): Promise<Resp
   const reading = request.method === "GET" || request.method === "HEAD";
   if (!reading) return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
 
+  if (path === "/appcast.xml") {
+    const feed = await bucket.get("appcast.xml");
+    if (!feed) return unavailable(request);
+    return new Response(request.method === "HEAD" ? null : feed.body as unknown as ReadableStream<Uint8Array>, {
+      headers: {
+        "Content-Type": "application/rss+xml; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
   if (path === "/app.dmg") {
     const latest = await bucket.get("latest.json");
     if (!latest) return unavailable(request);

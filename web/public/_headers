@@ -12,9 +12,3 @@
 # going by the header alone may read UTF-8 punctuation as Latin-1.
 /llms.txt
   Content-Type: text/plain; charset=utf-8
-
-# The Mac app's update feed (Sparkle). A short cache, so a new release
-# reaches people within minutes.
-/appcast.xml
-  Content-Type: application/xml; charset=utf-8
-  Cache-Control: public, max-age=300
