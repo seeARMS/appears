@@ -4,6 +4,11 @@
 // three things you already had, grouped like a ⌘K results list. Every name,
 // file and number here is made up. The results and their groups come from
 // MOCK_RESULTS in src/site.ts; the email is written here.
+//
+// With JavaScript, the mock plays once when it scrolls into view: the reply is
+// typed, the glyph finds something as "permit" is typed, the pointer clicks it
+// and the panel drops. Without JavaScript, or with reduced motion, it's the
+// finished frame.
 import Glyph from "./Glyph.astro";
 import Icon from "./Icon.astro";
 import { MOCK_CAPTION, MOCK_NOTE, MOCK_RESULTS } from "../site";
@@ -44,8 +49,8 @@ const first = MOCK_RESULTS[0];
         <div class="field"><span class="field-label">To:</span> <span class="token">Dana Ruiz</span></div>
         <div class="field"><span class="field-label">Subject:</span> {SUBJECT}</div>
         <div class="body">
-          <p>Hi Dana,</p>
-          <p>
+          <p data-type>Hi Dana,</p>
+          <p data-type>
             The 14th works for us. Before we order the cabinets, can you confirm the numbers from your original quote? I
             also want to be sure the permit covers moving the sink to the island<span class="caret"></span>
           </p>
@@ -109,6 +114,10 @@ const first = MOCK_RESULTS[0];
         </div>
       </div>
 
+      <svg class="pointer" width="17" height="24" viewBox="0 0 17 24">
+        <path d="M1.5 1.5v17.2l4.3-4.1 2.9 6.9 3-1.3-2.9-6.7h6.1z" fill="#09090b" stroke="#fff" stroke-width="1.4" stroke-linejoin="round" />
+      </svg>
+
       <div class="dock">
         <span class="app app-finder"><i></i></span>
         <span class="app app-mail is-open"><i></i></span>
@@ -120,5 +129,141 @@ const first = MOCK_RESULTS[0];
       </div>
     </div>
   </div>
+  <button class="replay" type="button" hidden aria-label="Replay the animation" title="Replay">
+    <Icon name="replay" size={15} />
+  </button>
   <figcaption>{MOCK_CAPTION} <span class="mock-note">{MOCK_NOTE}</span></figcaption>
 </figure>
+
+<script>
+  const mock = document.querySelector<HTMLElement>(".mock");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (mock && !reduced && "IntersectionObserver" in window) setup(mock);
+
+  function setup(mock: HTMLElement) {
+    const desk = mock.querySelector<HTMLElement>(".desk")!;
+    const glyph = mock.querySelector<HTMLElement>(".mb-glyph")!;
+    const compose = mock.querySelector<HTMLElement>(".compose")!;
+    const pointer = mock.querySelector<SVGElement>(".pointer")!;
+    const replay = mock.querySelector<HTMLButtonElement>(".replay")!;
+    const caret = mock.querySelector<HTMLElement>(".caret")!;
+    const TRIGGER = "permit";
+    // A slip and its correction, the way people actually type.
+    const TYPOS: Record<string, string> = { cabinets: "cabients" };
+
+    // Each paragraph becomes typed text, the caret, then the rest of the text,
+    // kept in place but invisible so the window never changes size.
+    const lines = [...mock.querySelectorAll<HTMLElement>("[data-type]")].map((p) => {
+      const text = p.textContent!.replace(/\s+/g, " ").trim();
+      const typed = document.createElement("span");
+      const rest = document.createElement("span");
+      rest.className = "untyped";
+      p.replaceChildren(typed, rest);
+      return { p, text, typed, rest };
+    });
+
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const jitter = (min: number, max: number) => min + Math.random() * (max - min);
+
+    function reset() {
+      mock.classList.remove("is-found", "is-open", "is-pressed", "is-done");
+      mock.classList.add("is-playing");
+      for (const l of lines) {
+        l.typed.textContent = "";
+        l.rest.textContent = l.text;
+      }
+      lines[0].p.insertBefore(caret, lines[0].rest);
+      pointer.classList.remove("is-shown");
+      pointer.style.transition = "none";
+      replay.hidden = true;
+    }
+
+    // Where the pointer's tip should be, relative to the stage it moves in.
+    function at(el: Element, fx: number, fy: number) {
+      const d = pointer.parentElement!.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return `translate(${r.left - d.left + r.width * fx}px, ${r.top - d.top + r.height * fy}px)`;
+    }
+
+    async function type(line: (typeof lines)[number]) {
+      line.p.insertBefore(caret, line.rest);
+      const { text } = line;
+      let i = 0;
+      while (i < text.length) {
+        const word = Object.keys(TYPOS).find((w) => text.startsWith(w, i));
+        if (word) {
+          const wrong = TYPOS[word];
+          for (const ch of wrong) {
+            line.typed.textContent += ch;
+            await wait(jitter(45, 95));
+          }
+          await wait(380);
+          const keep = [...wrong].findIndex((ch, k) => ch !== word[k]);
+          for (let k = wrong.length; k > keep; k--) {
+            line.typed.textContent = line.typed.textContent!.slice(0, -1);
+            await wait(jitter(60, 90));
+          }
+          i += keep;
+          line.rest.textContent = text.slice(i);
+          continue;
+        }
+        const ch = text[i++];
+        line.typed.textContent += ch;
+        line.rest.textContent = text.slice(i);
+        if (!mock.classList.contains("is-found") && text.slice(0, i).endsWith(TRIGGER)) mock.classList.add("is-found");
+        await wait(ch === "," ? jitter(220, 320) : ch === "." || ch === "?" ? jitter(350, 500) : ch === " " ? jitter(30, 80) : jitter(35, 105));
+      }
+    }
+
+    async function play() {
+      reset();
+      mock.classList.add("is-typing");
+      // On phones the email is hidden: go straight to the glyph.
+      const typing = compose.offsetParent !== null;
+      if (typing) {
+        await wait(500);
+        await type(lines[0]);
+        await wait(450);
+        for (const l of lines.slice(1)) await type(l);
+      } else {
+        for (const l of lines) {
+          l.typed.textContent = l.text;
+          l.rest.textContent = "";
+        }
+      }
+      mock.classList.remove("is-typing");
+      mock.classList.add("is-found");
+      await wait(1100);
+
+      // The pointer drifts in from the email and clicks the glyph.
+      pointer.style.transform = typing ? at(compose, 0.78, 0.62) : at(glyph, -2, 6);
+      void pointer.getBoundingClientRect();
+      pointer.style.transition = "";
+      pointer.classList.add("is-shown");
+      await wait(250);
+      pointer.style.transform = at(glyph, 0.45, 0.6);
+      await wait(950);
+      mock.classList.add("is-pressed");
+      await wait(140);
+      mock.classList.remove("is-pressed");
+      mock.classList.add("is-open");
+      await wait(1600);
+      mock.classList.remove("is-playing");
+      mock.classList.add("is-done");
+      replay.hidden = false;
+    }
+
+    mock.classList.add("is-animated");
+    reset();
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        seen.disconnect();
+        play();
+      },
+      { threshold: 0.45 },
+    );
+    seen.observe(desk);
+    replay.addEventListener("click", play);
+  }
+</script>
