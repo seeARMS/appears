@@ -22,7 +22,7 @@ let package = Package(
     dependencies: [
         .package(path: "../AppearsKit"),
         .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.32.3"),
-        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.5"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
     ],
     targets: [
