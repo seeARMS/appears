@@ -90,7 +90,7 @@ appears/
 
 - **Names:** bundle ID `rs.appea.appears`, CLI `appears`.
 - **Minimum macOS:** 26, for SpeechAnalyzer and current SwiftUI/AppKit.
-- **No root package manager:** the two halves share no toolchain. `web/` reads `../VERSION` and `../demo/` at build time.
+- **Separate toolchains:** the root `package.json` only exposes the local `npm run rebuild` convenience command, with no Node dependencies. The web package stays independent; `web/` reads `../VERSION` and `../demo/` at build time.
 
 ## The Mac app
 
