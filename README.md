@@ -1,6 +1,6 @@
 # Appears
 
-A Mac menu bar app that notices what you're looking at (the email you're replying to, the doc you're editing, the page you're reading) and quietly shows related things you already have and probably forgot: an old screenshot, a photo of a quote, a PDF from two years ago. You never type a query. Everything runs on the Mac.
+A Mac menu bar app that notices what you're looking at (the email you're replying to, the doc you're editing, the page you're reading) and quietly shows related things you already have and probably forgot: an old screenshot, a photo of a quote, a PDF from two years ago. You can also search by describing what you remember. Everything runs on the Mac.
 
 Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the reasoning behind it are in [PLAN.md](PLAN.md).
 
@@ -20,6 +20,7 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
 - **Confidence:** each result gets a 0–1 score built from how far it stands above the context's other candidates. A clear match counts for more when what you're writing asks for something you had ("what was the wifi password again?"). `appears eval` measures it.
 - **Meetings:** with Calendar access (optional), Appears also looks once before each meeting, 10 minutes ahead by default. The event stands in for a window: its title, the people invited, and its location and notes, minus the join links, dial-ins and passcodes. All-day events, ones you declined, and blocks with nobody else and nothing written in them are skipped. One timer waits for the next meeting; nothing polls. The lead time replaces the dwell, everything else below applies as is, and the panel says which meeting it's for ("For Kitchen walkthrough at 2:00 PM").
 - **When to show something:** you can always ask, with ⇧⌘Space or a click on the menu bar ring. On its own, Appears looks only after you've stayed in one context for 15 seconds. It changes the ring (a dot appears) only when a result is confident and the budget allows: a few per hour, with backoff after each ignored or dismissed suggestion. It never sends notifications or makes sounds. "Log only" mode records what it would have shown, without showing it.
+- **Search:** press ⌃⇧Space, choose “Search Appears…” from the ring's right-click menu, or reopen Appears from Finder or Spotlight. A centered search window finds up to 20 results by meaning using the same text and image embeddings, with full-text matching for names and numbers. All enabled sources participate, including recent files, Notes and Messages. Include/Exclude settings and “Never show this” apply. Type to search, use ↑/↓ to select, Return to open, ⌘Return to reveal in Finder, ⌘Y to preview, and Escape or a click away to close. Spaces and standard text-editing shortcuts work in the query. Settings → General has separate configurable shortcuts for context recall and search. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the suggestion journal or its precision metrics; closing clears them.
 - **Measuring:** a journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). It holds item ids and scores, and a salted fingerprint of the context, never its text. Settings → Stats and `appears stats` turn it into precision numbers.
 
 ## Privacy, and how each part is enforced
@@ -124,6 +125,8 @@ open -n /Applications/Appears.app --args -demo "$PWD/demo/files"
 
 `-demo` keeps a separate index. Add `-ask "<text>"` to run one ask with scripted text once indexing finishes, which also works without the Accessibility permission. Then open, say, a text file in TextEdit containing "Hi Dana, can you confirm the quote covers moving the outlet?" and press ⇧⌘Space.
 
+Add `-search "the quote for the kitchen"` instead to open semantic search on the demo, without reading a window or requiring Accessibility.
+
 `-event "<title>"` stands in a made-up meeting for your calendar, which is then never read (nor is it with `-demo`). It starts 30 seconds after the lead time, so the ring gets its dot about half a minute after launch if the result is confident. Add `-event-with "Name <email>; …"`, `-event-location`, `-event-notes` and `-event-in <seconds>`:
 
 ```bash
@@ -164,7 +167,7 @@ Other commands:
 
 ## For agents
 
-`appears mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on stdin and stdout. Agents on your Mac (Claude Code, Claude desktop, Codex) can ask it what you already have about something: "what do I have about the Lisbon trip", "find the wifi card from the cabin". The menu bar never asks you for a query; an agent can.
+`appears mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on stdin and stdout. Agents on your Mac (Claude Code, Claude desktop, Codex) can ask it what you already have about something: "what do I have about the Lisbon trip", "find the wifi card from the cabin". The app's separate Search window also accepts typed questions.
 
 - **It does nothing unless you set it up.** Neither the app nor the engine starts it. An agent you configure starts it, and it runs only while that agent does.
 - **Appears sends nothing anywhere, but the agent you connect may.** `appears mcp` has no networking code: it answers on the pipes the agent opened, reads the index read-only, and stores nothing. Agent questions aren't journaled, so they never count toward the pull, shadow or ambient numbers, and neither questions nor results are logged. But what it answers becomes part of the agent's conversation, and the agent may send that to its model provider: paths, why each matched, and the matching text, which can be the password on a photo of a wifi card. Connect only agents you'd show those files to.
@@ -240,6 +243,7 @@ No R2 bucket, credentials, deployment or first release is created by adding thes
 
 ## Not done yet
 
+- **Local thin-app model access:** during search testing, macOS denied the sandboxed engine access to the downloader container's `verified.json`, including with the self-signed development identity. Search reports this as an unreadable installed model. Core search, the app build and the privacy checks pass, but real-model search through the app is not verified until model access across those sandboxes is resolved. No permissions or sandbox restrictions were loosened.
 - **Calibration:** not learned yet. The confidence weights are hand-set from the eval; fitting them to the journal is next.
 - **Notes attachments** (scans, photos in notes) aren't indexed; note text is.
 - **Folders added under Include** are scanned, but not watched for changes until the next full rescan (every 6 hours) or a relaunch.

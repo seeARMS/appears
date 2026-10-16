@@ -5,6 +5,8 @@ import KeyboardShortcuts
 extension KeyboardShortcuts.Name {
     /// "What do I already have about this?"
     static let pull = Self("pull", default: .init(.space, modifiers: [.command, .shift]))
+    /// Search your index by meaning, with a typed query.
+    static let search = Self("search", initial: .init(.space, modifiers: [.control, .shift]))
 }
 
 /// Preferences, in UserDefaults. Only settings live here; nothing about what was on screen.

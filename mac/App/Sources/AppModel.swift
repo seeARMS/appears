@@ -85,6 +85,13 @@ final class AppModel {
         return args[index + 1]
     }()
 
+    /// `-search "<text>"`: open typed search, useful with the isolated demo index.
+    static let scriptedSearch: String? = {
+        let args = CommandLine.arguments
+        guard let index = args.firstIndex(of: "-search"), args.indices.contains(index + 1) else { return nil }
+        return args[index + 1]
+    }()
+
     /// The source settings sent to the engine (demo mode replaces home and skips Notes and Messages).
     var engineSources: SourceSettings {
         var sources = settings.sources

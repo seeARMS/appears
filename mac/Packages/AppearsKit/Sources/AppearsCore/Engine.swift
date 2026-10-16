@@ -34,7 +34,7 @@ public struct FeedbackEvent: Sendable, Codable {
 
 /// The methods the app calls on the engine. Payloads and replies are JSON.
 public enum EngineMethod: String, Sendable {
-    case status, related, settings, feedback, log, stats, touch, rescan, deleteIndex, deleteJournal
+    case status, related, search, settings, feedback, log, stats, touch, rescan, deleteIndex, deleteJournal
 }
 
 /// The XPC interface. One generic call keeps the Objective-C surface tiny; the Swift types
@@ -162,6 +162,9 @@ public final class Engine: Sendable {
             let request = try decoder.decode(RecallRequest.self, from: payload)
             if let path = request.context.documentPath { try? store.touch(path: path) }
             return try encoder.encode(try await recall.run(request))
+        case .search:
+            let request = try decoder.decode(SearchRequest.self, from: payload)
+            return try encoder.encode(try await Search(recall: recall).run(request, sources: await indexer.settings))
         case .settings:
             let settings = try decoder.decode(SourceSettings.self, from: payload)
             let changed = await indexer.settings != settings
