@@ -71,6 +71,8 @@ demo/                       a made-up home folder and eval scenarios; never real
 brand/                      the mark and app icon
 ```
 
+For contributions and local checks, see [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities and private-data exposure through [SECURITY.md](SECURITY.md).
+
 ## Building and running
 
 You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [uv](https://docs.astral.sh/uv/). If `xcode-select -p` points at the Command Line Tools, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
@@ -232,14 +234,22 @@ The site Worker exposes `https://appea.rs/app.dmg`, an uncached redirect to an i
 One-time setup, before the first release:
 
 1. In `web/`, use the personal profile to create the private bucket: `npm run cf -- r2 bucket create appears-downloads`. Keep public bucket access disabled; the Worker has an R2 binding. Deploy the updated site Worker once so `/downloads/*` and `/models/*` are served.
-2. Add GitHub repository secrets: `APPLE_CERTIFICATE_BASE64` (exported Developer ID Application `.p12`, base64 encoded), `APPLE_CERTIFICATE_PASSWORD`, `NOTARY_KEY_P8` (App Store Connect private key), `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (Object Read & Write, scoped to this bucket). Optional `HF_TOKEN` is used only to prepare the upstream model. Keep long-term credential copies in 1Password; never put values in the repo, shell history or chat.
-3. Create a dedicated Ed25519 update-signing key, keep its long-term copy in 1Password, add its base64 private seed as the `SPARKLE_PRIVATE_KEY` repository secret, and its base64 public key as the `SPARKLE_PUBLIC_ED_KEY` repository variable. Release builds verify that they match. Never regenerate this key for an ordinary release. Local builds without a public key show that update checks are unavailable; they do not contact the feed. To test a development build against the real feed, provide the public key through `mac/Config/Local.xcconfig`.
-4. Add repository variables: `DEVELOPER_ID` (full Developer ID Application identity), `APPLE_TEAM_ID`, and `NOTARY_KEY_ID`. Set `NOTARY_ISSUER` for a Team API key; leave it unset for an Individual key.
+2. Run `python3 -I scripts/configure-github.py --apply` to configure repository protections and the `release` environment, then check its output for settings GitHub could not apply. See [.github/MAINTAINERS.md](.github/MAINTAINERS.md). Add secrets to that environment: `APPLE_CERTIFICATE_BASE64` (exported Developer ID Application `.p12`, base64 encoded), `APPLE_CERTIFICATE_PASSWORD`, `NOTARY_KEY_P8` (App Store Connect private key), `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (Object Read & Write, scoped to this bucket). Optional `HF_TOKEN` is used only to prepare the upstream model. Keep long-term credential copies in 1Password; never put values in the repo, shell history or chat.
+3. Create a dedicated Ed25519 update-signing key, keep its long-term copy in 1Password, add its base64 private seed as the `SPARKLE_PRIVATE_KEY` environment secret, and its base64 public key as the `SPARKLE_PUBLIC_ED_KEY` environment variable. Release builds verify that they match. Never regenerate this key for an ordinary release. Local builds without a public key show that update checks are unavailable; they do not contact the feed. To test a development build against the real feed, provide the public key through `mac/Config/Local.xcconfig`.
+4. Add environment variables: `DEVELOPER_ID` (full Developer ID Application identity), `APPLE_TEAM_ID`, and `NOTARY_KEY_ID`. Set `NOTARY_ISSUER` for a Team API key; leave it unset for an Individual key.
 5. When ready to release, update `VERSION`, commit the intended release, push its `vX.Y.Z` tag, and publish a stable GitHub release with its changelog. Tag pushes alone do not publish a download. Signing credentials live only in a temporary runner keychain or private runner files and are removed after the job.
 
 The release build signs both the DMG and an appcast containing GitHub's Markdown notes. `/appcast.xml` serves those signed bytes from R2 with a five-minute cache. The uploader promotes the feed only after reading back and verifying the immutable DMG. Publishing a private repository's release notes this way makes that changelog public, but never exposes the private source or GitHub credentials. Local release builds also need `SPARKLE_PUBLIC_ED_KEY`, `SPARKLE_PRIVATE_KEY_PATH`, and `GITHUB_RELEASE_PATH` (the matching GitHub release JSON).
 
 No R2 bucket, credentials, deployment or first release is created by adding these files. For rollback, put a previously verified version and its SHA-256 back into the bucket's `latest.json`; don't overwrite immutable version or model files. A failed upload never promotes an unverified DMG. A version that was already uploaded is not overwritten on rerun.
+
+Release tags must point to a commit reachable from `main`. For manual runs, select the version tag as the workflow ref and supply the same tag input. Validation runs before the job that can access the tag-only release environment.
+
+## Licenses in distributions
+
+Appears' code is MIT licensed. Upstream code and model files retain their own licenses. Before Xcode signs the app, `mac/scripts/bundle-licenses.py` copies this project's license, the vendored model runtime's notices, Sparkle's license, and license/notice files from the exact resolved Swift dependency checkouts into `Appears.app/Contents/Resources/Licenses`. A manifest records revisions and checksums; CI and the release script verify it.
+
+The separately downloaded model includes `LICENSE.txt` (Apache-2.0), `NOTICE.txt` (source revision and the text/vision extraction), and `appears-model.json` (provenance and checksums). The app verifies these files along with the weights. The license-bearing package uses a new immutable model prefix so earlier downloads remain unchanged. Updating notices requires updating their bundled size/SHA-256 pins too.
 
 ## Not done yet
 

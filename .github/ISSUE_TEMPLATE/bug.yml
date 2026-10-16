@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible problem using made-up data.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities or private-data exposure, follow [SECURITY.md](https://github.com/seeARMS/appears/blob/main/SECURITY.md).
+        Use demo data. Do not attach your index, journal, Messages/Notes databases, real screen text, or private screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit, macOS version, and Mac chip
+      placeholder: "commit abc1234, macOS 27.0, M3"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a small made-up example, the app involved, and relevant permissions or settings.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics (optional)
+      description: Check every line and image for private paths, names, text and credentials before attaching it.

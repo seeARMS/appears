@@ -1,0 +1,15 @@
+name: Feature idea
+description: Explain a situation where Appears could help.
+body:
+  - type: textarea
+    id: situation
+    attributes:
+      label: What were you trying to do?
+      description: Use a made-up example. Explain what you hoped Appears would find or how it should behave.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested change
+      description: Mention any source, permission, privacy or interruption tradeoffs.

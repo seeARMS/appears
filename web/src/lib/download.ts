@@ -32,7 +32,7 @@ export async function download(request: Request, bucket: R2Bucket): Promise<Resp
   }
 
   const match = /^\/downloads\/(v\d+\.\d+\.\d+)\/(Appears\.dmg(?:\.sha256)?)$/.exec(path);
-  const model = /^\/models\/(embeddinggemma-2-[a-f0-9]{12})\/([a-zA-Z0-9_-]+\.(?:safetensors|json|jinja|model))$/.exec(path);
+  const model = /^\/models\/(embeddinggemma-2-[a-f0-9]{12}(?:-licenses[1-9][0-9]*)?)\/([a-zA-Z0-9_-]+\.(?:safetensors|json|jinja|model)|LICENSE\.txt|NOTICE\.txt)$/.exec(path);
   if (!match && !model) return new Response(null, { status: 404 });
   const key = match ? `releases/${match[1]}/${match[2]}` : `models/${model![1]}/${model![2]}`;
   const filename = (match ?? model)![2];

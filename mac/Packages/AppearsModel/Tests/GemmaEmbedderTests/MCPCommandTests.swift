@@ -45,7 +45,7 @@ struct MCPCommandTests {
         let data = FileManager.default.temporaryDirectory.appending(path: "appears-mcp-command-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: data) }
 
-        let indexed = try await run(binary, ["index", "--root", demo.appending(path: "demo/files").path, "--data", data.path, "--no-notes", "--model", ModelFolder.url.path])
+        let indexed = try await run(binary, ["index", "--root", demo.appending(path: "demo/files").path, "--data", data.path, "--no-notes", "--no-messages", "--model", ModelFolder.url.path])
         #expect(indexed.status == 0)
 
         let question = "what's the wifi password at the cabin"

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security or privacy problem
+    url: https://github.com/seeARMS/appears/blob/main/SECURITY.md
+    about: Use private reporting or the email fallback; do not post private data in issues.

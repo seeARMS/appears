@@ -1,11 +1,11 @@
 {
-  "id": "embeddinggemma-2-914f7f89142e",
-  "baseURL": "https://appea.rs/models/embeddinggemma-2-914f7f89142e/",
+  "id": "embeddinggemma-2-914f7f89142e-licenses1",
+  "baseURL": "https://appea.rs/models/embeddinggemma-2-914f7f89142e-licenses1/",
   "files": [
     {
       "name": "appears-model.json",
-      "size": 1169,
-      "sha256": "bfc531e2ea0bbbad2303a119ed9aa75ae186aae0df8f6321386a8d50e0daec95"
+      "size": 1342,
+      "sha256": "d5dc51dcc811895a3b175e785264d758612a71a9ec24c3a96d79622bf76a2b89"
     },
     {
       "name": "chat_template.jinja",
@@ -51,6 +51,16 @@
       "name": "vision.safetensors",
       "size": 335543264,
       "sha256": "769bed49d990fd4808379e63dcc9c02a0c855bf7d03c8a0f8925ec9d4d60c45a"
+    },
+    {
+      "name": "LICENSE.txt",
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "name": "NOTICE.txt",
+      "size": 782,
+      "sha256": "3eb6fa86e61dcf28555ab3d3eb562377f3e6a90db09aeee6ae875e6b425e3f59"
     }
   ]
 }
