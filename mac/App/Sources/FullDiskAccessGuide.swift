@@ -25,6 +25,7 @@ enum FullDiskAccessGuide {
             home + "/Library/Application Support/com.apple.TCC/TCC.db",
             "/Library/Application Support/com.apple.TCC/TCC.db",
             home + "/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite",
+            home + "/Library/Messages/chat.db",
             home + "/Library/Safari/Bookmarks.plist",
         ]
         for path in files where FileManager.default.fileExists(atPath: path) {

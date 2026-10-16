@@ -13,6 +13,7 @@ public enum ItemKind: String, Sendable, Codable, Hashable, CaseIterable {
     case pdf
     case image
     case note
+    case message
 
     public var label: String {
         switch self {
@@ -20,6 +21,7 @@ public enum ItemKind: String, Sendable, Codable, Hashable, CaseIterable {
         case .pdf: "PDF"
         case .image: "Image"
         case .note: "Note"
+        case .message: "Message"
         }
     }
 }
@@ -28,13 +30,31 @@ public enum ItemKind: String, Sendable, Codable, Hashable, CaseIterable {
 public enum ItemSource: String, Sendable, Codable, Hashable {
     case file
     case notes
+    case messages
 }
 
-/// Something you own: a file, or an Apple Note.
+/// Where a Messages result came from. The index is Appears' own, never another app's index.
+public struct MessageReference: Sendable, Codable, Hashable {
+    public var rowID: Int64
+    public var guid: String
+    public var chatID: Int64
+    public var conversationURL: URL?
+    public var attachmentPath: String?
+
+    public init(rowID: Int64, guid: String, chatID: Int64, conversationURL: URL?, attachmentPath: String? = nil) {
+        self.rowID = rowID
+        self.guid = guid
+        self.chatID = chatID
+        self.conversationURL = conversationURL
+        self.attachmentPath = attachmentPath
+    }
+}
+
+/// Something you own: a file, an Apple Note, or a message or photo from Messages.
 public struct Item: Sendable, Codable, Hashable, Identifiable {
     public var id: Int64
     public var source: ItemSource
-    /// A file's path, or `notes:<identifier>` for a note.
+    /// A file path, `notes:<identifier>`, or a stable `messages:<rowid>[:photo:<guid>]` key.
     public var path: String
     public var kind: ItemKind
     public var title: String
@@ -45,10 +65,11 @@ public struct Item: Sendable, Codable, Hashable, Identifiable {
     public var lastUsed: Date?
     /// Metadata-only: iCloud files that aren't downloaded, indexed by name alone.
     public var metadataOnly: Bool
+    public var message: MessageReference?
 
     public init(
         id: Int64 = 0, source: ItemSource, path: String, kind: ItemKind, title: String, size: Int64,
-        created: Date, modified: Date, lastUsed: Date?, metadataOnly: Bool = false
+        created: Date, modified: Date, lastUsed: Date?, metadataOnly: Bool = false, message: MessageReference? = nil
     ) {
         self.id = id
         self.source = source
@@ -60,21 +81,31 @@ public struct Item: Sendable, Codable, Hashable, Identifiable {
         self.modified = modified
         self.lastUsed = lastUsed
         self.metadataOnly = metadataOnly
+        self.message = message
     }
 
     /// The last time you're known to have touched it.
     public var lastTouched: Date { max(lastUsed ?? .distantPast, modified) }
 
-    /// The folder it's in (empty for notes).
+    /// A file's folder or a Messages conversation, for diversity; empty for notes.
     public var folder: String {
-        source == .file ? (path as NSString).deletingLastPathComponent : ""
+        if source == .file { return (path as NSString).deletingLastPathComponent }
+        if let message { return "messages:\(message.chatID)" }
+        return ""
     }
 
-    /// The URL that opens it: the file, or the note in Notes.
+    /// A local file for thumbnails, Quick Look, dragging and revealing in Finder.
+    public var fileURL: URL? {
+        if source == .file { return URL(filePath: path) }
+        return message?.attachmentPath.map { URL(filePath: $0) }
+    }
+
+    /// Opens the file, note or Messages conversation (Messages itself for groups).
     public var openURL: URL? {
         switch source {
         case .file: URL(filePath: path)
         case .notes: URL(string: "notes://showNote?identifier=\(path.dropFirst("notes:".count))")
+        case .messages: message?.conversationURL ?? URL(filePath: "/System/Applications/Messages.app")
         }
     }
 }

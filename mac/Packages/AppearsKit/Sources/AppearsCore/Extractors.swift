@@ -55,7 +55,7 @@ public enum Extractor {
             // Screenshots of text are found best by their words.
             if text.count >= 80 { extraction.texts = [(.whole, String(text.prefix(chunkCharacters * 2)))] }
             return extraction
-        case .note:
+        case .note, .message:
             return nil
         }
     }

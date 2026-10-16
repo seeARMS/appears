@@ -1,7 +1,7 @@
 import CoreServices
 import Foundation
 
-/// What to index. By default: everything sensible in your home folder, plus Apple Notes.
+/// What to index. By default: everything sensible in your home folder, plus Notes and Messages with local photos.
 /// `includes` and `excludes` are for people who want control.
 public struct SourceSettings: Sendable, Codable, Equatable {
     /// Extra folders, outside home or inside something the default rules skip (a git repo).
@@ -10,15 +10,30 @@ public struct SourceSettings: Sendable, Codable, Equatable {
     public var excludes: [String]
     public var excludedKinds: Set<ItemKind>
     public var notes: Bool
+    public var messages: Bool
     /// Demo mode: index this folder as if it were the home folder (the app's `-demo` argument).
     public var homeOverride: String?
 
-    public init(includes: [String] = [], excludes: [String] = [], excludedKinds: Set<ItemKind> = [], notes: Bool = true, homeOverride: String? = nil) {
+    public init(includes: [String] = [], excludes: [String] = [], excludedKinds: Set<ItemKind> = [], notes: Bool = true, messages: Bool = true, homeOverride: String? = nil) {
         self.includes = includes
         self.excludes = excludes
         self.excludedKinds = excludedKinds
         self.notes = notes
+        self.messages = messages
         self.homeOverride = homeOverride
+    }
+
+    // Keep existing Include/Exclude lists when upgrading preferences written before Messages.
+    private enum CodingKeys: String, CodingKey { case includes, excludes, excludedKinds, notes, messages, homeOverride }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        includes = try values.decodeIfPresent([String].self, forKey: .includes) ?? []
+        excludes = try values.decodeIfPresent([String].self, forKey: .excludes) ?? []
+        excludedKinds = try values.decodeIfPresent(Set<ItemKind>.self, forKey: .excludedKinds) ?? []
+        notes = try values.decodeIfPresent(Bool.self, forKey: .notes) ?? true
+        messages = try values.decodeIfPresent(Bool.self, forKey: .messages) ?? true
+        homeOverride = try values.decodeIfPresent(String.self, forKey: .homeOverride)
     }
 }
 
@@ -95,7 +110,7 @@ public struct FileScanner: Sendable {
         case .document: 10 << 20  // plain text is held to 2 MB in item(_:_:)
         case .pdf: 200 << 20
         case .image: 40 << 20
-        case .note: .max
+        case .note, .message: .max
         }
     }
 

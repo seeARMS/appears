@@ -4,7 +4,7 @@ import PackageDescription
 // AppearsKit holds everything that doesn't need a window or the model. It builds and tests
 // with the Command Line Tools alone (`swift test`).
 //
-// - AppearsCore: the index (files, Notes, extractors, vectors, full text), ranking, the
+// - AppearsCore: the index (files, Notes, Messages, extractors, vectors, full text), ranking, the
 //   journal, and the messages the app and the engine exchange. Runs in the sandboxed engine.
 // - AppearsContext: reading what's on screen through the Accessibility API, browser URLs,
 //   exclusions and the OCR fallback. Runs in the (unsandboxed) app.
@@ -29,9 +29,10 @@ let package = Package(
     targets: [
         .target(
             name: "AppearsCore",
-            dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: ["AppearsMessages", .product(name: "GRDB", package: "GRDB.swift")],
             resources: [.copy("Resources/model-download.json")]
         ),
+        .target(name: "AppearsMessages", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
         .target(
             name: "AppearsDownloads",
             dependencies: ["AppearsCore"]
@@ -46,7 +47,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AppearsCoreTests",
-            dependencies: ["AppearsCore", "AppearsDownloads", .product(name: "GRDB", package: "GRDB.swift")]
+            dependencies: ["AppearsCore", "AppearsMessages", "AppearsDownloads", .product(name: "GRDB", package: "GRDB.swift")]
         ),
         .testTarget(
             name: "AppearsMCPTests",

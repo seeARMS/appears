@@ -7,12 +7,12 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
 ## How it works
 
 - **Context:** the app reads the frontmost window through the Accessibility API: title, the document it shows, the field you're typing in, the selection, the visible text. It reads only when something changes, in memory, and drops it. Browser URLs come from Apple Events (Safari, Chrome) or Accessibility (Firefox). When a window has no readable text and you ask, it can OCR just that window (Screen Recording permission, optional).
-- **Index:** the engine indexes everything sensible in your home folder (documents, PDFs, images and screenshots) plus Apple Notes. It skips:
+- **Index:** the engine indexes everything sensible in your home folder (documents, PDFs, images and screenshots) plus Apple Notes and Messages, including photos already downloaded on this Mac. Messages are read directly from `~/Library/Messages/chat.db` into Appears' own index, independently of whosaid. Each message is embedded with nearby conversation, and photos use the image model plus on-device OCR. It skips:
   - `~/Library`, code checkouts (any folder with `.git`), package and build folders (`node_modules`, `dist`, `vendor`, `obj`…), caches;
   - coding agents' workspaces (`~/conductor`, `~/Documents/Codex`…);
   - data dumps: a folder with more than 150 plain-text files directly in it;
   - plain text over 2 MB, and boilerplate (LICENSE, CHANGELOG…);
-  - text that is mostly numbers, which is indexed by name only. Text, PDF pages and images are embedded by Google's EmbeddingGemma 2 on MLX, in one vector space, next to an FTS5 full-text index. Settings has Include and Exclude lists.
+  - text that is mostly numbers, which is indexed by name only. Text, PDF pages and images are embedded by Google's EmbeddingGemma 2 on MLX, in one vector space, next to an FTS5 full-text index. Settings has Include and Exclude lists. Sources → Include Messages and photos is on by default; switching it off removes both from the index. New and edited messages are checked each minute; deletions, unsends and newly downloaded photos are reconciled at least every ten minutes, or immediately with “Look for new items now”.
 - **Ranking:** vector search (text and images) and full-text search on the names, numbers and rare words in the context are fused by rank. Then:
   - **Forgotten:** results are weighted toward what you haven't touched in months. Anything open or touched in the last 3 days is never shown.
   - **New:** what's in the same folder or repeats the window title counts less.
@@ -49,7 +49,7 @@ mac/
   Engine/                   the sandboxed XPC service
   Downloader/               the sandboxed first-run model downloader, no user-file access
   Packages/AppearsKit/      builds and tests with the Command Line Tools
-    AppearsCore/            sources, extractors, Notes reader, index, ranking, journal, surface policy
+    AppearsCore/            sources, extractors, Notes and Messages readers, index, ranking, journal, surface policy
     AppearsContext/         Accessibility reader, browser URLs, exclusions, OCR fallback
     AppearsMCP/             `appears mcp`: the MCP server for agents (stdio), read-only on the index
   Packages/AppearsModel/    EmbeddingGemma 2 on MLX (copied from whosaid), the `appears` CLI
@@ -84,7 +84,7 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    cp -R mac/build/DerivedData/Build/Products/Release/Appears.app /Applications/ && open /Applications/Appears.app
    ```
 
-Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
+Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
 
 The first index takes a while and pauses in Low Power Mode; the menu bar orbit has a wider gap while it's working. Measured on 2026-10-15 on Colin's Mac (about 11,000 files after the skip rules):
 
@@ -144,7 +144,7 @@ mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 
 Other commands:
 
-- `appears related "<text>"` and `appears index [--root DIR]` work on the CLI's own index in `~/Library/Application Support/rs.appea.appears.cli` (or `--data DIR`), not the app's; the terminal needs Full Disk Access for Notes.
+- `appears related "<text>"` and `appears index [--root DIR]` work on the CLI's own index in `~/Library/Application Support/rs.appea.appears.cli` (or `--data DIR`), not the app's; the terminal needs Full Disk Access for Notes and Messages. `--no-messages` skips conversations and their photos.
 - `appears mcp` lets local agents ask the app's index; see [For agents](#for-agents).
 - `appears stats --data <engine data folder>` prints the journal's numbers.
 - `appears-context` (scheme `appears-context`) prints what Accessibility reads from the frontmost window every 3 seconds, for checking coverage app by app. The terminal needs Accessibility.
@@ -159,7 +159,7 @@ Other commands:
 - **Tools,** both read-only:
   - `related`: `text` (required), `limit` (default 5, at most 20) and `prefer_forgotten` (default off). Each result has its path, title and kind, the one-line reason, the matching snippet, when it was last opened and modified, the page for PDFs, and a 0–1 confidence. They come back as structured content and as a short text.
   - `related_to_file`: `path`, with the same options. It searches with that file's own stored vectors, so it needs no model call.
-- **Ranking:** the app's relevance, name matches and variety, without the "forgotten" weighting, because an agent asking outright should get yesterday's file as readily as last year's. `prefer_forgotten: true` ranks as the menu bar does. Excluded folders and kinds, Notes switched off, and "Never show this" apply exactly as in the app. Results under 0.15 confidence are marked "less likely", as the panel does.
+- **Ranking:** the app's relevance, name matches and variety, without the "forgotten" weighting, because an agent asking outright should get yesterday's file as readily as last year's. `prefer_forgotten: true` ranks as the menu bar does. Excluded folders and kinds, Notes or Messages switched off, and "Never show this" apply exactly as in the app. Results under 0.15 confidence are marked "less likely", as the panel does.
 - **The index:** by default the app's own, opened read-only beside the running engine (SQLite's WAL lets it read while the engine writes), so answers keep up as the app indexes. `--demo` reads the index of the app's `-demo` mode, and `--data DIR` any index made with `appears index --data DIR`. The model loads on the first question (a couple of seconds) and stays loaded; connecting is instant. After that a question takes about 50 ms on the demo.
 - **Protocol:** stdio only. It speaks MCP 2026-07-28 (stateless, with `server/discover`) and the `initialize` handshake of 2025-11-25 back to 2024-11-05, as heade.rs's server does. Claude Code 2.1 uses 2026-07-28.
 

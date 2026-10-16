@@ -131,6 +131,7 @@ Event-driven, never polling the screen:
 - **On by default:**
   - **Your home folder.** In practice that's Documents, Desktop, Downloads, iCloud Drive, the screenshots location (read from `com.apple.screencapture`), and any other folder you've made. It's watched with FSEvents.
   - **Apple Notes,** once Full Disk Access is granted.
+  - **Messages and their locally downloaded photos** (added 2026-10-15), read directly and read-only from `~/Library/Messages/chat.db`. Appears owns its index; whosaid is not required. Settings → Sources has a default-on toggle that removes text and photos from the index when disabled. Each message uses a bounded conversation window; photos use native image embeddings plus OCR. New/edited messages are checked each minute, with full reconciliation every ten minutes for deletions and locally downloaded photos.
 - **Skipped automatically:**
   - `~/Library`, hidden files, app bundles and libraries (Photos, Music);
   - code and build folders (`.git`, `node_modules`, `build`, virtualenvs);
@@ -138,7 +139,7 @@ Event-driven, never polling the screen:
   - the exclusion list's apps' data folders.
 - **iCloud files that aren't downloaded are indexed from metadata only**, because reading them would download them.
 - **Include:** add folders outside home, such as an external drive or a project folder that matched a skip rule.
-- **Exclude:** drop folders, file kinds or Notes. Excluding something removes it from the index straight away.
+- **Exclude:** drop folders, file kinds, Notes or Messages. Excluding something removes it from the index straight away.
 - **How the sandboxed engine gets access:** setup shows one open panel already pointed at your home folder, and one click grants it as a security-scoped bookmark. Folders added under Include are granted the same way.
 - **Apple Notes details:**
   - `NoteStore.sqlite` lives in `group.com.apple.notes`, with each note's text as gzipped protobuf.
@@ -154,6 +155,7 @@ Event-driven, never polling the screen:
 | PDF | PDFKit text per page | text chunks; scanned pages (little text) as page images plus OCR |
 | Images and screenshots | Vision OCR | the image itself, plus the OCR text when there's enough of it |
 | Notes | the note's text | text chunks, plus attachments as above |
+| Messages | sender, bounded conversation and OCR | text windows and locally downloaded photos |
 
 - **Not in v0:** audio and Voice Memos, video, Mail and Photos (see the v1 backlog).
 - **Indexing runs in the background** at utility priority. It pauses in Low Power Mode, at a serious thermal state, or on low battery.
@@ -272,7 +274,7 @@ This is the core of the product. There are three modes, and all three are in v0'
 - **Onboarding is short and honest.** It says what Appears reads, what it never stores, and how the no-network promise is enforced. Then it asks for permissions one at a time, each with its reason, and ends with a first pull on a real window:
   - **Accessibility:** required.
   - **Home folder:** one click on an open panel that's already pointed at it.
-  - **Full Disk Access:** optional, for Notes.
+  - **Full Disk Access:** optional, for Notes and Messages (including photos).
   - **Automation, for Safari and Chrome:** optional, for URLs.
   - **Calendar:** optional, for looking ahead to meetings (added 2026-10-15).
   - **Screen Recording:** optional, for OCR on pull.
@@ -417,7 +419,7 @@ These are targets to measure in M0, not guesses to trust:
 
 - **Voice Memos and audio:** read the `.m4a` files in `group.com.apple.VoiceMemos.shared` (Full Disk Access). Each memo already carries Apple's transcript in a `tsrp` atom; SpeechAnalyzer covers other audio. Native audio embeddings (EmbeddingGemma 2's audio tower, about 600 MB more) only if they find what transcripts miss.
 - **More sources:** Mail (emlx, Full Disk Access), Photos (PhotoKit), video (frames and audio).
-- **iMessage through whosaid's index:** a shared app group, the same model, so the vectors are compatible.
+- **Messages:** built early on 2026-10-15 as a direct source, including local photos; never shares whosaid's index.
 - **screenpipe:** read its SQLite file, never its local HTTP API, which would need the network.
 - **Calendar as context:** "you're about to meet Dana" is a context too. Built early, on 2026-10-15 (see README.md's "Meetings").
 

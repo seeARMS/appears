@@ -147,7 +147,7 @@ struct OnboardingView: View {
             paragraph("Appears already looks through the files in your home folder. These are optional extras.")
             VStack(spacing: 8) {
                 permission(
-                    granted: fullDisk, label: "Full Disk Access", detail: "Adds your Apple Notes, with fewer prompts along the way",
+                    granted: fullDisk, label: "Full Disk Access", detail: "Adds Notes, Messages and their photos",
                     button: "Add…", action: { FullDiskAccessGuide.open() }
                 )
                 permission(

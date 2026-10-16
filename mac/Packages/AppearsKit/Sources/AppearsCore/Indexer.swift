@@ -1,4 +1,5 @@
 import Foundation
+import AppearsMessages
 import os
 
 /// Engine logs, readable with `log stream --predicate 'subsystem == "rs.appea.appears"'`.
@@ -23,7 +24,7 @@ public struct IndexProgress: Sendable, Codable, Equatable {
     public init() {}
 }
 
-/// Finds your files and notes, reads them, embeds them and keeps the index current.
+/// Finds your files, notes and Messages, embeds them and keeps the index current.
 public actor Indexer {
     public let store: IndexStore
     public let vectors: VectorIndex
@@ -35,14 +36,21 @@ public actor Indexer {
     /// Respect Low Power Mode and heat. The CLI turns this off.
     public var politeness = true
     private var noteCache: [String: NotesReader.Note] = [:]
+    private let messagesReader: MessagesReader
+    private var messageCursor: Int64?
+    private var messagesCheckedAt: Date?
+    private var scanningMessages = false
+    private var messageHandles: [Int64: Handle] = [:]
+    private var settingsRevision = 0
     private var onProgress: (@Sendable (IndexProgress) -> Void)?
 
-    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings) {
+    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil) {
         self.store = store
         self.vectors = vectors
         self.embedder = embedder
         self.settings = settings
         self.initialSettings = settings
+        self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
     }
 
     public func setProgressHandler(_ handler: @escaping @Sendable (IndexProgress) -> Void) {
@@ -60,13 +68,18 @@ public actor Indexer {
     public func update(settings: SourceSettings) throws {
         let old = self.settings
         self.settings = settings
+        settingsRevision += 1
         var removed = try store.itemIDs(under: settings.excludes.filter { !old.excludes.contains($0) })
         if old.notes, !settings.notes { removed += try store.itemIDs(source: .notes) }
+        if !settings.messages {
+            removed += try store.itemIDs(source: .messages)
+            messageCursor = nil
+            messagesCheckedAt = nil
+            messageHandles = [:]
+        }
         if !settings.excludedKinds.isEmpty {
             // Cheap enough: kinds are rarely toggled.
-            let all = try store.paths(source: .file)
-            let items = try store.items(ids: Array(all.values))
-            removed += items.values.filter { settings.excludedKinds.contains($0.kind) }.map(\.id)
+            removed += try store.itemIDs(kinds: settings.excludedKinds)
         }
         vectors.remove(ids: try store.remove(itemIDs: removed))
     }
@@ -116,6 +129,87 @@ public actor Indexer {
         return notes.count
     }
 
+    /// A full pass reconciles deletions, unsends and photos downloaded since the last pass.
+    /// Between full passes only new, edited and unsent messages are read. Text stays out of logs.
+    @discardableResult
+    public func scanMessages(full: Bool = true) async throws -> Int {
+        guard settings.messages, settings.homeOverride == nil, !scanningMessages,
+              messagesReader.isReadable else { return 0 }
+        scanningMessages = true
+        let showsScanProgress = progress.phase == .idle
+        if showsScanProgress { report { $0.phase = .scanning; $0.scanned = 0 } }
+        defer {
+            scanningMessages = false
+            if showsScanProgress, progress.phase == .scanning { report { $0.phase = .idle } }
+        }
+        let revision = settingsRevision
+        let started = Date()
+        let reconcile = full || messageCursor == nil
+        var known = reconcile ? try store.sourceRecords(.messages) : [:]
+        let hadIndex = !known.isEmpty
+        messageHandles = try messagesReader.database.handles()
+        let chats = Dictionary(uniqueKeysWithValues: try messagesReader.database.chats().map { ($0.rowID, $0) })
+        var cursor: Int64 = reconcile ? 0 : messageCursor ?? 0
+        var found = 0
+        var changedAnchors: [Message] = []
+        var changedChats: [Int64: [Date]] = [:]
+
+        func record(_ message: Message) throws {
+            var previous = reconcile ? [:] : try store.messageRecords(rowID: message.rowID)
+            for entry in messagesReader.entries(for: message, chat: chats[message.chatID], settings: settings) {
+                let old = reconcile ? known.removeValue(forKey: entry.item.path) : previous.removeValue(forKey: entry.item.path)
+                if old?.signature != entry.signature {
+                    try store.record(entry.item, signature: entry.signature)
+                    if old != nil || hadIndex { changedAnchors.append(message) }
+                }
+                found += 1
+            }
+            if !reconcile {
+                vectors.remove(ids: try store.remove(itemIDs: previous.values.map(\.id)))
+                changedAnchors.append(message)
+            }
+        }
+
+        while true {
+            try Task.checkCancellation()
+            guard revision == settingsRevision, settings.messages else { return found }
+            let batch = try messagesReader.database.messages(after: cursor, limit: 500)
+            guard !batch.isEmpty else { break }
+            for message in batch { try record(message) }
+            cursor = batch.map(\.rowID).max() ?? cursor
+            if showsScanProgress, progress.phase == .scanning { report { $0.scanned = found } }
+            await Task.yield()
+        }
+        if !reconcile, let checked = messagesCheckedAt {
+            for message in try messagesReader.database.messages(editedAfter: checked.addingTimeInterval(-1)) {
+                try record(message)
+                changedAnchors.append(message)
+            }
+        }
+        guard revision == settingsRevision, settings.messages else { return found }
+        if reconcile {
+            // A deleted message may also appear in neighbouring messages' stored context.
+            for batch in Array(known.values.map(\.id)).chunked(500) {
+                for item in try store.items(ids: Array(batch)).values {
+                    if let reference = item.message { changedChats[reference.chatID, default: []].append(item.created) }
+                }
+            }
+            vectors.remove(ids: try store.remove(itemIDs: known.values.map(\.id)))
+        }
+        for message in Dictionary(grouping: changedAnchors, by: \.rowID).values.compactMap(\.first) {
+            changedChats[message.chatID, default: []].append(message.date)
+        }
+        for (chatID, dates) in changedChats {
+            for date in Set(dates) {
+                let neighbours = try messagesReader.database.messages(inChat: chatID, from: date.addingTimeInterval(-1_800), to: date.addingTimeInterval(1_800))
+                try store.markMessagesPending(rowIDs: neighbours.map(\.rowID))
+            }
+        }
+        messageCursor = cursor
+        messagesCheckedAt = started
+        return found
+    }
+
     /// Files that FSEvents says changed: record them, or remove them if they're gone.
     public func filesChanged(_ paths: [String]) throws {
         let scanner = FileScanner(settings: settings)
@@ -152,23 +246,31 @@ public actor Indexer {
             let batch = try store.pending(limit: 16)
             if batch.isEmpty { break }
             report { $0.phase = .indexing; $0.pausedReason = nil }
-            for item in batch {
+            var handled = Set<Int64>()
+            for item in batch where !handled.contains(item.id) {
                 try Task.checkCancellation()
+                let group = item.kind == .message
+                    ? Array(batch.filter { $0.kind == .message && !handled.contains($0.id) }.prefix(8))
+                    : [item]
+                handled.formUnion(group.map(\.id))
                 let started = Date()
                 do {
-                    try await withTimeout(seconds: Self.itemTimeout) { try await self.index(item) }
+                    try await withTimeout(seconds: Self.itemTimeout) {
+                        if item.kind == .message { try await self.indexMessageTexts(group) }
+                        else { try await self.index(item) }
+                    }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     // One bad file never stops the run: mark it and move on. It's retried when it changes.
                     indexLog.error("Couldn't index a \(item.kind.rawValue, privacy: .public) (\(item.size, privacy: .public) bytes): \(error.localizedDescription, privacy: .public) \(item.path, privacy: .private)")
-                    try? store.markFailed(itemID: item.id)
+                    for failed in group where (try? store.item(path: failed.path)?.id) == failed.id { try? store.markFailed(itemID: failed.id) }
                 }
                 let seconds = Date().timeIntervalSince(started)
                 if seconds > 10 {
                     indexLog.notice("Slow \(item.kind.rawValue, privacy: .public): \(seconds, format: .fixed(precision: 1), privacy: .public)s for \(item.size, privacy: .public) bytes \(item.path, privacy: .private)")
                 }
-                done += 1
+                done += group.count
                 report { $0.done = done; $0.total = max($0.total, done) }
                 if done % 100 == 0 {
                     let rate = Double(done) / Date().timeIntervalSince(runStarted)
@@ -184,19 +286,24 @@ public actor Indexer {
     /// Reads, embeds and stores one item. An unreadable item is marked so it isn't retried
     /// until it changes.
     func index(_ item: Item) async throws {
+        let revision = settingsRevision
+        guard item.source != .messages || settings.messages else { return }
         let extraction: Extraction?
-        if item.source == .notes {
+        if item.source == .messages {
+            extraction = await messagesReader.extraction(for: item, handles: messageHandles)
+        } else if item.source == .notes {
             if noteCache[item.path] == nil { try scanNotes() }
             extraction = noteCache[item.path].map { Extractor.extract(noteText: $0.text, title: $0.title) }
         } else {
             extraction = await Extractor.extract(item)
         }
+        guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
         guard let extraction, !extraction.isEmpty else {
             try store.markFailed(itemID: item.id)
             return
         }
         var units: [(unit: Unit, vector: [Float])] = []
-        let title = item.source == .notes ? item.title : "\(item.title) (\((item.folder as NSString).lastPathComponent))"
+        let title = item.source != .file ? item.title : "\(item.title) (\((item.folder as NSString).lastPathComponent))"
         if !extraction.texts.isEmpty {
             let documents = extraction.texts.map { EmbeddingDocument(title: title, text: $0.text) }
             var vectors: [[Float]] = []
@@ -221,6 +328,32 @@ public actor Indexer {
         if item.source == .file, let lastUsed = LastUsed.date(path: item.path) {
             try store.touch(path: item.path, at: lastUsed)
         }
+        // A source can be switched off while embedding awaits the GPU. Never put it back.
+        guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
+        try commit(item, units: units)
+    }
+
+    /// A Messages history has many small documents: send up to eight through the model at once.
+    private func indexMessageTexts(_ items: [Item]) async throws {
+        let revision = settingsRevision
+        guard settings.messages else { return }
+        var prepared: [(item: Item, text: String)] = []
+        for item in items {
+            let extraction = await messagesReader.extraction(for: item, handles: messageHandles)
+            guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
+            if let text = extraction?.texts.first?.text { prepared.append((item, text)) }
+            else { try store.markFailed(itemID: item.id) }
+        }
+        guard !prepared.isEmpty else { return }
+        let embedded = try await embedder.embed(documents: prepared.map { EmbeddingDocument(title: $0.item.title, text: $0.text) })
+        guard revision == settingsRevision else { return }
+        for (entry, vector) in zip(prepared, embedded) {
+            guard try store.item(path: entry.item.path)?.id == entry.item.id else { continue }
+            try commit(entry.item, units: [(Unit(kind: .text, locator: .whole, text: entry.text), vector)])
+        }
+    }
+
+    private func commit(_ item: Item, units: [(unit: Unit, vector: [Float])]) throws {
         let (added, removed) = try store.replaceUnits(itemID: item.id, title: item.title, units: units)
         vectors.remove(ids: removed)
         for (unit, vector) in zip(added, units.map(\.vector)) {
