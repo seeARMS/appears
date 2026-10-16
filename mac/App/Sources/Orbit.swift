@@ -44,3 +44,33 @@ struct OrbitSymbol: View {
         .accessibilityHidden(true)
     }
 }
+
+/// A still, proportional confidence meter using Orbit's open ring and detached dot.
+/// The numeric value is available on hover and to VoiceOver, rather than shown as a probability.
+struct ConfidenceRing: View {
+    let confidence: Double
+    var size: CGFloat = 18
+
+    private var value: Double { confidence.isFinite ? min(max(confidence, 0), 1) : 0 }
+    private var score: String { String(format: "%.2f", value) }
+
+    var body: some View {
+        let transform = CGAffineTransform(scaleX: size / 24, y: size / 24)
+        let ring = Path(OrbitGeometry.ring()).applying(transform)
+        let dot = Path(ellipseIn: OrbitGeometry.dot()).applying(transform)
+        let stroke = StrokeStyle(lineWidth: OrbitGeometry.lineWidth * size / 24, lineCap: .round)
+        ZStack {
+            ring.stroke(Theme.kbdBorder, style: stroke)
+            dot.stroke(Theme.kbdBorder, lineWidth: size / 24)
+            if value > 0 {
+                ring.trim(from: 0, to: value).stroke(Theme.foreground, style: stroke)
+                dot.fill(Theme.foreground.opacity(value))
+            }
+        }
+        .frame(width: size, height: size)
+        .help("Match confidence: \(score) / 1.00")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Match confidence")
+        .accessibilityValue("\(score) out of 1")
+    }
+}

@@ -220,7 +220,7 @@ This is the core of the product. There are three modes, and all three are in v0'
 
 - **Pull (v0, on):**
   - The hotkey or a click on the menu bar item runs on the current context at once, with no dwell needed.
-  - It always shows its best few results, with weak ones labelled as weak, because you asked.
+  - It shows up to ten results directly because you asked, with about five rows visible in a scrolling list and no "less likely" disclosure. Each row quotes evidence from the retrieved source with matching terms emphasized, or names a specific match. Image similarity alone gets no invented explanation; clean matching OCR can supply evidence.
   - Every pull is a labelled example.
 - **Shadow (v0, invisible):**
   - The ambient policy runs on every settled context and logs what it would have shown, without showing anything.
@@ -244,7 +244,7 @@ This is the core of the product. There are three modes, and all three are in v0'
   - **Legibility:** readable in light, dark and tinted menu bars, as a template image that doesn't rely on colour.
   - **Motion:** one quiet transition, no looping animation.
 - **The panel hangs from the menu bar item and never takes focus** from the app you're in. It's a non-activating panel, so your cursor stays in the email. Esc, clicking away or a context change closes it.
-- **Results are media-first, at most three.** Each shows a preview, its one-line reason and its age:
+- **Results are media-first, up to ten in a scrolling list with about five rows visible.** Each shows a preview, its source evidence and its age. The header and keyboard hints stay fixed; arrow keys scroll the selected result into view:
   - a photo's thumbnail;
   - a PDF page with the passage highlighted;
   - later, a voice memo's waveform with the matching span marked and playable in place;

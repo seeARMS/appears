@@ -5,7 +5,7 @@ import Foundation
 enum Tools {
     static let names = ["related", "related_to_file"]
 
-    /// Below this, the panel files a result under "Less likely" (`AppModel.strongConfidence`).
+    /// Advisory confidence label in MCP output; the panel shows confidence with an Orbit ring.
     static let likely = 0.15
 
     private static let limit: JSONValue = [

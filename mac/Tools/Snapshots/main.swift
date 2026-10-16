@@ -1,5 +1,6 @@
 import AppKit
 import AppearsCore
+import PDFKit
 import SwiftUI
 
 // appears-snapshots: renders the panel (pull, ambient and before a meeting), its empty and setup
@@ -23,11 +24,11 @@ let suggestions = [
                reason: "Mentions Dana Ruiz · from May 2025", snippet: "Ruiz & Daughters Builders — Quote Q-2291 — Kitchen remodel. Cabinets (shaker, white oak) $9,800…",
                score: 1, confidence: 0.98, features: features),
     Suggestion(item: item(2, "Documents/House/Kitchen/permit-BLD-2024-0457.pdf", .pdf, days: 505), unit: Unit(kind: .text, locator: .page(3), text: ""),
-               reason: "Page 3: scope of work · from May 2025 · page 3", snippet: "Interior kitchen remodel. Replace cabinets and countertops, relocate sink 3 feet, add six (6) 20-amp GFCI outlets…",
+               reason: "Related · from May 2025 · page 3", snippet: "Interior kitchen remodel. Replace cabinets and countertops, relocate sink 3 feet, add six (6) 20-amp GFCI outlets…",
                score: 0.7, confidence: 0.75, features: features),
     Suggestion(item: item(3, "Documents/House/Kitchen measurements.md", .document, days: 530), unit: Unit(kind: .text, locator: .chunk(0), text: ""),
                reason: "Related · from April 2025", snippet: "Back wall: 11' 4\" (sink wall). Window: 36\" wide, sill at 42\". Dana said the outlet by the window has to move for code",
-               score: 0.4, confidence: 0.24, features: features),
+               score: 0.4, confidence: 0.02, features: features),
 ]
 
 /// A result whose selected row quotes the line that answers: the demo's cabin card (as Vision
@@ -80,6 +81,71 @@ let weaker = [
     }
 }
 
+/// Exercise the actual native scroll view in an offscreen fixture window. No user files,
+/// permissions, or desktop windows are involved.
+@MainActor func verifyScrolling(_ model: AppModel, status: EngineStatus) async {
+    let paths = ["Downloads/Fernway order FW-88310.pdf", "Downloads/EOB-Delta-Dental-2025-03.pdf",
+                 "Documents/Taxes/2024/1099-INT-Harbor-Credit-Union.pdf"]
+    let extra = paths.enumerated().map { index, path in
+        let text = PDFDocument(url: demo.appending(path: path))?.string ?? ""
+        return Suggestion(item: item(Int64(20 + index), path, .pdf, days: 400),
+                          unit: Unit(kind: .text, locator: .page(1), text: text),
+                          reason: "Related · from May 2025 · page 1", snippet: String(text.prefix(160)),
+                          score: 0.01, confidence: 0.01, features: features)
+    }
+    let ten = suggestions + [invoice, cabin] + weaker + extra
+    precondition(ten.count == AppModel.contextResultLimit)
+    let policy = SurfacePolicy()
+    let ambient = AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident)
+    precondition(ambient.count == 10 && ambient.prefix(2).map(\.id) == [suggestions[0].id, suggestions[1].id])
+    precondition(AppModel.ambientPanelSuggestions(weaker + extra + suggestions, isConfident: policy.isConfident).isEmpty,
+                 "A strong result outside the first three must not trigger the ambient dot")
+    model.showForSnapshot(.init(mode: .pull, appName: "Mail", windowTitle: "Related files", fingerprint: "scroll",
+                                suggestions: ten, evidenceTerms: ["Dana", "Ruiz", "outlet", "cabinets"]), status: status)
+    let host = NSHostingView(rootView: PanelView(model: model, close: {}).environment(\.colorScheme, .light))
+    _ = NSApplication.shared
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    func settle() async {
+        for _ in 0..<4 {
+            window.setContentSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+    func scrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for child in view.subviews { if let scroll = scrollView(in: child) { return scroll } }
+        return nil
+    }
+    await settle()
+    guard let scroll = scrollView(in: host), let document = scroll.documentView else {
+        preconditionFailure("The results must use a native scrolling list")
+    }
+    precondition(document.frame.height > scroll.contentView.bounds.height)
+    precondition(host.fittingSize.height <= 560, "The list must keep the panel compact")
+    let top = scroll.contentView.bounds.origin.y
+    render(PanelView(model: model, close: {}), "panel-ten-results", width: 400)
+    model.moveSelection(9)
+    await settle()
+    precondition(model.selected?.id == ten.last?.id)
+    precondition(scroll.contentView.bounds.origin.y > top + 1, "Arrow navigation must reveal the tenth result")
+    model.moveSelection(1)
+    await settle()
+    precondition(model.selected?.id == ten.first?.id)
+    // scrollTo uses the row's edge, inside the list's six-point content padding.
+    precondition(scroll.contentView.bounds.origin.y <= top + 12, "Wrapping must reveal the first result")
+    model.moveSelection(-1)
+    await settle()
+    precondition(model.selected?.id == ten.last?.id)
+    model.act(.dismissed, on: ten.last!)
+    await settle()
+    precondition(model.selectedIndex == 8 && model.visibleSuggestions.count == 9)
+    window.close()
+    print("Verified ten results, original ambient gate, bounded height, scrolling to selection, wraparound and dismissal")
+}
+
 @MainActor func run() async {
     await thumbnails()
     let glyphs: [(AppModel.Glyph, String)] = [
@@ -103,25 +169,48 @@ let weaker = [
         }
         MenuGlyph(found: 1, size: 48)
     }, "orbit", width: 440)
+    render(HStack(spacing: 30) {
+        ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { confidence in
+            VStack(spacing: 10) {
+                ConfidenceRing(confidence: confidence, size: 28)
+                Text(confidence, format: .number.precision(.fractionLength(2)))
+                    .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+            }
+        }
+    }, "confidence-ring", width: 400)
     let model = AppModel()
     var status = EngineStatus()
     status.ready = true
     status.counts.indexed = [.image: 2_413, .pdf: 611, .document: 3_982, .note: 214]
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
-                                suggestions: suggestions, weaker: []), status: status)
+                                suggestions: suggestions, evidenceTerms: ["Dana", "Ruiz", "kitchen", "outlet", "cabinets", "countertops"]), status: status)
     render(PanelView(model: model, close: {}), "panel-pull", width: 400)
+    // The lowest-confidence candidate is visible and reachable without a disclosure.
+    precondition(model.visibleSuggestions.count == 3)
+    model.moveSelection(2)
+    precondition(model.selected?.id == suggestions[2].id)
+    render(PanelView(model: model, close: {}), "panel-evidence", width: 400)
+    model.act(.dismissed, on: suggestions[2])
+    precondition(model.selectedIndex == 1 && model.selected?.id == suggestions[1].id)
+
+    model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
+                                suggestions: [suggestions[2]], evidenceTerms: ["Dana", "outlet"]), status: status)
+    precondition(model.selected?.id == suggestions[2].id)
+    render(PanelView(model: model, close: {}), "panel-low-confidence", width: 400)
+
+    await verifyScrolling(model, status: status)
 
     model.showForSnapshot(.init(mode: .ambient, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
-                                suggestions: Array(suggestions.prefix(2)), weaker: []), status: status)
+                                suggestions: Array(suggestions.prefix(2)), evidenceTerms: ["Ruiz", "kitchen", "outlets"]), status: status)
     render(PanelView(model: model, close: {}), "panel-ambient", width: 400)
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.MobileSMS", appName: "Messages", windowTitle: "Joan (Pine Hollow)", fingerprint: "x",
-                                suggestions: [cabin], weaker: weaker), status: status)
+                                suggestions: [cabin] + weaker), status: status)
     render(PanelView(model: model, close: {}), "panel-line-wifi", width: 400)
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.Notes", appName: "Notes", windowTitle: "Car", fingerprint: "x",
-                                suggestions: [invoice], weaker: weaker), status: status)
+                                suggestions: [invoice] + weaker), status: status)
     render(PanelView(model: model, close: {}), "panel-line-invoice", width: 400)
 
     // Shortly before a made-up meeting at 2:00 PM today.
@@ -129,11 +218,11 @@ let weaker = [
     let meeting = CalendarEvent(id: "demo", title: "Kitchen walkthrough with Dana Ruiz", start: start, end: start.addingTimeInterval(1_800),
                                 attendees: [.init(name: "Dana Ruiz", email: "dana@ruizdaughters.example")])
     model.showForSnapshot(.init(mode: .ambient, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: meeting.title,
-                                fingerprint: "x", suggestions: Array(suggestions.prefix(2)), weaker: [], meeting: meeting), status: status)
+                                fingerprint: "x", suggestions: Array(suggestions.prefix(2)), evidenceTerms: ["Ruiz", "kitchen", "outlets"], meeting: meeting), status: status)
     render(PanelView(model: model, close: {}), "panel-meeting", width: 400)
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.Safari", appName: "Safari", windowTitle: "NASA rover finds evidence of ancient lakebeds", fingerprint: "x",
-                                suggestions: [], weaker: [suggestions[2]]), status: status)
+                                suggestions: []), status: status)
     render(PanelView(model: model, close: {}), "panel-empty", width: 400)
 
     model.showForSnapshot(nil, status: status, trusted: false)
