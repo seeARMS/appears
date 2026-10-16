@@ -75,7 +75,21 @@ For contributions and local checks, see [CONTRIBUTING.md](CONTRIBUTING.md). Repo
 
 ## Building and running
 
-You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [uv](https://docs.astral.sh/uv/). If `xcode-select -p` points at the Command Line Tools, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
+You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yonaskolb/XcodeGen), and an existing Apple code-signing identity. The convenience command below also needs npm; [uv](https://docs.astral.sh/uv/) is only needed to prepare a model manually. If `xcode-select -p` points at the Command Line Tools, prefix manual Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
+
+For everyday local use, from the repository root:
+
+```bash
+npm run rebuild
+```
+
+No `npm install` is needed. This builds the current checkout (including uncommitted changes) in Release, verifies signatures, privacy boundaries and bundled licenses, quits Appears, replaces `/Applications/Appears.app`, and checks that it launches. The previous app is restored if installation or launch fails. It uses incremental builds and reuses the installed app's Apple signing certificate from your keychain to help permissions stick. Settings, the index and downloaded model stay in their existing locations. The first build also fetches and builds the pinned Sparkle dependency; later runs reuse its checkout and build cache. The script selects `/Applications/Xcode.app` by default, even if `xcode-select` points at the Command Line Tools.
+
+The command builds local source; it does not pull Git changes. Update your normal checkout with `git pull --ff-only` first when you want the latest `main`, or run it in a feature checkout to try that work.
+
+Use `npm run rebuild -- --build-only` to build and verify without installing or launching. For a per-user install, create `~/Applications` and run `APPEARS_INSTALL_DIR="$HOME/Applications" npm run rebuild`. To choose an existing signing certificate explicitly, set `APPEARS_SIGN_IDENTITY` to its full name or SHA-1 from `security find-identity -v -p codesigning`. Without an installed Apple-signed app, the script selects a single Developer ID Application identity, then Apple Development if none is available. It never creates certificates. Self-signed certificates such as the old `Appears Dev` have no Apple Team ID and fail hardened runtime's library validation when loading Sparkle, so the command requires an Apple-issued identity. Switching identities can require granting permissions again. Local builds without a configured Sparkle public key leave update checks unavailable.
+
+To build and install manually instead:
 
 1. Build the isolated Sparkle framework once, then the lightweight app (Release is much faster than Debug: MLX runs unoptimized in Debug):
 
@@ -97,7 +111,7 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    cp -R mac/build/DerivedData/Build/Products/Release/Appears.app /Applications/ && open /Applications/Appears.app
    ```
 
-Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
+Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Manual builds are ad-hoc signed by default, which is useful for build checks but changes the permission identity on every rebuild. For a runnable app, use an Apple-issued identity with a Team ID, so hardened runtime can validate the embedded frameworks. For manual builds, put your team (`DEVELOPMENT_TEAM = …`) and identity (`CODE_SIGN_IDENTITY = Apple Development`, or your full Developer ID Application identity) in `mac/Config/Local.xcconfig` (git-ignored), then run `xcodegen` and rebuild. Keep that identity and the install path stable across rebuilds to preserve permissions.
 
 First-run model setup was verified on 2026-10-15 with a Developer ID build: the restricted downloader installed all 12 pinned files from appea.rs, then the sandboxed engine indexed the 142-item demo and semantic search returned the kitchen quote photo. Moving from the old self-signed identity to Developer ID triggered macOS prompts to reuse the existing app-data containers. No sandbox restrictions were changed.
 

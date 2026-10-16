@@ -1,0 +1,7 @@
+{
+  "name": "appears-local",
+  "private": true,
+  "scripts": {
+    "rebuild": "bash mac/scripts/rebuild.sh"
+  }
+}
