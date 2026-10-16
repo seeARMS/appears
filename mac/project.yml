@@ -100,6 +100,7 @@ targets:
         NSAppleEventsUsageDescription: Appears asks Safari and Chrome for the current page's address, and Chrome whether the window is private. Nothing leaves this Mac.
         # Reading events needs full access (macOS 14 and later); Appears never writes to the calendar.
         NSCalendarsFullAccessUsageDescription: Appears looks at your next meeting a few minutes before it starts, to bring up related files you already have. It reads events in memory only, never changes them, and nothing leaves this Mac.
+        NSContactsUsageDescription: Appears shows contact names and photos instead of phone numbers in Messages results. Contacts are read in memory only, never changed, and nothing leaves this Mac.
     entitlements:
       path: App/Appears.entitlements
       properties:
@@ -107,6 +108,8 @@ targets:
         com.apple.security.automation.apple-events: true
         # And this to read Calendar events (looking ahead to meetings), with the user's permission.
         com.apple.security.personal-information.calendars: true
+        # Optional Contacts access for presenting Messages results, only in the app.
+        com.apple.security.personal-information.addressbook: true
   AppearsEngine:
     type: xpc-service
     platform: macOS

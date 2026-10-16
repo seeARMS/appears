@@ -104,7 +104,8 @@ struct PanelView: View {
         } else if let error = model.pullError {
             Message(title: "Couldn't look", text: error, action: nil)
         } else if let preview = model.sourcePreview {
-            SourcePreviewView(suggestion: preview, back: { model.sourcePreview = nil }) {
+            SourcePreviewView(suggestion: preview, title: model.contacts.presentation(for: preview.item)?.title,
+                              back: { model.sourcePreview = nil }) {
                 model.act(.opened, on: preview); close()
             }
         } else if model.status?.ready != true || model.status?.error != nil || model.engineStatusError != nil {
@@ -267,7 +268,7 @@ struct ResultRow: View {
             preview
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text(suggestion.item.title)
+                    Text(model.contacts.presentation(for: suggestion.item)?.title ?? suggestion.item.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.foreground)
                         .lineLimit(1)
@@ -319,7 +320,10 @@ struct ResultRow: View {
             return NSItemProvider(object: suggestion.snippet as NSString)
         }
         .help(suggestion.item.fileURL.map { "\($0.path)\nDrag it into anything." } ?? (suggestion.item.source == .messages ? "Messages" : "Apple Notes"))
-        .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }
+        .task(id: suggestion.id) {
+            if suggestion.item.source == .messages { await model.contacts.refresh() }
+            thumbnail = await Thumbnails.image(for: suggestion)
+        }
     }
 
     /// Quote the retrieved source, with matching terms emphasized. A specific name match
@@ -385,7 +389,10 @@ struct ResultRow: View {
     private var preview: some View {
         ZStack {
             RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).fill(Theme.muted)
-            if let thumbnail {
+            if suggestion.item.kind == .message {
+                ContactAvatar(presentation: model.contacts.presentation(for: suggestion.item))
+                    .frame(width: 36, height: 36)
+            } else if let thumbnail {
                 Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
                     .frame(width: 36, height: 36, alignment: suggestion.item.kind == .pdf ? .top : .center)
             } else {

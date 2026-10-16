@@ -28,7 +28,7 @@ struct OnboardingView: View {
                 switch step {
                 case 0: welcome
                 case 1: accessibility
-                case 2: yourStuff
+                case 2: ScrollView { yourStuff.padding(.bottom, 1) }
                 default: ready
                 }
             }
@@ -149,6 +149,12 @@ struct OnboardingView: View {
                 permission(
                     granted: fullDisk, label: "Full Disk Access", detail: "Adds Notes, Messages and their photos",
                     button: "Add…", action: { FullDiskAccessGuide.open() }
+                )
+                permission(
+                    granted: model.contacts.access == .granted, label: "Contacts", detail: "Shows names and contact photos in Messages results",
+                    button: model.contacts.access == .denied ? "Settings…" : "Allow…", action: {
+                        Task { await model.contacts.allow() }
+                    }
                 )
                 permission(
                     granted: calendar == .granted, label: "Calendar", detail: "Brings up what you have for a meeting just before it starts",

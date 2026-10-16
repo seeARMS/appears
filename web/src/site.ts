@@ -217,6 +217,7 @@ export const FAQ = [
     q: "Which sources does it look through?",
     a: [
       "Documents, PDFs, images and screenshots in your home folder, plus Apple Notes, Messages and their locally downloaded photos when you grant Full Disk Access. It skips system files, code projects and caches. Settings lets you include or exclude folders and turn Notes or Messages off. Added folders stay up to date automatically, and Sources shows indexing progress, access needs and when each source was last checked.",
+      "Optional Contacts access adds names and contact photos to Messages results. Contact details stay in memory on your Mac.",
       "Mail, Photos, audio and video aren't supported yet.",
     ],
   },

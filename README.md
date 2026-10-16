@@ -52,6 +52,8 @@ Settings → General has **Launch at login**, off until you enable it. macOS man
 
 Choose **Index & Sources…** from the menu bar menu, or **Sources** in the search footer, to see readiness, source counts, permissions, scan dates, and live folder updates. Empty results distinguish an incomplete index from no matches and link to sources. Search remains usable while indexing continues.
 
+Contacts access is optional and separate from Full Disk Access. Enable it in Settings → Sources → Messages to show names and contact photos in both result lists. Contact details stay in memory, and existing results update without reindexing. Contacts without a photo show initials; unknown numbers stay as numbers.
+
 ## Updates
 
 Settings → Updates has **Automatically check for updates**, on by default. Sparkle checks once a day while the app is running and catches up after relaunch when a check is overdue. Turning it off stops scheduled update checks; **Check for Updates…** in Settings or the menu still works. First-run model setup is independent of this preference.
@@ -120,7 +122,7 @@ To build and install manually instead:
    cp -R mac/build/DerivedData/Build/Products/Release/Appears.app /Applications/ && open /Applications/Appears.app
    ```
 
-Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Manual builds are ad-hoc signed by default, which is useful for build checks but changes the permission identity on every rebuild. For a runnable app, use an Apple-issued identity with a Team ID, so hardened runtime can validate the embedded frameworks. For manual builds, put your team (`DEVELOPMENT_TEAM = …`) and identity (`CODE_SIGN_IDENTITY = Apple Development`, or your full Developer ID Application identity) in `mac/Config/Local.xcconfig` (git-ignored), then run `xcodegen` and rebuild. Keep that identity and the install path stable across rebuilds to preserve permissions.
+Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Contacts (names and contact photos in Messages results), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Manual builds are ad-hoc signed by default, which is useful for build checks but changes the permission identity on every rebuild. For a runnable app, use an Apple-issued identity with a Team ID, so hardened runtime can validate the embedded frameworks. For manual builds, put your team (`DEVELOPMENT_TEAM = …`) and identity (`CODE_SIGN_IDENTITY = Apple Development`, or your full Developer ID Application identity) in `mac/Config/Local.xcconfig` (git-ignored), then run `xcodegen` and rebuild. Keep that identity and the install path stable across rebuilds to preserve permissions.
 
 First-run model setup was verified on 2026-10-15 with a Developer ID build: the restricted downloader installed all 12 pinned files from appea.rs, then the sandboxed engine indexed the 142-item demo and semantic search returned the kitchen quote photo. Moving from the old self-signed identity to Developer ID triggered macOS prompts to reuse the existing app-data containers. No sandbox restrictions were changed.
 

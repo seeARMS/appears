@@ -39,7 +39,7 @@ let package = Package(
         ),
         .target(
             name: "AppearsContext",
-            dependencies: ["AppearsCore"]
+            dependencies: ["AppearsCore", "AppearsMessages"]
         ),
         .target(
             name: "AppearsMCP",
@@ -52,6 +52,10 @@ let package = Package(
         .testTarget(
             name: "AppearsMCPTests",
             dependencies: ["AppearsMCP", "AppearsCore"]
+        ),
+        .testTarget(
+            name: "AppearsContextTests",
+            dependencies: ["AppearsContext", "AppearsCore", "AppearsMessages"]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -15,6 +15,11 @@ final class AppModel {
     var settings = AppSettings()
     let updater = Updater()
     let engine = EngineClient()
+    let contacts: ContactDirectory
+
+    init(contacts: ContactDirectory = ContactDirectory()) {
+        self.contacts = contacts
+    }
     @ObservationIgnored let modelDownloader = ModelDownloadClient()
     private(set) var modelDownload = ModelDownloadStatus()
     @ObservationIgnored let reader = ContextReader()
@@ -134,6 +139,7 @@ final class AppModel {
     }
 
     func start() {
+        contacts.start(enabled: settings.sources.messages && Self.demoFolder == nil)
         policy = SurfacePolicy(settings: settings.policySettings)
         reader.onChange = { [weak self] change in self?.contextChanged(change) }
         reader.start()
@@ -157,6 +163,7 @@ final class AppModel {
     }
 
     func refreshStatus() async {
+        contacts.checkAuthorization()
         accessibilityTrusted = ContextReader.isTrusted
         if accessibilityTrusted { reader.start() }
         // Calendar access granted in System Settings since launch.
@@ -564,6 +571,7 @@ final class AppModel {
 
     func sourcesChanged() {
         sourcePreview = nil
+        contacts.start(enabled: settings.sources.messages && Self.demoFolder == nil)
         dwellTask?.cancel()
         signalTask?.cancel()
         pendingAmbient = nil
