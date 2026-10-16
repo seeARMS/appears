@@ -21,6 +21,35 @@ FILES = ROOT / "files"
 random.seed(7)
 ages: dict[str, float] = {}
 
+# Fictional planning example for the landing page, Markdown and share card.
+# Keep the message and source text here so the site never uses real information.
+LANDING = {
+    "email": {
+        "subject": "Re: Next steps",
+        "to": "Priya Natarajan",
+        "greeting": "Hi Priya,",
+        "body": "I'm putting together a plan for the next phase. Let's revisit the scope and timeline we agreed on before we add anything new.",
+        "quotedHeader": "On Oct 13, 2026, at 4:18 PM, Priya Natarajan wrote:",
+        "quotedBody": "Could you send over a plan for the next phase? It would help to have the priorities and timing in one place.",
+    },
+    "message": {
+        "title": "Priya Natarajan",
+        "reason": "Earlier decision on scope · May 2025",
+        "text": "Let's keep the scope focused on the essentials and review progress at the end of the month before adding anything new.",
+    },
+    "document": {
+        "title": "Project brief.pdf",
+        "reason": "Page 2: scope and timeline · May 2025",
+        "text": "Scope and timeline: finish the essential work first. Review progress at the end of the month before planning the next phase.",
+    },
+    "note": {
+        "title": "Planning notes",
+        "reason": "Priorities from the last review · May 2025",
+        "text": "Keep the next phase focused. Revisit the original scope and timeline with Priya before adding new priorities.",
+    },
+}
+(ROOT / "landing.json").write_text(json.dumps(LANDING, indent=2) + "\n")
+
 
 def font(names, size):
     for name in names:

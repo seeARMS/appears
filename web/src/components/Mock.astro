@@ -1,19 +1,19 @@
 ---
-// The hero's mock, in HTML and CSS rather than an image: a Mail reply to Dana
-// Ruiz on a desktop that fades out at the bottom, and Appears' panel hanging from its menu bar glyph with
+// The hero's mock, in HTML and CSS rather than an image: a planning email
+// on a desktop that fades out at the bottom, and Appears' panel hanging from its menu bar glyph with
 // three things you already had, grouped like a ⌘K results list. Every name,
 // file and number here is made up. The results and their groups come from
-// MOCK_RESULTS in src/site.ts; the email is written here.
+// MOCK_RESULTS in src/site.ts; the fictional content comes from demo/landing.json.
 //
 // With JavaScript, the mock plays once when it scrolls into view: the reply is
-// typed, the glyph finds something as "permit" is typed, the pointer clicks it
+// typed, the glyph finds something as "scope" is typed, the pointer clicks it
 // and the panel drops. Without JavaScript, or with reduced motion, it's the
 // finished frame.
 import Glyph from "./Glyph.astro";
 import Icon from "./Icon.astro";
-import { MOCK_CAPTION, MOCK_NOTE, MOCK_RESULTS } from "../site";
+import { MOCK_CAPTION, MOCK_EMAIL, MOCK_NOTE, MOCK_PANEL_CONTEXT, MOCK_RESULTS } from "../site";
 
-const SUBJECT = "Re: Kitchen, can you start on the 14th?";
+const SUBJECT = MOCK_EMAIL.subject;
 const groups = [...new Set(MOCK_RESULTS.map((r) => r.group))].map((name) => ({
   name,
   results: MOCK_RESULTS.filter((r) => r.group === name),
@@ -46,18 +46,15 @@ const first = MOCK_RESULTS[0];
           <span class="lights"><i class="l-close"></i><i class="l-min"></i><i class="l-max"></i></span>
           <span class="titlebar-name">{SUBJECT}</span>
         </div>
-        <div class="field"><span class="field-label">To:</span> <span class="token">Dana Ruiz</span></div>
+        <div class="field"><span class="field-label">To:</span> <span class="token">{MOCK_EMAIL.to}</span></div>
         <div class="field"><span class="field-label">Subject:</span> {SUBJECT}</div>
         <div class="body">
-          <p data-type>Hi Dana,</p>
-          <p data-type>
-            The 14th works for us. Before we order the cabinets, can you confirm the numbers from your original quote? I
-            also want to be sure the permit covers moving the sink to the island<span class="caret"></span>
-          </p>
+          <p data-type>{MOCK_EMAIL.greeting}</p>
+          <p data-type>{MOCK_EMAIL.body}<span class="caret"></span></p>
           <div class="quoted">
-            <p class="quoted-head">On Oct 13, 2026, at 4:18 PM, Dana Ruiz wrote:</p>
-            <p>I can start on the 14th if the permit is still good. Let me know about the cabinets.</p>
-            <p>Dana<br />Ruiz &amp; Daughters Builders</p>
+            <p class="quoted-head">{MOCK_EMAIL.quotedHeader}</p>
+            <p>{MOCK_EMAIL.quotedBody}</p>
+            <p>{MOCK_EMAIL.to}</p>
           </div>
         </div>
       </div>
@@ -66,7 +63,7 @@ const first = MOCK_RESULTS[0];
         <div class="panel-head">
           <div>
             <p class="panel-title">Related</p>
-            <p class="panel-sub">Re: Kitchen · Mail</p>
+            <p class="panel-sub">{MOCK_PANEL_CONTEXT}</p>
           </div>
           <span class="badge">{MOCK_RESULTS.length} found</span>
         </div>
@@ -80,14 +77,7 @@ const first = MOCK_RESULTS[0];
                   {g.results.map((r) => (
                     <li class:list={["result", { "is-selected": r === first }]} style={`--i: ${MOCK_RESULTS.indexOf(r)}`}>
                       <span class:list={["thumb", `thumb-${r.kind}`]}>
-                        {r.kind === "photo" && (
-                          <span class="paper">
-                            <i />
-                            <i />
-                            <i />
-                            <i />
-                          </span>
-                        )}
+                        {r.kind === "message" && <Icon name="message" size={23} />}
                         {r.kind === "pdf" && (
                           <span class="page">
                             <i />
@@ -147,9 +137,9 @@ const first = MOCK_RESULTS[0];
     const pointer = mock.querySelector<SVGElement>(".pointer")!;
     const replay = mock.querySelector<HTMLButtonElement>(".replay")!;
     const caret = mock.querySelector<HTMLElement>(".caret")!;
-    const TRIGGER = "permit";
+    const TRIGGER = "scope";
     // A slip and its correction, the way people actually type.
-    const TYPOS: Record<string, string> = { cabinets: "cabients" };
+    const TYPOS: Record<string, string> = { timeline: "timelnie" };
 
     // Each paragraph becomes typed text, the caret, then the rest of the text,
     // kept in place but invisible so the window never changes size.
