@@ -23,10 +23,12 @@ private struct SearchTestEmbedder: Embedder {
 
     @discardableResult
     private func add(_ engine: Engine, path: String, source: ItemSource = .file, kind: ItemKind = .document,
-                     vector: [Float] = [1, 0, 0], age: Double = 0) throws -> Int64 {
+                     vector: [Float] = [1, 0, 0], age: Double = 0, chatID: Int64? = nil,
+                     title: String? = nil) throws -> Int64 {
         let date = Date().addingTimeInterval(-age * 86_400)
-        let item = Item(source: source, path: path, kind: kind, title: (path as NSString).lastPathComponent,
-                        size: 1, created: date, modified: date, lastUsed: nil)
+        let reference = chatID.map { MessageReference(rowID: 1, guid: path, chatID: $0, conversationURL: nil) }
+        let item = Item(source: source, path: path, kind: kind, title: title ?? (path as NSString).lastPathComponent,
+                        size: 1, created: date, modified: date, lastUsed: nil, message: reference)
         let (id, _) = try engine.store.record(item, signature: "test")
         let units = try engine.store.replaceUnits(itemID: id, title: item.title, units: [
             (AppearsCore.Unit(kind: kind == .image ? .image : .text, locator: .whole, text: "Ruiz cabinetry estimate"), vector),
@@ -75,5 +77,61 @@ private struct SearchTestEmbedder: Embedder {
         #expect(try await search.run(SearchRequest(text: " \n "), sources: SourceSettings()).suggestions.isEmpty)
         #expect(try await search.run(SearchRequest(text: "wifi", limit: 100), sources: SourceSettings()).suggestions.count == 20)
         #expect(try await search.run(SearchRequest(text: "wifi", limit: -1), sources: SourceSettings()).suggestions.count == 1)
+    }
+
+    @Test func strongestMessageRepresentsConversationBeforeCandidateAndResultLimits() async throws {
+        let (engine, folder) = try engine()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // More duplicates than Recall's 24-item pool: grouping only the final response
+        // would leave a single row and lose the other conversations below them.
+        for index in 0..<30 {
+            try add(engine, path: "messages:duplicate-\(index)", source: .messages, kind: .message,
+                    vector: [0.99, 0.1, 0], chatID: 1)
+        }
+        let best = try add(engine, path: "messages:best", source: .messages, kind: .message, chatID: 1)
+        var expected: Set<Int64> = [best]
+        for chat in 2...20 {
+            expected.insert(try add(engine, path: "messages:chat-\(chat)", source: .messages, kind: .message,
+                                    vector: [0.9, 0.4, 0], chatID: Int64(chat)))
+        }
+        let payload = try JSONEncoder().encode(SearchRequest(text: "renovation budget"))
+        let response = try JSONDecoder().decode(RecallResponse.self, from: await engine.handle(.search, payload: payload))
+        #expect(response.suggestions.first?.id == best)
+        #expect(Set(response.suggestions.map(\.id)) == expected)
+        #expect(response.suggestions.count == 20)
+        #expect(Set(response.suggestions.compactMap { $0.item.message?.chatID }).count == 20)
+        let stats = try engine.journal.stats(days: 7)
+        #expect(stats.pulls == 0 && stats.ambient == 0 && stats.shadow == 0)
+        let related = try await engine.recall.run(RecallRequest(context: .text("renovation budget"), trigger: .pull))
+        #expect(related.suggestions.count == 3)
+        #expect(related.suggestions.allSatisfy { $0.item.message?.chatID == 1 })
+    }
+
+    @Test func groupingPreservesPhotosDistinctChatsAndItemsWithoutConversationMetadata() async throws {
+        let (engine, folder) = try engine()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = try add(engine, path: "messages:one", source: .messages, kind: .message, chatID: 1, title: "Kitchen")
+        let second = try add(engine, path: "messages:two", source: .messages, kind: .message, chatID: 2, title: "Kitchen")
+        let photo = try add(engine, path: "messages:one:photo:a", source: .messages, kind: .image, chatID: 1)
+        let otherPhoto = try add(engine, path: "messages:one:photo:b", source: .messages, kind: .image, chatID: 1)
+        let unknown = try add(engine, path: "messages:unknown", source: .messages, kind: .message, title: "Kitchen")
+        let otherUnknown = try add(engine, path: "messages:other-unknown", source: .messages, kind: .message, title: "Kitchen")
+        let document = try add(engine, path: folder.appending(path: "Kitchen").path)
+        let note = try add(engine, path: "notes:Kitchen", source: .notes, kind: .note, title: "Kitchen")
+        let response = try await Search(recall: engine.recall).run(SearchRequest(text: "renovation budget"), sources: SourceSettings())
+        #expect(Set(response.suggestions.map(\.id)) == [first, second, photo, otherPhoto, unknown, otherUnknown, document, note])
+    }
+
+    @Test func hiddenMessageDoesNotSuppressOtherMatchesInItsConversation() async throws {
+        let (engine, folder) = try engine()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let hidden = try add(engine, path: "messages:hidden", source: .messages, kind: .message, chatID: 1)
+        let allowed = try add(engine, path: "messages:allowed", source: .messages, kind: .message,
+                              vector: [0.9, 0.4, 0], chatID: 1)
+        try engine.store.setNeverShow(itemID: hidden)
+        let search = Search(recall: engine.recall)
+        let response = try await search.run(SearchRequest(text: "renovation budget"), sources: SourceSettings())
+        #expect(response.suggestions.map(\.id) == [allowed])
+        #expect(try await search.run(SearchRequest(text: "renovation budget"), sources: SourceSettings(messages: false)).suggestions.isEmpty)
     }
 }

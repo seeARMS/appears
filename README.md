@@ -166,7 +166,7 @@ With Calendar access, Appears looks once before each meeting, 10 minutes ahead b
 
 #### Search
 
-<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
+<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Messages show the strongest text match per conversation; photos stay separate, and distinct conversations are kept even when they have the same name. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
 
 #### Measuring
 

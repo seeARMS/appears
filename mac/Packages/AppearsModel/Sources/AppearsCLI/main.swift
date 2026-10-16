@@ -200,6 +200,17 @@ struct Eval: AsyncParsableCommand {
         }
         var scenarios: [Scenario]
         var negative: [Scenario]
+        /// Typed-search regressions use isolated synthetic conversations, added after
+        /// ambient evaluation so they don't change its candidate distribution.
+        var search: [SearchScenario]?
+    }
+
+    struct SearchScenario: Decodable {
+        var name: String
+        var text: String
+        var limit: Int
+        var messages: [DemoMessage]
+        var expectedConversations: [Int64]
     }
 
     struct Manifest: Decodable { var ages: [String: Double] }
@@ -209,6 +220,7 @@ struct Eval: AsyncParsableCommand {
         var title: String
         var text: String
         var age: Double
+        var chatID: Int64?
     }
 
     func demoFolder() throws -> URL {
@@ -249,12 +261,14 @@ struct Eval: AsyncParsableCommand {
         let indexed = try await indexer.indexPending()
         // Synthetic conversations exercise Messages ranking without reading chat.db.
         let messagesURL = demo.appending(path: "messages.json")
-        if FileManager.default.fileExists(atPath: messagesURL.path) {
-            let messages = try JSONDecoder().decode([DemoMessage].self, from: Data(contentsOf: messagesURL))
-            for message in messages {
+        func addMessages(_ messages: [DemoMessage]) async throws {
+            for (offset, message) in messages.enumerated() {
                 let date = now.addingTimeInterval(-message.age * 86_400)
+                let reference = message.chatID.map {
+                    MessageReference(rowID: Int64(offset + 1), guid: message.path, chatID: $0, conversationURL: nil)
+                }
                 let item = Item(source: .messages, path: message.path, kind: .message, title: message.title,
-                                size: Int64(message.text.utf8.count), created: date, modified: date, lastUsed: nil)
+                                size: Int64(message.text.utf8.count), created: date, modified: date, lastUsed: nil, message: reference)
                 let (id, _) = try store.record(item, signature: "demo")
                 let vector = try await embedder.embed(documents: [EmbeddingDocument(title: message.title, text: message.text)])[0]
                 let update = try store.replaceUnits(itemID: id, title: message.title, units: [
@@ -262,6 +276,9 @@ struct Eval: AsyncParsableCommand {
                 ])
                 for unit in update.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: vector) }
             }
+        }
+        if FileManager.default.fileExists(atPath: messagesURL.path) {
+            try await addMessages(JSONDecoder().decode([DemoMessage].self, from: Data(contentsOf: messagesURL)))
         }
         print("Indexed \(indexed) demo files in \(String(format: "%.1f", Date().timeIntervalSince(started)))s with \(embedder.modelID).\n")
 
@@ -359,5 +376,22 @@ struct Eval: AsyncParsableCommand {
             matched lines     \(linesRight)/\(linesExpected) right, \(linesUnexpected) where none was expected
             median latency    \(Int(times.sorted()[times.count / 2])) ms
             """)
+
+        var searchFailures = 0
+        for scenario in scenarios.search ?? [] {
+            try await addMessages(scenario.messages)
+            let response = try await Search(recall: recall).run(SearchRequest(text: scenario.text, limit: scenario.limit), sources: SourceSettings(notes: false))
+            let chats = response.suggestions.filter { $0.item.kind == .message }.compactMap { $0.item.message?.chatID }
+            let unique = Set(chats)
+            let passed = chats.count == unique.count
+                && scenario.expectedConversations.allSatisfy(unique.contains)
+                && response.suggestions.count == scenario.limit
+            if !passed { searchFailures += 1 }
+            print("\(passed ? "✓" : "✗") \(scenario.name): \(chats.count) passages, \(unique.count) conversations, \(response.suggestions.count) results")
+            if verbose || !passed {
+                for result in response.suggestions { print("    \(short(result.item.path))  \(String(format: "%.2f", result.confidence))") }
+            }
+        }
+        if searchFailures > 0 { throw ValidationError("\(searchFailures) typed-search regression scenarios failed.") }
     }
 }
