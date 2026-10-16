@@ -218,25 +218,16 @@ const first = MOCK_RESULTS[0];
     async function play() {
       reset();
       mock.classList.add("is-typing");
-      // On phones the email is hidden: go straight to the glyph.
-      const typing = compose.offsetParent !== null;
-      if (typing) {
-        await wait(500);
-        await type(lines[0]);
-        await wait(450);
-        for (const l of lines.slice(1)) await type(l);
-      } else {
-        for (const l of lines) {
-          l.typed.textContent = l.text;
-          l.rest.textContent = "";
-        }
-      }
+      await wait(500);
+      await type(lines[0]);
+      await wait(450);
+      for (const l of lines.slice(1)) await type(l);
       mock.classList.remove("is-typing");
       mock.classList.add("is-found");
       await wait(1100);
 
       // The pointer drifts in from the email and clicks the glyph.
-      pointer.style.transform = typing ? at(compose, 0.78, 0.62) : at(glyph, -2, 6);
+      pointer.style.transform = at(compose, 0.78, 0.62);
       void pointer.getBoundingClientRect();
       pointer.style.transition = "";
       pointer.classList.add("is-shown");

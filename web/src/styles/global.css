@@ -1848,28 +1848,22 @@ h3 {
   .dock {
     display: none;
   }
-  /* The panel comes first, still under the glyph; the email sits below it, faded out. */
+  /* The email fills the screen, fading out at the bottom, and the panel hangs
+     over it from the glyph, as on a Mac. */
   .stage {
-    display: flex;
-    flex-direction: column;
     min-height: 0;
-    padding: 6px 10px 1rem;
+    padding: 14px 10px 0;
   }
   .panel {
-    position: relative;
-    top: auto;
-    right: auto;
-    order: -1;
-    align-self: flex-end;
-    width: min(100%, 22.5rem);
-    margin-right: 48px;
+    top: 6px;
+    right: 48px;
+    width: min(calc(100% - 58px), 22.5rem);
   }
   .compose {
     width: 100%;
-    margin-top: 1rem;
-    max-height: 12rem;
-    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
-    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    min-height: 23rem;
+    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+    mask-image: linear-gradient(to bottom, #000 70%, transparent);
   }
 }
 
@@ -1879,11 +1873,8 @@ h3 {
     margin: 0.75rem auto 0;
   }
   .panel {
-    margin-right: 0;
-    width: 100%;
-  }
-  .compose {
-    display: none;
+    right: 10px;
+    width: calc(100% - 20px);
   }
   .top-nav {
     gap: 1rem;
