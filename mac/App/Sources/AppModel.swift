@@ -217,7 +217,8 @@ final class AppModel {
             skippedReason = reason
             return
         }
-        guard captured.snapshot.characterCount >= 80 else { return }
+        // A photo has no words to read: the engine matches the picture itself.
+        guard captured.snapshot.characterCount >= 80 || captured.snapshot.showsPicture else { return }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
         policy.settings = settings.policySettings
         let dwell = Date().timeIntervalSince(topicSince)

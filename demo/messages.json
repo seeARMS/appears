@@ -10,5 +10,11 @@
     "title": "Jordan Vale",
     "text": "Jordan: Want to walk around the lake on Saturday?\nMe: Sure, let's meet after breakfast.",
     "age": 1
+  },
+  {
+    "path": "messages:demo-plant-overwatering",
+    "title": "Rina Holt",
+    "text": "Me: My pothos has yellow leaves again, any idea why?\nRina: Yellow leaves on a pothos almost always means overwatering. Let the top inch of soil dry out between waterings and make sure the pot drains.",
+    "age": 400
   }
 ]

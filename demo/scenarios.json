@@ -229,6 +229,20 @@
       "expect": [
         "messages:demo-rent-payment"
       ]
+    },
+    {
+      "name": "Opening a photo: the yellowing pothos",
+      "app": "Preview",
+      "title": "IMG_2041.HEIC",
+      "document": "Desktop/IMG_2041.HEIC",
+      "expect": [
+        "Pictures/2024/IMG_0412.HEIC",
+        "Documents/House/Plant care.md",
+        "messages:demo-plant-overwatering"
+      ],
+      "never": [
+        "Desktop/IMG_2041.HEIC"
+      ]
     }
   ],
   "negative": [
@@ -373,6 +387,12 @@
       "title": "Jordan Vale",
       "focused": "Did you pick a movie for tonight?",
       "visible": "Jordan: Want to walk around the lake on Saturday?"
+    },
+    {
+      "name": "Opening a photo of nothing you have: a beach at sunset",
+      "app": "Preview",
+      "title": "IMG_2077.HEIC",
+      "document": "Desktop/IMG_2077.HEIC"
     }
   ]
 }

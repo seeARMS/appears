@@ -8,7 +8,10 @@
 # contexts and what Appears should (or shouldn't) find for each.
 
 import json
+import math
 import random
+import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -34,6 +37,12 @@ MESSAGES = [
         "title": "Jordan Vale",
         "text": "Jordan: Want to walk around the lake on Saturday?\nMe: Sure, let's meet after breakfast.",
         "age": 1,
+    },
+    {
+        "path": "messages:demo-plant-overwatering",
+        "title": "Rina Holt",
+        "text": "Me: My pothos has yellow leaves again, any idea why?\nRina: Yellow leaves on a pothos almost always means overwatering. Let the top inch of soil dry out between waterings and make sure the pot drains.",
+        "age": 400,
     },
 ]
 
@@ -354,6 +363,117 @@ pdf(
         """
     ],
     age=480,
+)
+
+# ---------------------------------------------------------------- a photo open in Preview
+
+
+def heic(path, image, age):
+    """Saves a drawn photo as HEIC, the way an iPhone photo arrives, with macOS's sips."""
+    target = FILES / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as folder:
+        jpeg = Path(folder) / "photo.jpg"
+        image.save(jpeg, quality=90)
+        subprocess.run(["sips", "-s", "format", "heic", str(jpeg), "--out", str(target)], check=True, capture_output=True)
+    ages[path] = age
+
+
+def leaf(draw, base, length, angle, color):
+    """A pothos leaf: a pointed heart shape with a midrib, from its stem end."""
+    width = length * 0.42
+    upper, lower = [], []
+    for i in range(25):
+        t = i / 24
+        along = t * length
+        half = width * math.sin(math.pi * t) ** 0.7 * (1.15 - 0.5 * t)
+        upper.append((along, half))
+        lower.append((along, -half))
+    points = upper + lower[::-1]
+    cos, sin = math.cos(angle), math.sin(angle)
+    shape = [(base[0] + x * cos - y * sin, base[1] + x * sin + y * cos) for x, y in points]
+    draw.polygon(shape, fill=color)
+    tip = (base[0] + length * cos, base[1] + length * sin)
+    draw.line([base, tip], fill=tuple(max(0, c - 45) for c in color), width=3)
+
+
+def houseplant(seed, size, wall, yellow, leaves, scale):
+    """A pothos in a terracotta pot on a wooden shelf against a wall. `yellow` leaves are
+    yellowing, the rest green."""
+    rng = random.Random(seed)
+    w, h = size
+    image = Image.new("RGB", size, wall)
+    draw = ImageDraw.Draw(image)
+    for y in range(h):  # soft light from a window on the left
+        shade = int(18 * (1 - y / h))
+        draw.line([(0, y), (w, y)], fill=tuple(min(255, c + shade) for c in wall))
+    shelf = int(h * 0.78)
+    draw.rectangle([0, shelf, w, h], fill=(150, 108, 72))
+    for y in range(shelf, h, 7):
+        draw.line([(0, y), (w, y + rng.randint(-3, 3))], fill=(140 + rng.randint(-10, 10), 100, 66), width=2)
+    cx = w // 2 + rng.randint(-60, 60)
+    pot_w, pot_h = int(260 * scale), int(230 * scale)
+    top = shelf - pot_h + 10
+    draw.polygon([(cx - pot_w // 2, top), (cx + pot_w // 2, top), (cx + pot_w // 2.6, shelf + 10), (cx - pot_w // 2.6, shelf + 10)], fill=(196, 104, 64))
+    draw.rectangle([cx - pot_w // 2 - 12, top - 24, cx + pot_w // 2 + 12, top + 14], fill=(206, 114, 72))
+    draw.ellipse([cx - pot_w // 2, top - 30, cx + pot_w // 2, top + 6], fill=(72, 50, 34))
+    yellowed = set(rng.sample(range(leaves), yellow))
+    for i in range(leaves):
+        angle = math.pi * (1.05 + 0.9 * i / max(1, leaves - 1)) + rng.uniform(-0.15, 0.15)
+        reach = rng.uniform(140, 320) * scale
+        stem_end = (cx + reach * math.cos(angle), top - 10 + reach * math.sin(angle) * 0.9)
+        if rng.random() < 0.3:  # a vine trailing over the pot's edge
+            stem_end = (cx + rng.choice([-1, 1]) * rng.uniform(150, 260) * scale, top + rng.uniform(40, 200) * scale)
+        draw.line([(cx, top - 12), stem_end], fill=(80, 120, 50), width=5)
+        if i in yellowed:
+            color = (226 + rng.randint(-10, 10), 196 + rng.randint(-15, 10), 70 + rng.randint(-20, 20))
+        else:
+            color = (52 + rng.randint(-12, 12), 128 + rng.randint(-20, 20), 48 + rng.randint(-12, 12))
+        leaf(draw, stem_end, rng.uniform(110, 160) * scale, angle + rng.uniform(-0.6, 0.6), color)
+    return image.filter(ImageFilter.GaussianBlur(1.2))
+
+
+def beach(size):
+    """A beach at sunset: nothing to do with anything in the demo."""
+    w, h = size
+    image = Image.new("RGB", size)
+    draw = ImageDraw.Draw(image)
+    horizon = int(h * 0.55)
+    for y in range(horizon):
+        t = y / horizon
+        draw.line([(0, y), (w, y)], fill=(int(70 + 180 * t), int(90 + 80 * t), int(170 - 60 * t)))
+    draw.ellipse([w * 0.6, horizon - 120, w * 0.6 + 170, horizon + 50], fill=(255, 196, 90))
+    for y in range(horizon, int(h * 0.75)):
+        t = (y - horizon) / (h * 0.2)
+        draw.line([(0, y), (w, y)], fill=(int(40 + 30 * t), int(80 + 40 * t), int(130 + 20 * t)))
+    for y in range(int(h * 0.75), h):
+        draw.line([(0, y), (w, y)], fill=(222, 196, 150))
+    for i in range(12):
+        y = horizon + 20 + i * 18
+        draw.line([(w * 0.6 + 20 - i * 6, y), (w * 0.6 + 150 + i * 6, y)], fill=(250, 180, 100), width=3)
+    return image.filter(ImageFilter.GaussianBlur(1.5))
+
+
+# Just taken: the pothos is yellowing. The eval opens it as if in Preview.
+heic("Desktop/IMG_2041.HEIC", houseplant(41, (1600, 1200), (214, 206, 190), yellow=7, leaves=16, scale=1.15), age=0.2)
+# The same plant two years ago, healthy, on the same shelf, from further back.
+heic("Pictures/2024/IMG_0412.HEIC", houseplant(12, (1600, 1200), (220, 212, 196), yellow=0, leaves=11, scale=0.9), age=730)
+# A beach at sunset, for a photo that relates to nothing.
+heic("Desktop/IMG_2077.HEIC", beach((1600, 1200)), age=0.3)
+
+write(
+    "Documents/House/Plant care.md",
+    """
+    # Plant care
+
+    Pothos (the one on the living room shelf, in the terracotta pot)
+    - Water only when the top inch of soil is dry, about every 10 days. Less in winter.
+    - Yellow leaves = too much water. Brown crispy edges = too little.
+    - Bright indirect light. Not the south window, it scorched the leaves.
+    - Feed once a month spring to fall, half-strength.
+    - Repotted March 2024 into the terracotta pot with a drainage hole.
+    """,
+    age=410,
 )
 
 # ---------------------------------------------------------------- distractors
