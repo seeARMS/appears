@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build, sign, notarize and package Appears. Does not publish anything.
-# Used by .github/workflows/release.yml; see README.md for credentials.
+# Used by .github/workflows/release.yml; see docs/releasing.md for credentials.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

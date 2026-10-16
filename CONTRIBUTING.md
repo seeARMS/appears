@@ -2,7 +2,7 @@
 
 Appears is an experimental Mac menu bar app. Useful contributions include reproducible bugs, Accessibility coverage fixes, file-reading improvements, accessibility in the UI, and better synthetic retrieval scenarios. Open an issue before starting a large feature or changing when the app suggests something.
 
-Read [README.md](README.md) for setup and [AGENTS.md](AGENTS.md) for the product's constraints. The app uses the system font and the tokens in `Theme.swift`; the site follows `brand/README.md`.
+Read [README.md](README.md) for setup and [AGENTS.md](AGENTS.md) for the product's constraints. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). The app uses the system font and the tokens in `Theme.swift`; the site follows `brand/README.md`.
 
 ## Work with made-up data
 

@@ -1,6 +1,6 @@
 # Appears brand
 
-Direction E, "shadcn", chosen 2026-10-15 from the five explored on the design canvas. Appears looks like a modern tool built with shadcn/ui: zinc neutrals, hairline borders, small radii, a black primary, muted secondary text, and a ⌘K-style results list. Don't borrow from whosaid or heade.rs (Geist, Liquid Glass capsules), and don't bring back the earlier warm-paper/serif look.
+Direction E, "shadcn", chosen 2026-10-15 from the five explored on the design canvas. Appears looks like a modern tool built with shadcn/ui: zinc neutrals, hairline borders, small radii, a black primary, muted secondary text, and a ⌘K-style results list. Don't use Geist or Liquid Glass capsules, and don't bring back the earlier warm-paper/serif look.
 
 - **Mark:** **Orbit**, chosen by Colin on 2026-10-15. An open ring leaves a gap at the upper right for a detached discovery dot. `mark.svg` puts it in white and blue on a zinc tile; `app-icon.svg` adds the Mac icon's transparent margin. Keep the gap, dot separation and round stroke caps from the approved drawing.
 - **Wordmark:** lowercase "appears", Inter 700, letter-spacing -0.04em, next to the mark. The product name in sentences is "Appears", capitalized.

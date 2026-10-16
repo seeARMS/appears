@@ -1,10 +1,10 @@
 # appea.rs
 
-The landing site for Appears, the open-source Mac menu bar app that notices what you're working on and quietly shows related files you already have. It will live at [appea.rs](https://appea.rs). Made by [Colin Armstrong](https://armstr.ng).
+The landing site for Appears, the open-source Mac menu bar app that notices what you're working on and quietly shows related files you already have. It lives at [appea.rs](https://appea.rs). Made by [Colin Armstrong](https://armstr.ng).
 
 Astro 7, built to plain static files, behind a small hand-written Cloudflare Worker. One page with its CSS inlined, a Markdown version for agents, `llms.txt`, and the app's signed update feed served from R2. No analytics or third-party scripts of any kind, and no client JavaScript.
 
-Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.txt`, structured data, shared `@id`s).
+Follows the site conventions in the repo's [AGENTS.md](../AGENTS.md#site-conventions) (Markdown versions, `llms.txt`, one source for copy).
 
 ## What's where
 

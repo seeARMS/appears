@@ -4,7 +4,7 @@
 #   uv run --with 'sentence-transformers[image]>=6.1' --with torch \
 #     python -I mac/scripts/reference_vectors.py --model mac/Models/embeddinggemma-2
 #
-# Writes mac/Packages/WhoSaidModel/Tests/GemmaEmbedderTests/Resources/reference-vectors.json.
+# Writes mac/Packages/AppearsModel/Tests/GemmaEmbedderTests/Resources/reference-vectors.json.
 # Inputs are the demo queries, context-window documents built the way the Swift indexer
 # builds them, and the demo screenshots. All of it is made-up demo data.
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEMO = ROOT / "demo"
-OUT = ROOT / "mac/Packages/WhoSaidModel/Tests/GemmaEmbedderTests/Resources/reference-vectors.json"
+OUT = ROOT / "mac/Packages/AppearsModel/Tests/GemmaEmbedderTests/Resources/reference-vectors.json"
 
 # Must match EmbeddingGemmaPrompt in SearchIndex/Embedder.swift.
 def query(text: str) -> str:

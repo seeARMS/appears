@@ -2,7 +2,7 @@ import AppearsMessages
 import CryptoKit
 import Foundation
 
-/// Reads Messages directly, read-only. Nothing here opens whosaid's index or uses the network.
+/// Reads Messages directly, read-only. Nothing here writes to Messages or uses the network.
 public struct MessagesReader: Sendable {
     public let database: ChatDatabase
 
