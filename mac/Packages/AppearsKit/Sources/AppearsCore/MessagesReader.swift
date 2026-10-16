@@ -62,6 +62,20 @@ public struct MessagesReader: Sendable {
         return url
     }
 
+    /// Text-only indexing batches share one database read. Photos retain their file
+    /// verification and extraction path below.
+    func texts(for items: [Item], handles: [Int64: Handle]) throws -> [Int64: String] {
+        let contexts = try database.messagesWithThreads(rowIDs: items.compactMap { $0.message?.rowID }, before: 5, after: 2)
+        var result: [Int64: String] = [:]
+        for item in items {
+            guard item.kind == .message, let reference = item.message,
+                  let context = contexts[reference.rowID], context.message.guid == reference.guid,
+                  context.message.isSearchable else { continue }
+            result[item.id] = Self.context(for: context.message, thread: context.thread, handles: handles)
+        }
+        return result
+    }
+
     func extraction(for item: Item, handles: [Int64: Handle]) async -> Extraction? {
         guard let reference = item.message,
               let message = try? database.message(rowID: reference.rowID), message.guid == reference.guid,

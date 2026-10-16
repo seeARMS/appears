@@ -177,7 +177,10 @@ public struct FileScanner: Sendable {
 
     /// The item for one file, or nil if it isn't indexable.
     public func item(at url: URL) -> Item? {
-        guard let values = try? url.resourceValues(forKeys: Set(Self.keys)), values.isRegularFile == true else { return nil }
+        // File events include every compiler output and app data file. Reject paths we
+        // would skip before asking FileProvider and the filesystem for their metadata.
+        guard let kind = Self.kind(forExtension: url.pathExtension),
+              !settings.excludedKinds.contains(kind), !isExcluded(url.path) else { return nil }
         var folder = url.deletingLastPathComponent()
         let parent = folder
         while folder.path.count > 1 {
@@ -185,6 +188,7 @@ public struct FileScanner: Sendable {
                 if Self.plainTextExtensions.contains(url.pathExtension.lowercased()),
                    let siblings = try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
                    isDataFolder(parent, children: siblings) { return nil }
+                guard let values = try? url.resourceValues(forKeys: Set(Self.keys)), values.isRegularFile == true else { return nil }
                 return item(url, values)
             }
             if !shouldEnter(folder, isRoot: false) { return nil }

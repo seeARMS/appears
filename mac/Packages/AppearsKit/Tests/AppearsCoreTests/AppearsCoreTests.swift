@@ -301,13 +301,21 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
             try "content".write(to: url, atomically: true, encoding: .utf8)
         }
         var found: [String] = []
-        FileScanner(settings: SourceSettings(), home: home.path).scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        let scanner = FileScanner(settings: SourceSettings(), home: home.path)
+        scanner.scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
         #expect(Set(found) == ["Documents/plan.md", "Desktop/Screenshot.png"])
+        for path in ["Documents/plan.md", "Library/Caches/x.txt", "src/repo/README.md",
+                     "Documents/node_modules/pkg/readme.md", "Desktop/Screenshot.png", "Documents/notes.xyz"] {
+            #expect((scanner.item(at: home.appending(path: path)) != nil) == found.contains(path))
+        }
 
         var withRepo: [String] = []
         let settings = SourceSettings(includes: [home.appending(path: "src/repo").path], excludes: [home.appending(path: "Desktop").path])
-        FileScanner(settings: settings, home: home.path).scan { withRepo.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        let includingRepo = FileScanner(settings: settings, home: home.path)
+        includingRepo.scan { withRepo.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
         #expect(Set(withRepo) == ["Documents/plan.md", "src/repo/README.md"])
+        #expect(includingRepo.item(at: home.appending(path: "src/repo/README.md")) != nil)
+        #expect(includingRepo.item(at: home.appending(path: "Desktop/Screenshot.png")) == nil)
     }
 }
 

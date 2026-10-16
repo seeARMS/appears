@@ -104,6 +104,7 @@ private actor MessageEmbedder: Embedder {
     nonisolated let supportsImages = true
     var imageCount = 0
     var documentBatches: [Int] = []
+    var documentPriorities: [TaskPriority] = []
     var blocked = false
     var entered = false
     private var continuation: CheckedContinuation<Void, Never>?
@@ -114,6 +115,7 @@ private actor MessageEmbedder: Embedder {
     func embed(queries: [String]) async throws -> [[Float]] { try await hashing.embed(queries: queries) }
     func embed(documents: [EmbeddingDocument]) async throws -> [[Float]] {
         documentBatches.append(documents.count)
+        documentPriorities.append(Task.currentPriority)
         entered = true
         if blocked { await withCheckedContinuation { continuation = $0 } }
         return try await hashing.embed(documents: documents)
@@ -263,6 +265,60 @@ private actor MessageEmbedder: Embedder {
         #expect(try database.thread(around: first, before: 5, after: 2).map(\.rowID) == [1, 2, 3])
         let last = try #require(try database.message(rowID: 7))
         #expect(try database.thread(around: last, before: 2, after: 5).map(\.rowID) == [13, 14, 7])
+        let contexts = try database.messagesWithThreads(rowIDs: [1, 7, 11, 999], before: 3, after: 2)
+        #expect(Set(contexts.keys) == [1, 7, 11])
+        for (rowID, context) in contexts {
+            #expect(try database.message(rowID: rowID) == context.message)
+            #expect(try database.thread(around: context.message, before: 3, after: 2) == context.thread)
+        }
+        #expect(try database.messagesWithThreads(rowIDs: [], before: 3, after: 2).isEmpty)
+    }
+
+    @Test func batchTextMatchesIndividualExtractionAndRejectsUnsentMessages() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let indexer = try fixture.makeIndexer()
+        try await indexer.scanMessages()
+        let store = await indexer.store
+        let items = try store.pending(limit: 16)
+        let reader = MessagesReader(url: fixture.url)
+        let handles = try reader.database.handles()
+        let original = try Data(contentsOf: fixture.url)
+        let texts = try reader.texts(for: items, handles: handles)
+        #expect(texts.count == 3)
+        for item in items where item.kind == .message {
+            #expect(await reader.extraction(for: item, handles: handles)?.texts.first?.text == texts[item.id])
+        }
+        #expect(try Data(contentsOf: fixture.url) == original)
+        let unsent = try #require(items.first { $0.path == "messages:2" })
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE message SET date_retracted = 1 WHERE ROWID = 2")
+        }
+        #expect(try reader.texts(for: items, handles: handles)[unsent.id] == nil)
+    }
+
+    @Test func engineKeepsIndexingPriorityWhenCalledFromFileEvents() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let embedder = MessageEmbedder()
+        let settings = SourceSettings(notes: false, messages: false, homeOverride: fixture.folder.path)
+        let engine = try Engine(folder: fixture.folder.appending(path: "Appears"), embedder: embedder, settings: settings)
+        await engine.indexer.setPoliteness(false)
+        let url = fixture.folder.appending(path: "priority.txt")
+        try "Made-up kitchen permit K-2291.".write(to: url, atomically: true, encoding: .utf8)
+        let item = try #require(FileScanner(settings: settings).item(at: url))
+        try engine.store.record(item, signature: FileScanner.signature(item))
+        // Waiting on a Task's value would raise its priority to the test's priority.
+        await withCheckedContinuation { continuation in
+            Task.detached(priority: .utility) {
+                await engine.indexPending()
+                continuation.resume()
+            }
+        }
+        let priorities = await embedder.documentPriorities
+        #expect(priorities.count == 1)
+        #expect(priorities.allSatisfy { $0.rawValue >= TaskPriority.medium.rawValue })
+        #expect(try engine.store.counts().waiting == 0)
     }
 
     @Test func respectsDemoModeAndPhotoExclusions() async throws {
