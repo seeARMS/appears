@@ -64,8 +64,8 @@ final class AppSettings {
 
     init() {
         ambientMode = AmbientMode(rawValue: defaults.string(forKey: "ambientMode") ?? "") ?? .on
-        sensitivity = defaults.object(forKey: "sensitivity") as? Double ?? 0.5
-        dwell = defaults.object(forKey: "dwell") as? Double ?? 15
+        sensitivity = defaults.object(forKey: "sensitivity") as? Double ?? SurfacePolicy.Settings().sensitivity
+        dwell = defaults.object(forKey: "dwell") as? Double ?? SurfacePolicy.Settings().dwell
         excludedApps = defaults.stringArray(forKey: "excludedApps") ?? []
         sources = (defaults.data(forKey: "sources")).flatMap { try? JSONDecoder().decode(SourceSettings.self, from: $0) } ?? SourceSettings()
         ambientInSafari = defaults.bool(forKey: "ambientInSafari")

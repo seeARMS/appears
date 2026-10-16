@@ -1,27 +1,55 @@
 import Foundation
 
-/// Debouncing lives in the app; this limits repeat model work after the text settles.
-/// Fingerprints are held in memory, and looking never consumes the suggestion budget.
+/// Five seconds reading OR a two-second pause after editing. The app cancels its timers
+/// immediately on each change. Only fingerprints and timing state are retained here.
 public struct AmbientLookupSchedule: Sendable {
-    public var minimumInterval: TimeInterval = 10
+    public var debounce: TimeInterval = 2
+    private var changeStartedAt: Date?
+    private var lastChangeAt: Date?
+    private var textEdited = false
+    private var topic: String?
+    private var topicSince: Date?
     private var completedFingerprint: String?
-    private var lastLookedAt: Date?
 
     public init() {}
 
-    /// Nil means this exact context has already been searched. Edits can search again
-    /// after the original topic dwell and the minimum interval have both elapsed.
-    public func delay(fingerprint: String, dwell: TimeInterval, requiredDwell: TimeInterval, now: Date = Date()) -> TimeInterval? {
-        guard fingerprint != completedFingerprint else { return nil }
-        let remainingInterval = lastLookedAt.map { minimumInterval - now.timeIntervalSince($0) } ?? 0
-        return max(0, requiredDwell - dwell, remainingInterval)
+    public mutating func didChange(textEdited: Bool = false, navigation: Bool = false, at now: Date = Date()) {
+        if navigation {
+            changeStartedAt = now
+            self.textEdited = false
+        }
+        if changeStartedAt == nil { changeStartedAt = now }
+        lastChangeAt = now
+        self.textEdited = self.textEdited || textEdited
     }
 
-    public mutating func didStart(at date: Date = Date()) {
-        lastLookedAt = date
+    public func settleDelay(now: Date = Date()) -> TimeInterval {
+        max(0, debounce - now.timeIntervalSince(lastChangeAt ?? now))
+    }
+
+    /// Called after debouncing. A real edit bypasses the reading dwell, including in a
+    /// newly entered conversation. There is no additional lookup throttle.
+    public mutating func delay(fingerprint: String, topic: String, requiredDwell: TimeInterval, now: Date = Date()) -> TimeInterval? {
+        if self.topic != topic {
+            self.topic = topic
+            topicSince = changeStartedAt ?? now
+        }
+        let edited = textEdited
+        changeStartedAt = nil
+        textEdited = false
+        guard fingerprint != completedFingerprint else { return nil }
+        return edited ? 0 : max(0, requiredDwell - dwell(now: now))
+    }
+
+    public func dwell(now: Date = Date()) -> TimeInterval {
+        max(0, now.timeIntervalSince(topicSince ?? now))
     }
 
     public mutating func didFinish(fingerprint: String) {
         completedFingerprint = fingerprint
+    }
+
+    public mutating func invalidate() {
+        completedFingerprint = nil
     }
 }

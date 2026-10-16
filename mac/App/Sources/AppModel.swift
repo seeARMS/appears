@@ -7,8 +7,8 @@ import os
 /// Everything the menu bar item and the panel show, and the loop that decides when to look.
 ///
 /// The loop: the Accessibility observer reports a change → wait for it to settle → note the
-/// "topic" (app, window, document, URL) and when it started → after you've dwelled long
-/// enough, ask the engine (ambient) → if the answer is confident and the policy allows,
+/// "topic" (app, window, document, URL) and when it started → after reading or a typing
+/// pause, ask the engine (ambient) → if the answer is confident and the signal gap allows,
 /// change the glyph. Nothing else happens until you look.
 @MainActor @Observable
 final class AppModel {
@@ -34,6 +34,8 @@ final class AppModel {
         var appName: String
         var windowTitle: String
         var fingerprint: String
+        /// Stable, salted document/conversation identity for item deduplication.
+        var topic = ""
         var suggestions: [Suggestion]
         /// Matching names and terms, used only in memory to emphasize source excerpts.
         var evidenceTerms: [String] = []
@@ -59,10 +61,18 @@ final class AppModel {
 
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var dwellTask: Task<Void, Never>?
+    @ObservationIgnored private var signalTask: Task<Void, Never>?
     @ObservationIgnored private var statusTask: Task<Void, Never>?
-    @ObservationIgnored private var topic: String?
-    @ObservationIgnored private var topicSince = Date()
     @ObservationIgnored private var meetingExpiry: Task<Void, Never>?
+    private struct PendingAmbient {
+        let id = UUID()
+        let context: ContextSnapshot
+        let suggestions: [Suggestion]
+        let evidenceTerms: [String]
+        let meeting: CalendarEvent?
+        let topic: String
+    }
+    @ObservationIgnored private var pendingAmbient: PendingAmbient?
 
     /// Called when the panel should open or update (the status item owns the panel).
     @ObservationIgnored var onShow: ((_ makeKey: Bool) -> Void)?
@@ -74,11 +84,12 @@ final class AppModel {
 
     /// Broaden the panel only after the original ambient candidates clear the policy.
     /// Keep those confident matches first, followed by the other ranked candidates.
-    static func ambientPanelSuggestions(_ candidates: [Suggestion], isConfident: (Double) -> Bool) -> [Suggestion] {
-        let confident = candidates.prefix(ambientCandidateLimit).filter { isConfident($0.confidence) }
+    static func ambientPanelSuggestions(_ candidates: [Suggestion], isConfident: (Double) -> Bool,
+                                        maySuggest: (Suggestion) -> Bool = { _ in true }) -> [Suggestion] {
+        let confident = candidates.prefix(ambientCandidateLimit).filter { isConfident($0.confidence) && maySuggest($0) }
         guard !confident.isEmpty else { return [] }
         let confidentIDs = Set(confident.map(\.id))
-        let remaining = candidates.filter { !confidentIDs.contains($0.id) }
+        let remaining = candidates.filter { maySuggest($0) && !confidentIDs.contains($0.id) }
         return Array((confident + remaining).prefix(contextResultLimit))
     }
 
@@ -117,7 +128,7 @@ final class AppModel {
 
     func start() {
         policy = SurfacePolicy(settings: settings.policySettings)
-        reader.onChange = { [weak self] in self?.contextChanged() }
+        reader.onChange = { [weak self] change in self?.contextChanged(change) }
         reader.start()
         calendar.lead = settings.calendarLead
         calendar.onDue = { [weak self] event in Task { await self?.meetingCheck(event) } }
@@ -147,7 +158,10 @@ final class AppModel {
         modelDownload = await modelDownloader.update(.status)
         if modelDownload.phase == .waiting { modelDownload = await modelDownloader.update(.start) }
         if modelDownload.phase == .ready {
-            if !wasReady { await engine.send(.settings, engineSources) }
+            if !wasReady {
+                await engine.send(.settings, engineSources)
+                contextChanged()
+            }
             status = await engine.status()
         }
         updateGlyph()
@@ -177,33 +191,46 @@ final class AppModel {
 
     // MARK: - The context loop
 
-    private func contextChanged() {
+    private func contextChanged(_ change: ContextReader.Change = .context) {
         settleTask?.cancel()
         // Stop a pending lookup immediately while typing, and invalidate any answer in flight.
         dwellTask?.cancel()
+        if pendingAmbient?.meeting == nil {
+            signalTask?.cancel()
+        }
+        ambientLookups.didChange(textEdited: change == .textEdited, navigation: change == .navigation)
+        let delay = ambientLookups.settleDelay()
         settleTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             self?.settled()
         }
     }
 
-    /// The context has stopped changing. If the topic is new, the dwell clock restarts.
+    /// The context has stopped changing. Editing bypasses the reading dwell.
     private func settled() {
-        guard settings.onboarded, !settings.isPaused, let captured = reader.capture(includeBrowserURL: false) else { return }
+        // Use the same URL-bearing fingerprint as the search/cache, so a harmless
+        // browser focus event cannot discard a result waiting for its signal timer.
+        guard settings.onboarded, settings.ambientMode != .off, !settings.isPaused,
+              let captured = reader.capture(includeBrowserURL: true) else { return }
         let snapshot = captured.snapshot
         if let path = snapshot.documentPath {
             // Files you have open count as recently used.
             Task { await engine.send(.touch, path) }
         }
-        if snapshot.topic != topic {
-            topic = snapshot.topic
-            topicSince = Date()
-        }
         // A suggestion for the old context is stale now. One for a meeting waits for the meeting.
         if let waiting, waiting.meeting == nil, waiting.fingerprint != snapshot.fingerprint(salt: settings.salt) {
             if !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
             self.waiting = nil
+        }
+        if let pending = pendingAmbient, pending.meeting == nil {
+            if pending.context.fingerprint(salt: settings.salt) == snapshot.fingerprint(salt: settings.salt) {
+                // A selection/focus notification may leave the context unchanged. Its
+                // already-completed search must not lose the scheduled signal.
+                signalTask = Task { [weak self] in await self?.surfacePending() }
+            } else {
+                pendingAmbient = nil
+            }
         }
         updateGlyph()
         scheduleAmbient(for: snapshot)
@@ -213,7 +240,7 @@ final class AppModel {
         dwellTask?.cancel()
         guard settings.ambientMode != .off else { return }
         guard let delay = ambientLookups.delay(fingerprint: snapshot.fingerprint(salt: settings.salt),
-                                              dwell: Date().timeIntervalSince(topicSince), requiredDwell: settings.dwell) else { return }
+                                              topic: snapshot.topicFingerprint(salt: settings.salt), requiredDwell: settings.dwell) else { return }
         dwellTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
@@ -221,79 +248,104 @@ final class AppModel {
         }
     }
 
-    /// You've stayed in one context long enough: look, quietly.
+    /// Search promptly, even during the signal cooldown.
     private func ambientCheck() async {
-        guard modelDownload.phase == .ready, settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted, waiting?.meeting == nil,
+        guard modelDownload.phase == .ready, settings.ambientMode != .off, !settings.isPaused, accessibilityTrusted,
+              waiting?.meeting == nil, pendingAmbient?.meeting == nil,
               let captured = reader.capture(includeBrowserURL: true) else { return }
         if let reason = Exclusions.reason(for: captured, excludedApps: Set(settings.excludedApps), allowUnknownPrivacy: settings.ambientInSafari) {
             skippedReason = reason
             return
         }
-        // A photo has no words to read: the engine matches the picture itself.
-        guard captured.snapshot.characterCount >= 80 || captured.snapshot.showsPicture else { return }
+        // Short composed questions and pictures can both be useful without 80 characters.
+        guard captured.snapshot.hasAmbientText || captured.snapshot.showsPicture else { return }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
-        policy.settings = settings.policySettings
-        let dwell = Date().timeIntervalSince(topicSince)
-        guard policy.mayLook(dwell: dwell, fingerprint: fingerprint) == .show else { return }
-        ambientLookups.didStart()
         guard let response = try? await engine.related(RecallRequest(context: captured.snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         // The context may have moved on while the engine worked.
         guard !Task.isCancelled, !settings.isPaused, settings.ambientMode != .off,
               let current = reader.capture(includeBrowserURL: true),
               current.snapshot.fingerprint(salt: settings.salt) == fingerprint else { return }
         ambientLookups.didFinish(fingerprint: fingerprint)
-        let suggestions = Self.ambientPanelSuggestions(response.suggestions, isConfident: policy.isConfident)
-        guard !suggestions.isEmpty else { return }
+        await queueAmbient(response.suggestions, context: captured.snapshot, evidenceTerms: response.query.entities + response.query.rareTerms)
+    }
 
+    /// Cache results in memory until a signal is eligible. Context changes cancel this
+    /// one-shot timer and replace the cache with the latest draft's results.
+    private func queueAmbient(_ suggestions: [Suggestion], context: ContextSnapshot, evidenceTerms: [String], meeting: CalendarEvent? = nil) async {
+        guard meeting != nil || (waiting?.meeting == nil && pendingAmbient?.meeting == nil) else { return }
+        signalTask?.cancel()
+        let salt = settings.salt + (meeting.map { $0.id + String($0.start.timeIntervalSince1970) } ?? "")
+        pendingAmbient = PendingAmbient(context: context, suggestions: suggestions, evidenceTerms: evidenceTerms, meeting: meeting,
+                                        topic: context.topicFingerprint(salt: salt))
+        await surfacePending()
+    }
+
+    private func surfacePending() async {
+        guard let pending = pendingAmbient, !Task.isCancelled,
+              settings.ambientMode != .off, !settings.isPaused else { return }
+        let context = pending.context
+        let fingerprint = context.fingerprint(salt: settings.salt)
+        if let meeting = pending.meeting {
+            guard settings.calendarContext, meeting.start > Date() else { pendingAmbient = nil; return }
+        } else {
+            guard waiting?.meeting == nil,
+                  let current = reader.capture(includeBrowserURL: true),
+                  current.snapshot.fingerprint(salt: settings.salt) == fingerprint,
+                  Exclusions.reason(for: current, excludedApps: Set(settings.excludedApps), allowUnknownPrivacy: settings.ambientInSafari) == nil else {
+                pendingAmbient = nil
+                return
+            }
+        }
+        policy.settings = settings.policySettings
+        let suggestions = Self.ambientPanelSuggestions(pending.suggestions, isConfident: policy.isConfident) {
+            policy.maySuggest(itemID: $0.item.id, topic: pending.topic)
+        }
+        guard !suggestions.isEmpty else { pendingAmbient = nil; return }
+        let delay = policy.signalDelay()
+        if delay > 0 {
+            signalTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await self?.surfacePending()
+            }
+            return
+        }
         let mode: JournalEntry.Mode = settings.ambientMode == .on ? .ambient : .shadow
-        var entry = Shown(
-            mode: mode, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
-            fingerprint: fingerprint, suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: response.query.entities + response.query.rareTerms
-        )
-        entry.entryID = await engine.log(journalEntry(entry, dwell: dwell, context: captured.snapshot))
-        guard !Task.isCancelled else { return }
-        policy.didSurface(fingerprint: fingerprint)
+        var entry = Shown(mode: mode, bundleID: context.bundleID, appName: context.appName,
+                          windowTitle: context.windowTitle, fingerprint: fingerprint, topic: pending.topic,
+                          suggestions: suggestions, evidenceTerms: pending.evidenceTerms, meeting: pending.meeting)
+        entry.entryID = await engine.log(journalEntry(entry, dwell: pending.meeting == nil ? ambientLookups.dwell() : 0, context: context))
+        guard !Task.isCancelled, pendingAmbient?.id == pending.id, !settings.isPaused,
+              settings.ambientMode == (mode == .ambient ? .on : .shadow) else { return }
+        pendingAmbient = nil
+        policy.didSurface(itemIDs: suggestions.map { $0.item.id }, topic: pending.topic)
         if mode == .ambient {
+            if let waiting, !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
             waiting = entry
             updateGlyph()
+            if let meeting = pending.meeting {
+                expireMeeting(entry, at: min(meeting.end, meeting.start.addingTimeInterval(10 * 60)))
+            }
         }
     }
 
     // MARK: - Meetings
 
     /// A meeting is coming up: look for what you already have about it, quietly. The same
-    /// policy as a window (the threshold, the hourly budget, the backoff), minus the dwell: the
+    /// policy as a window (the threshold, signal gap and item deduplication), minus the dwell: the
     /// lead time is the moment. Its suggestion waits behind the glyph until shortly after the
     /// meeting starts, whatever window you're in.
     private func meetingCheck(_ event: CalendarEvent) async {
         guard modelDownload.phase == .ready, settings.calendarContext, settings.ambientMode != .off, !settings.isPaused,
               settings.onboarded || CalendarWatcher.isInjecting else { return }
         let snapshot = event.snapshot()
-        let fingerprint = snapshot.fingerprint(salt: settings.salt)
-        policy.settings = settings.policySettings
-        let decision = policy.mayLook(dwell: .infinity, fingerprint: fingerprint)
-        guard decision == .show else {
-            if case .wait(let reason) = decision { Self.log.info("Meeting coming up; not looking (\(reason, privacy: .public))") }
-            return
-        }
         guard let response = try? await engine.related(RecallRequest(context: snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
-        let suggestions = Self.ambientPanelSuggestions(response.suggestions, isConfident: policy.isConfident)
-        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public)")
-        guard !suggestions.isEmpty, event.start > Date() else { return }
+        policy.settings = settings.policySettings
+        let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
+        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
+        guard !confident.isEmpty, event.start > Date() else { return }
 
-        let mode: JournalEntry.Mode = settings.ambientMode == .on ? .ambient : .shadow
-        var entry = Shown(
-            mode: mode, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: event.title,
-            fingerprint: fingerprint, suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: response.query.entities + response.query.rareTerms, meeting: event
-        )
-        entry.entryID = await engine.log(journalEntry(entry, dwell: 0, context: snapshot))
-        policy.didSurface(fingerprint: fingerprint)
-        guard mode == .ambient else { return }
-        if let waiting, !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
-        waiting = entry
-        updateGlyph()
-        Self.log.info("Something for the meeting is waiting behind the glyph (\(String(describing: self.glyph), privacy: .public))")
-        expireMeeting(entry, at: min(event.end, event.start.addingTimeInterval(10 * 60)))
+        await queueAmbient(response.suggestions, context: snapshot, evidenceTerms: response.query.entities + response.query.rareTerms, meeting: event)
     }
 
     /// A meeting's suggestion fades shortly after the meeting starts.
@@ -319,10 +371,15 @@ final class AppModel {
     func setCalendarContext(_ on: Bool) {
         settings.calendarContext = on
         startCalendar()
+        if !on, pendingAmbient?.meeting != nil {
+            signalTask?.cancel()
+            pendingAmbient = nil
+        }
         if !on, waiting?.meeting != nil {
             waiting = nil
             updateGlyph()
         }
+        if !on { ambientSettingsChanged() }
     }
 
     func setCalendarLead(_ lead: TimeInterval) {
@@ -337,13 +394,18 @@ final class AppModel {
     /// The hotkey or a click: read the window now and show what relates, always.
     func pull() async {
         // An ambient result is already waiting: show it.
-        if let waiting {
+        if let waiting, waiting.meeting != nil || reader.capture(includeBrowserURL: true)?.snapshot.fingerprint(salt: settings.salt) == waiting.fingerprint {
             selectedIndex = 0
             shown = waiting
             self.waiting = nil
             updateGlyph()
             onShow?(true)
             return
+        }
+        if let waiting {
+            if !waiting.interacted { record(.ignored, for: waiting, item: waiting.suggestions.first, position: 0) }
+            self.waiting = nil
+            updateGlyph()
         }
         pullError = nil
         skippedReason = nil
@@ -384,11 +446,13 @@ final class AppModel {
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
         do {
             let response = try await engine.related(RecallRequest(context: captured.snapshot, trigger: .pull, limit: Self.contextResultLimit))
+            let topic = captured.snapshot.topicFingerprint(salt: settings.salt)
+            let eligible = response.suggestions.filter { !policy.isDismissed(itemID: $0.item.id, topic: topic) }
             var entry = Shown(mode: .pull, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
-                              fingerprint: fingerprint, suggestions: Array(response.suggestions.prefix(Self.contextResultLimit)),
+                              fingerprint: fingerprint, topic: topic, suggestions: Array(eligible.prefix(Self.contextResultLimit)),
                               evidenceTerms: response.query.entities + response.query.rareTerms)
             shown = entry
-            entry.entryID = await engine.log(journalEntry(entry, dwell: Date().timeIntervalSince(topicSince), context: captured.snapshot))
+            entry.entryID = await engine.log(journalEntry(entry, dwell: ambientLookups.dwell(), context: captured.snapshot))
             if shown?.fingerprint == fingerprint { shown?.entryID = entry.entryID }
         } catch {
             pullError = error.localizedDescription
@@ -463,7 +527,7 @@ final class AppModel {
     }
 
     private func record(_ outcome: Outcome, for shown: Shown, item: Suggestion?, position: Int) {
-        if shown.mode == .ambient { policy.record(outcome) }
+        if let item { policy.record(outcome, itemID: item.item.id, topic: shown.topic) }
         guard let entryID = shown.entryID, let item else { return }
         let event = FeedbackEvent(entryID: entryID, itemID: item.item.id, position: position, outcome: outcome)
         Task { await engine.send(.feedback, event) }
@@ -484,11 +548,17 @@ final class AppModel {
     // MARK: - Settings
 
     func sourcesChanged() {
+        dwellTask?.cancel()
+        signalTask?.cancel()
+        pendingAmbient = nil
         if !settings.sources.messages {
             shown?.suggestions.removeAll { $0.item.source == .messages }
             selectedIndex = min(selectedIndex, max(visibleSuggestions.count - 1, 0))
         }
-        Task { await engine.send(.settings, engineSources) }
+        Task {
+            await engine.send(.settings, engineSources)
+            ambientSettingsChanged()
+        }
     }
 
     /// `-ask`: wait for the engine to be ready and idle, then ask with scripted text.
@@ -515,14 +585,28 @@ final class AppModel {
 
     func pause(for interval: TimeInterval?) {
         settings.pausedUntil = interval.map { Date().addingTimeInterval($0) }
+        dwellTask?.cancel()
+        signalTask?.cancel()
+        pendingAmbient = nil
         waiting = nil
+        if interval == nil { contextChanged() }
         updateGlyph()
     }
 
     func setAmbientMode(_ mode: AmbientMode) {
         settings.ambientMode = mode
-        if mode == .off { dwellTask?.cancel(); waiting = nil }
+        dwellTask?.cancel()
+        signalTask?.cancel()
+        pendingAmbient = nil
+        waiting = nil
+        ambientLookups.invalidate()
+        if mode != .off { contextChanged() }
         updateGlyph()
+    }
+
+    func ambientSettingsChanged() {
+        ambientLookups.invalidate()
+        contextChanged()
     }
 
 

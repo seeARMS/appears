@@ -174,7 +174,7 @@ struct Eval: AsyncParsableCommand {
     @Option(help: "The demo folder (default: demo/ in this checkout).")
     var demo: String?
     @Option(help: "The ambient sensitivity (0–1) to judge false surfaces with.")
-    var sensitivity: Double = 0.5
+    var sensitivity: Double = SurfacePolicy.Settings().sensitivity
     @Flag(help: "Print every result.")
     var verbose = false
     @Option(help: "Results per scenario (recall is still judged on the top 3).")

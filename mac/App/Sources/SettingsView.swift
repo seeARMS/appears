@@ -34,14 +34,14 @@ struct GeneralPane: View {
                     Text("Log only (shadow)").tag(AmbientMode.shadow)
                     Text("Off").tag(AmbientMode.off)
                 }
-                LabeledContent("How often") {
+                LabeledContent("Match selectivity") {
                     HStack {
-                        Text("Rarely").font(.caption).foregroundStyle(.secondary)
+                        Text("Stricter").font(.caption).foregroundStyle(.secondary)
                         Slider(value: $model.settings.sensitivity, in: 0...1)
-                        Text("More").font(.caption).foregroundStyle(.secondary)
+                        Text("Broader").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                LabeledContent("Wait before looking") {
+                LabeledContent("Wait while reading") {
                     Picker("", selection: $model.settings.dwell) {
                         Text("5 seconds").tag(5.0)
                         Text("15 seconds").tag(15.0)
@@ -52,6 +52,8 @@ struct GeneralPane: View {
                     .frame(width: 140)
                 }
             } footer: {
+                Text("After typing, Appears looks after a two-second pause. New suggestions signal at least one minute apart. Ignoring or closing one doesn’t slow the next.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("“Log only” looks on its own and records what it would have shown, without changing the menu bar. Useful for checking whether it would be right before letting it interrupt.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -110,6 +112,8 @@ struct GeneralPane: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: model.settings.sensitivity) { model.ambientSettingsChanged() }
+        .onChange(of: model.settings.dwell) { model.ambientSettingsChanged() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             calendarAccess = CalendarWatcher.access
         }
