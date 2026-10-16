@@ -19,7 +19,7 @@ struct SearchView: View {
                     .foregroundStyle(Theme.mutedForeground)
                 SearchField(text: $model.query, command: command)
                     .frame(height: 34)
-                if model.isSearching { ProgressView().controlSize(.small) }
+                if model.isSearching { ProgressView().controlSize(.small).accessibilityLabel("Updating results") }
                 if !model.query.isEmpty {
                     Button { model.query = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.mutedForeground)
@@ -32,7 +32,7 @@ struct SearchView: View {
             .padding(.horizontal, 20)
             .frame(height: 68)
             Rectangle().fill(Theme.border).frame(height: 1)
-            content.frame(height: model.hasQuery ? 350 : 148)
+            content.frame(height: model.hasQuery ? 350 : 190)
             footer
         }
         .frame(width: 640)
@@ -45,7 +45,7 @@ struct SearchView: View {
         .onChange(of: model.app.status?.counts.indexedTotal) {
             if model.results.isEmpty { model.refresh() }
         }
-        .onChange(of: model.app.settings.sources) { model.refresh() }
+        .onChange(of: model.app.settings.sources) { model.refresh(clearResults: true) }
     }
 
     @ViewBuilder private var content: some View {
@@ -55,6 +55,12 @@ struct SearchView: View {
         } else if let error = model.error {
             message("Search unavailable", text: error) {
                 Button("Try again") { model.refresh() }.buttonStyle(OutlineButtonStyle())
+            }
+        } else if model.app.engineStatusError != nil || (model.app.status?.ready != true && model.results.isEmpty) {
+            ReadinessView(model: model.app, openSources: openSettings).padding(24)
+        } else if let preview = model.sourcePreview {
+            SourcePreviewView(suggestion: preview, back: { model.sourcePreview = nil }) {
+                if model.open(preview) { finish() }
             }
         } else if !model.hasQuery {
             message("Find it by meaning", text: "Search your files, photos, notes and messages. Describe what you remember.") {
@@ -70,24 +76,39 @@ struct SearchView: View {
                                 if model.open(suggestion) { finish() }
                             } reveal: {
                                 if model.open(suggestion, reveal: true) { finish() }
+                            } preview: {
+                                model.selectedIndex = model.results.firstIndex { $0.id == suggestion.id } ?? model.selectedIndex
+                                model.sourcePreview = suggestion
                             }
+                            .allowsHitTesting(!model.isSearching)
+                            .accessibilityHidden(model.isSearching)
                             .id(suggestion.id)
                         }
                     }
                     .padding(6)
                 }
+                .opacity(model.isSearching ? 0.75 : 1)
                 .onChange(of: model.selectedIndex) {
                     if let selected = model.selected { proxy.scrollTo(selected.id) }
                 }
             }
         } else if model.isSearching {
             message("Searching your index…", text: "Matching what you mean, across text and images.") { EmptyView() }
+        } else if model.app.status?.error != nil {
+            ReadinessView(model: model.app, openSources: openSettings).padding(24)
         } else if model.app.status?.counts.indexedTotal == 0 {
             message("Your index is still getting started", text: "Results appear as Appears reads your enabled sources.") {
                 Button("Open Settings", action: openSettings).buttonStyle(OutlineButtonStyle())
             }
         } else {
-            message("No results", text: "Try another description, a name, or a few more details.") { EmptyView() }
+            message("No results", text: model.app.status?.counts.waiting ?? 0 > 0
+                    ? "No matches yet. More items are still being indexed; try again shortly."
+                    : "Try another description, a name, or a few more details.") {
+                if let missing = model.app.missingSourceAccess {
+                    Text(missing).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                }
+                Button("View sources", action: openSettings).buttonStyle(OutlineButtonStyle())
+            }
         }
     }
 
@@ -106,13 +127,19 @@ struct SearchView: View {
         HStack(spacing: 14) {
             HStack(spacing: 6) {
                 Image(nsImage: GlyphImage.image(for: .idle)).renderingMode(.template).frame(width: 14, height: 14)
-                Text("Appears")
+                Button("Sources", action: openSettings).buttonStyle(.plain)
+                    .help(model.app.readinessDetail)
             }
             Spacer()
-            if !model.results.isEmpty {
+            if model.isSearching {
+                Text(model.results.isEmpty ? "Searching…" : "Updating results…")
+            } else if model.sourcePreview != nil {
+                hint("esc", "back")
+                hint("↩", "open")
+            } else if !model.results.isEmpty {
                 hint("↑↓", "select")
                 hint("↩", "open")
-                if model.selected?.item.fileURL != nil { hint("⌘Y", "preview") }
+                hint("⌘Y", "preview")
             } else {
                 Text("Only on this Mac")
             }
@@ -137,7 +164,8 @@ struct SearchView: View {
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(-1)
         case #selector(NSResponder.insertNewline(_:)):
             if let selected = model.selected, model.open(selected, reveal: NSApp.currentEvent?.modifierFlags.contains(.command) == true) { finish() }
-        case #selector(NSResponder.cancelOperation(_:)): close()
+        case #selector(NSResponder.cancelOperation(_:)):
+            if model.sourcePreview != nil { model.sourcePreview = nil } else { close() }
         default: return false
         }
         return true
@@ -149,13 +177,15 @@ private struct SearchResultRow: View {
     let selected: Bool
     let open: () -> Void
     let reveal: () -> Void
+    let preview: () -> Void
     @State private var thumbnail: NSImage?
 
-    init(suggestion: Suggestion, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void) {
+    init(suggestion: Suggestion, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void, preview: @escaping () -> Void) {
         self.suggestion = suggestion
         self.selected = selected
         self.open = open
         self.reveal = reveal
+        self.preview = preview
         _thumbnail = State(initialValue: Thumbnails.cache[suggestion.item.id])
     }
 
@@ -199,6 +229,7 @@ private struct SearchResultRow: View {
         .contextMenu {
             Button("Open", action: open)
             if suggestion.item.fileURL != nil { Button("Show in Finder", action: reveal) }
+            else { Button("Preview passage", action: preview) }
             if let line = suggestion.line { Button("Copy Line") { line.copyToPasteboard() } }
         }
         .task(id: suggestion.id) { thumbnail = await Thumbnails.image(for: suggestion) }

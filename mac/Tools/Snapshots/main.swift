@@ -192,7 +192,16 @@ let weaker = [
     let model = AppModel()
     var status = EngineStatus()
     status.ready = true
-    status.counts.indexed = [.image: 2_413, .pdf: 611, .document: 3_982, .note: 214]
+    status.protectedFoldersReadable = true
+    status.notesReadable = true
+    status.messagesReadable = true
+    status.watchedFolders = [demo.path]
+    status.sources = [
+        SourceStatus(source: .file, indexed: 7_006, lastChecked: Date().addingTimeInterval(-180)),
+        SourceStatus(source: .notes, indexed: 214, lastChecked: Date().addingTimeInterval(-120)),
+        SourceStatus(source: .messages, indexed: 2_100, lastChecked: Date().addingTimeInterval(-30)),
+    ]
+    status.counts.indexed = [.image: 2_413, .pdf: 611, .document: 3_982, .note: 214, .message: 2_100]
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Kitchen — can you start on the 14th?", fingerprint: "x",
                                 suggestions: suggestions, evidenceTerms: ["Dana", "Ruiz", "kitchen", "outlet", "cabinets", "countertops"]), status: status)
@@ -258,6 +267,8 @@ let weaker = [
     model.showForSnapshot(nil, status: status)
     render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources", width: 560)
     render(UpdatesPane(updater: model.updater).frame(width: 560, height: 600), "settings-updates", width: 560)
+    verifyLaunchBehavior()
+    await verifySearchUpdates(model, suggestions: suggestions)
     let search = SearchModel(app: model)
     func searchSnapshot(_ name: String) {
         render(SearchView(model: search, close: {}, finish: {}, openSettings: {}, resize: { _ in }), name, width: 640)
@@ -265,6 +276,55 @@ let weaker = [
     searchSnapshot("search-empty")
     search.showForSnapshot(query: "the quote for the kitchen", results: suggestions)
     searchSnapshot("search-results")
+    search.showForSnapshot(query: "the kitchen permit", results: suggestions, searching: true)
+    searchSnapshot("search-updating")
+    let noteItem = Item(id: 101, source: .notes, path: "notes:demo-kitchen", kind: .note, title: "Kitchen measurements",
+                        size: 120, created: Date().addingTimeInterval(-520 * 86_400), modified: Date(), lastUsed: nil)
+    let note = Suggestion(item: noteItem, unit: Unit(kind: .text, locator: .chunk(0), text: "Back wall: 11′ 4″ (sink wall).\nWindow: 36″ wide, sill at 42″.\n\nDana said the outlet by the window has to move for code. Ask whether that work is included in the quote."),
+                          reason: "Mentions Dana", snippet: "Dana said the outlet by the window has to move for code.", score: 1, confidence: 0.9, features: features)
+    let messageItem = Item(id: 102, source: .messages, path: "messages:demo", kind: .message, title: "Dana Ruiz",
+                           size: 100, created: Date().addingTimeInterval(-500 * 86_400), modified: Date(), lastUsed: nil)
+    let message = Suggestion(item: messageItem, unit: Unit(kind: .text, locator: .whole, text: "Me: Does the kitchen quote include moving the outlet?\nDana: Yes, moving the outlet by the window is included. The permit covers that work too.\nMe: Great, thank you. I’ll keep the quote with the permit."),
+                             reason: "Mentions outlet", snippet: "Moving the outlet is included.", score: 1, confidence: 0.9, features: features)
+    for (suggestion, name) in [(note, "note"), (message, "message")] {
+        search.showForSnapshot(query: "does the quote include the outlet", results: [suggestion])
+        search.toggleSourcePreview()
+        precondition(search.sourcePreview?.id == suggestion.id)
+        searchSnapshot("search-preview-\(name)")
+        render(SourcePreviewView(suggestion: suggestion, back: {}, open: {}).frame(width: 400), "preview-\(name)", width: 400)
+        search.clear()
+        precondition(search.sourcePreview == nil)
+    }
+    search.showForSnapshot(query: "does the kitchen quote include the outlet", results: [note, message], searching: true)
+    searchSnapshot("search-updating")
+    var partial = status
+    partial.progress.phase = .indexing
+    partial.counts.waiting = 3_200
+    partial.sources[0].waiting = 3_200
+    partial.notesReadable = false
+    partial.messagesReadable = false
+    model.showForSnapshot(nil, status: partial)
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-indexing", width: 560)
+    search.showForSnapshot(query: "our trip", results: [])
+    searchSnapshot("search-partial-index")
+    var paused = status
+    paused.progress.phase = .paused
+    paused.progress.pausedReason = "Low Power Mode"
+    model.showForSnapshot(nil, status: paused)
+    precondition(model.readinessTitle == "Indexing paused" && model.readinessDetail == "Low Power Mode")
+    render(ReadinessView(model: model, details: true).padding(16).frame(width: 400), "source-health-paused", width: 400)
+    var failed = status
+    failed.error = "Couldn’t check changed files. Use Look for new items now in Sources to retry."
+    model.showForSnapshot(nil, status: failed)
+    precondition(model.readinessTitle == "Index needs attention")
+    render(ReadinessView(model: model, details: true).padding(16).frame(width: 400), "source-health-error", width: 400)
+    var empty = status
+    empty.counts = IndexCounts()
+    empty.sources = [SourceStatus(source: .file, lastChecked: Date())]
+    model.showForSnapshot(nil, status: empty)
+    precondition(model.readinessTitle == "No items indexed yet")
+    render(ReadinessView(model: model, details: true).padding(16).frame(width: 400), "source-health-empty", width: 400)
+    model.showForSnapshot(nil, status: status)
     search.showForSnapshot(query: "the wifi password at the cabin", results: [cabin])
     searchSnapshot("search-answer")
     search.showForSnapshot(query: "our trip to Lisbon", results: [], searching: true)

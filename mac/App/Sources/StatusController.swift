@@ -16,6 +16,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     private var hoverCloseTask: Task<Void, Never>?
     private var clickMonitor: Any?
     var openSettings: (() -> Void)?
+    var openSources: (() -> Void)?
     var openSearch: (() -> Void)?
     var willShow: (() -> Void)?
 
@@ -23,7 +24,9 @@ final class StatusController: NSObject, NSMenuItemValidation {
         self.model = model
         panel = ResultsPanel()
         super.init()
-        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, resize: { [weak self] size in
+        panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, openSources: { [weak self] in
+            self?.close(); self?.openSources?()
+        }, openSearch: { [weak self] in self?.openSearch?() }, resize: { [weak self] size in
             guard let self, self.panel.isVisible else { return }
             self.position(contentSize: size)
         }))
@@ -125,11 +128,13 @@ final class StatusController: NSObject, NSMenuItemValidation {
 
     private func handleKey(_ event: NSEvent) -> Bool {
         switch event.keyCode {
-        case 53: close(); return true  // Esc
+        case 53:
+            if model.sourcePreview != nil { model.sourcePreview = nil } else { close() }
+            return true
         case 125: model.moveSelection(1); return true  // ↓
         case 126: model.moveSelection(-1); return true  // ↑
         case 36, 76:  // Return
-            if let selected = model.selected {
+            if let selected = model.sourcePreview ?? model.selected {
                 model.act(event.modifierFlags.contains(.command) ? .revealed : .opened, on: selected)
                 close()
             }
@@ -149,14 +154,19 @@ final class StatusController: NSObject, NSMenuItemValidation {
     /// ⌥⌘C: copy the selected result's matched line, then close, so ⌘V lands in the app you're
     /// in. (⌘C is left free.)
     func copyLine() {
-        guard let selected = model.selected, let line = selected.line else { return }
+        guard let selected = model.sourcePreview ?? model.selected, let line = selected.line else { return }
         line.copyToPasteboard()
         model.act(.copiedLine, on: selected)
         close()
     }
 
     func quickLook() {
-        guard let selected = model.selected, let url = selected.item.fileURL else { return }
+        guard let selected = model.selected else { return }
+        guard let url = selected.item.fileURL else {
+            model.sourcePreview = model.sourcePreview == nil ? selected : nil
+            if model.sourcePreview != nil { model.act(.previewed, on: selected) }
+            return
+        }
         model.act(.previewed, on: selected)
         panel.previewURL = url
         let preview = QLPreviewPanel.shared()!
@@ -184,6 +194,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
         } else if let status = model.status {
             menu.addItem(withTitle: Self.indexLine(status), action: nil, keyEquivalent: "").isEnabled = false
         }
+        menu.addItem(withTitle: "Index & Sources…", action: #selector(sourcesFromMenu), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(settingsFromMenu), keyEquivalent: ",").target = self
         let updateTitle = model.updater.availableVersion.map { "Version \($0) Available…" } ?? "Check for Updates…"
         let updateItem = menu.addItem(withTitle: updateTitle, action: #selector(checkForUpdates), keyEquivalent: "")
@@ -197,6 +208,8 @@ final class StatusController: NSObject, NSMenuItemValidation {
 
     /// "7,803 of 10,612 indexed · indexing…" while anything is waiting, else the total.
     static func indexLine(_ status: EngineStatus) -> String {
+        if status.error != nil { return "Index needs attention" }
+        if !status.ready { return "Starting the search engine…" }
         let counts = status.counts
         guard counts.waiting > 0 else { return "\(counts.indexedTotal.formatted()) things indexed" }
         let total = counts.indexedTotal + counts.waiting
@@ -218,6 +231,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     }
     @objc private func resume() { model.pause(for: nil) }
     @objc private func settingsFromMenu() { openSettings?() }
+    @objc private func sourcesFromMenu() { openSources?() }
     @objc private func checkForUpdates() { model.updater.checkNow() }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

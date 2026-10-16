@@ -12,12 +12,20 @@ final class SearchModel {
     private(set) var isSearching = false
     private(set) var error: String?
     var selectedIndex = 0
+    var sourcePreview: Suggestion?
+    @ObservationIgnored private let search: (String) async throws -> RecallResponse
     @ObservationIgnored private var worker: Task<Void, Never>?
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var deadline = Date.distantPast
     @ObservationIgnored private var isOpen = false
 
-    init(app: AppModel) { self.app = app }
+    init(app: AppModel, search: ((String) async throws -> RecallResponse)? = nil) {
+        self.app = app
+        self.search = search ?? {
+            await app.sourcesUpdate?.value
+            return try await app.engine.search($0)
+        }
+    }
 
     var selected: Suggestion? {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
@@ -35,14 +43,15 @@ final class SearchModel {
         error = nil
         isSearching = false
         selectedIndex = 0
+        sourcePreview = nil
     }
 
-    func refresh() {
+    func refresh(clearResults: Bool = false) {
         revision += 1
-        results = []
         error = nil
-        selectedIndex = 0
+        sourcePreview = nil
         isSearching = isOpen && hasQuery && app.modelDownload.phase == .ready
+        if clearResults || !isSearching { results = []; selectedIndex = 0 }
         deadline = Date().addingTimeInterval(0.18)
         guard isSearching, worker == nil else { return }
         // One request at a time: typing while the model is busy replaces the pending query
@@ -58,14 +67,18 @@ final class SearchModel {
                 if version != self.revision { continue }
                 let text = self.query
                 do {
-                    let response = try await self.app.engine.search(text)
+                    let response = try await self.search(text)
                     guard self.isOpen else { return }
                     if version != self.revision { continue }
-                    self.results = response.suggestions
+                    let selectedID = self.selected?.id
+                    self.results = response.suggestions.filter { self.app.mayShow($0.item) }
+                    self.selectedIndex = selectedID.flatMap { id in self.results.firstIndex { $0.id == id } } ?? 0
                     self.isSearching = false
                 } catch {
                     guard self.isOpen else { return }
                     if version != self.revision { continue }
+                    self.results = []
+                    self.selectedIndex = 0
                     // Keep the engine's actionable failure in memory only, just like the
                     // query. Neither is written to logs or the suggestion journal.
                     if self.app.modelDownload.phase == .ready,
@@ -84,10 +97,12 @@ final class SearchModel {
     func moveSelection(_ delta: Int) {
         guard !results.isEmpty else { return }
         selectedIndex = min(max(selectedIndex + delta, 0), results.count - 1)
+        if sourcePreview != nil { sourcePreview = selected?.item.fileURL == nil ? selected : nil }
     }
 
     @discardableResult
     func open(_ suggestion: Suggestion, reveal: Bool = false) -> Bool {
+        guard !isSearching else { return false }
         if reveal {
             guard let url = suggestion.item.fileURL else { return false }
             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -96,6 +111,11 @@ final class SearchModel {
             Task { await app.engine.send(.touch, suggestion.item.path) }
         }
         return true
+    }
+
+    func toggleSourcePreview() {
+        guard !isSearching, let selected, selected.item.fileURL == nil else { return }
+        sourcePreview = sourcePreview == nil ? selected : nil
     }
 
     /// Demo-only rendering, without searching or touching the user's index.

@@ -510,6 +510,31 @@ public final class IndexStore: Sendable {
 
     // MARK: - Counts
 
+    public func sourceStatuses() throws -> [SourceStatus] {
+        try pool.read { db in
+            try [ItemSource.file, .notes, .messages].map { source in
+                let rows = try Row.fetchAll(db, sql: "SELECT state, count(*) AS n FROM item WHERE source = ? GROUP BY state", arguments: [source.rawValue])
+                var status = SourceStatus(source: source)
+                for row in rows {
+                    let count: Int = row["n"]
+                    switch row["state"] as Int {
+                    case 0: status.waiting += count
+                    case 1: status.indexed += count
+                    case 2: status.unreadable += count
+                    default: break
+                    }
+                }
+                let value = try String.fetchOne(db, sql: "SELECT value FROM meta WHERE key = ?", arguments: ["checked_\(source.rawValue)"])
+                status.lastChecked = value.flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+                return status
+            }
+        }
+    }
+
+    func didCheck(_ source: ItemSource, at date: Date = Date()) throws {
+        try setMeta("checked_\(source.rawValue)", String(date.timeIntervalSince1970))
+    }
+
     public func counts() throws -> IndexCounts {
         try pool.read { db in
             var counts = IndexCounts()
