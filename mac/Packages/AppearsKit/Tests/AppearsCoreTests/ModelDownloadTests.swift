@@ -76,6 +76,32 @@ import Testing
         #expect(!ModelAssets.isInstalled(descriptor, root: root))
     }
 
+    @Test func newerAppPinInstallsNewModelAndKeepsPreviousVersion() async throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = try descriptor(root)
+        let old = ModelInstaller(descriptor: original, root: root) { url, _, _ in
+            let copy = root.appending(path: UUID().uuidString)
+            try FileManager.default.copyItem(at: root.appending(path: "fixture"), to: copy)
+            return (copy, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        await old.start()
+        #expect(try await finished(old).phase == .ready)
+        let updatedFiles = try descriptor(root, text: "new made-up model weights").files
+        let updated = ModelDescriptor(id: "test-model-v2", baseURL: URL(string: "https://appea.rs/models/test-model-v2/")!, files: updatedFiles)
+        #expect(!ModelAssets.isInstalled(updated, root: root))
+        let next = ModelInstaller(descriptor: updated, root: root) { url, _, _ in
+            #expect(url.absoluteString == "https://appea.rs/models/test-model-v2/model.safetensors")
+            let copy = root.appending(path: UUID().uuidString)
+            try FileManager.default.copyItem(at: root.appending(path: "fixture"), to: copy)
+            return (copy, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        await next.start()
+        #expect(try await finished(next).phase == .ready)
+        #expect(ModelAssets.isInstalled(updated, root: root))
+        #expect(ModelAssets.isInstalled(original, root: root))
+    }
+
     @Test func failedDownloadRetainsResumeDataAndRetryCompletes() async throws {
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }

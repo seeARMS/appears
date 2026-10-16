@@ -40,6 +40,15 @@ Site: [appea.rs](https://appea.rs) (in `web/`). MIT licensed. The plan and the r
 - **`appears mcp`,** the CLI's server for agents, has no networking code either and runs only when an agent you set up starts it. What that agent does with the results is up to the agent; see [For agents](#for-agents).
 - **Nothing about what was on screen is stored,** and the same goes for calendar events, which are read through EventKit in memory and never logged. Password managers, Keychain Access, System Settings, secure text fields and private browser windows (Chrome incognito, Firefox private) are never read. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on; asking still works there. You can exclude more apps, or pause.
 - **The model download** runs in `AppearsDownloader.xpc`, a separate sandbox with network.client only and no access to your files or screen. On first launch it downloads about 914 MB of pinned model files while you go through onboarding. Every file must match its bundled size and SHA-256 before an atomic install makes the model available to the engine. Completed files and resume data survive download failures; Retry continues setup. Once installed, the app works offline. The app and engine never download anything themselves.
+- **App updates** use Sparkle's separate sandboxed Downloader, with network.client only and no user-file access. The pinned Sparkle source build removes its in-process downloader and web views; the privacy check inspects the framework as well as the app. Update feeds and DMGs must have valid Ed25519 signatures. No analytics or system profiling is sent.
+
+## Updates
+
+Settings → Updates has **Automatically check for updates**, on by default. Sparkle checks once a day while the app is running and catches up after relaunch when a check is overdue. Turning it off stops scheduled update checks; **Check for Updates…** in Settings or the menu still works. First-run model setup is independent of this preference.
+
+Scheduled checks never open a window or steal focus. An available version appears in Settings and the menu. Choose **View Changelog and Update…** to see the available version, your installed version, and the GitHub release's changelog, then choose whether to download and install. Release notes are copied from the matching published GitHub release into the signed feed during the release build. The app needs no GitHub token and renders Markdown as native text, without loading remote images or web content.
+
+Models stay pinned to compatible app releases. Installing an app with a new model pin automatically downloads and verifies that model on the next launch; it does not independently chase upstream model versions. Existing model files are reused when the pin is unchanged.
 
 ## Repository
 
@@ -65,9 +74,10 @@ brand/                      the mark and app icon
 
 You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [uv](https://docs.astral.sh/uv/). If `xcode-select -p` points at the Command Line Tools, prefix Xcode commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
-1. Build the lightweight app (Release is much faster than Debug: MLX runs unoptimized in Debug):
+1. Build the isolated Sparkle framework once, then the lightweight app (Release is much faster than Debug: MLX runs unoptimized in Debug):
 
    ```bash
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer mac/scripts/build-sparkle.sh
    cd mac && xcodegen && xcodebuild -project Appears.xcodeproj -scheme Appears -configuration Release -derivedDataPath build/DerivedData ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
    ```
 
@@ -121,6 +131,8 @@ open -n /Applications/Appears.app --args -demo "$PWD/demo/files" -event "Kitchen
 ```
 
 ## Tests and the eval
+
+After building Sparkle and the app, `mac/scripts/test-updates.sh` checks preference persistence, quiet discoveries and release validation in a separate fixture app, and renders the update settings and changelog in light and dark. `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer python3 -I -m unittest discover -s mac/scripts/tests` verifies GitHub release metadata and real signatures, including tampering and mismatched keys. Both use made-up data and ephemeral test keys.
 
 ```bash
 cd mac/Packages/AppearsKit && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
@@ -210,7 +222,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"related","
 
 ## Releasing to appea.rs
 
-`.github/workflows/release.yml` runs on a pushed `vX.Y.Z` tag (which must match `VERSION`), or manually against an existing tag. It tests the core and web routes, prepares the separately hosted model, builds the arm64 app, checks the privacy boundaries, signs with Developer ID, notarizes and staples the app and DMG, then uploads to the private `appears-downloads` R2 bucket in the personal Cloudflare account. `mac/scripts/release.sh` only builds; the upload steps are separate.
+`.github/workflows/release.yml` runs when a stable GitHub release is published for a `vX.Y.Z` tag (which must match `VERSION`), or manually against an existing tag with a published release. Give the GitHub release a nonempty changelog. The workflow reads that exact release using its read-only GitHub token, tests the core and web routes, prepares the separately hosted model, builds the isolated Sparkle framework and arm64 app, checks the privacy boundaries, signs with Developer ID, notarizes and staples the app and DMG, then uploads to the private `appears-downloads` R2 bucket in the personal Cloudflare account. `mac/scripts/release.sh` only builds; the upload steps are separate.
 
 The site Worker exposes `https://appea.rs/app.dmg`, an uncached redirect to an immutable `/downloads/vX.Y.Z/Appears.dmg`. The landing page, Markdown and llms.txt share that link. The upload script reads back and hashes the R2 files before switching `latest.json`. Previous version URLs keep working, including paused downloads. The thin app is eligible for the Worker's edge cache; model files above Cloudflare's 512 MB standard limit stream from R2. Nothing private from the source repository is published.
 
@@ -218,8 +230,11 @@ One-time setup, before the first release:
 
 1. In `web/`, use the personal profile to create the private bucket: `npm run cf -- r2 bucket create appears-downloads`. Keep public bucket access disabled; the Worker has an R2 binding. Deploy the updated site Worker once so `/downloads/*` and `/models/*` are served.
 2. Add GitHub repository secrets: `APPLE_CERTIFICATE_BASE64` (exported Developer ID Application `.p12`, base64 encoded), `APPLE_CERTIFICATE_PASSWORD`, `NOTARY_KEY_P8` (App Store Connect private key), `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (Object Read & Write, scoped to this bucket). Optional `HF_TOKEN` is used only to prepare the upstream model. Keep long-term credential copies in 1Password; never put values in the repo, shell history or chat.
-3. Add repository variables: `DEVELOPER_ID` (full Developer ID Application identity), `APPLE_TEAM_ID`, and `NOTARY_KEY_ID`. Set `NOTARY_ISSUER` for a Team API key; leave it unset for an Individual key.
-4. When ready to release, update `VERSION`, commit the intended release, and push its `vX.Y.Z` tag. Signing credentials live only in a temporary runner keychain and are removed after the job.
+3. Create a dedicated Ed25519 update-signing key, keep its long-term copy in 1Password, add its base64 private seed as the `SPARKLE_PRIVATE_KEY` repository secret, and its base64 public key as the `SPARKLE_PUBLIC_ED_KEY` repository variable. Release builds verify that they match. Never regenerate this key for an ordinary release. Local builds without a public key show that update checks are unavailable; they do not contact the feed. To test a development build against the real feed, provide the public key through `mac/Config/Local.xcconfig`.
+4. Add repository variables: `DEVELOPER_ID` (full Developer ID Application identity), `APPLE_TEAM_ID`, and `NOTARY_KEY_ID`. Set `NOTARY_ISSUER` for a Team API key; leave it unset for an Individual key.
+5. When ready to release, update `VERSION`, commit the intended release, push its `vX.Y.Z` tag, and publish a stable GitHub release with its changelog. Tag pushes alone do not publish a download. Signing credentials live only in a temporary runner keychain or private runner files and are removed after the job.
+
+The release build signs both the DMG and an appcast containing GitHub's Markdown notes. `/appcast.xml` serves those signed bytes from R2 with a five-minute cache. The uploader promotes the feed only after reading back and verifying the immutable DMG. Publishing a private repository's release notes this way makes that changelog public, but never exposes the private source or GitHub credentials. Local release builds also need `SPARKLE_PUBLIC_ED_KEY`, `SPARKLE_PRIVATE_KEY_PATH`, and `GITHUB_RELEASE_PATH` (the matching GitHub release JSON).
 
 No R2 bucket, credentials, deployment or first release is created by adding these files. For rollback, put a previously verified version and its SHA-256 back into the bucket's `latest.json`; don't overwrite immutable version or model files. A failed upload never promotes an unverified DMG. A version that was already uploaded is not overwritten on rerun.
 
@@ -230,7 +245,7 @@ No R2 bucket, credentials, deployment or first release is created by adding thes
 - **Folders added under Include** are scanned, but not watched for changes until the next full rescan (every 6 hours) or a relaunch.
 - **Releases:**
   - configure the Apple signing/notarization credentials, R2 bucket and GitHub settings above, then verify the first live workflow and download;
-  - Sparkle (`web/public/appcast.xml` is ready and empty; the app must use Sparkle's Downloader XPC service, since it can't reach the network itself);
+  - configure the dedicated Sparkle signing key and verify an installed signed release updating to the next release, including the isolated downloader and any changed model pin;
   - the Homebrew cask.
 - **`appears mcp` without a checkout or Full Disk Access:** the CLI isn't in the app or the Homebrew cask yet. Reading the app's index needs Full Disk Access for the agent's app. Tested 2026-10-15 on macOS 27: nothing signed with the self-signed dev certificate gets into the engine's container, even with the engine's exact identifier. Apple lets apps with the same Team ID read each other's containers, so shipping the CLI inside Appears.app under the release Team ID should work, but it's untested until there is a Team ID. Moving the index out of the container would let any process read Notes and Documents text, so it stays where it is.
 - **Not in v0:** voice memos and audio, video, Mail, Photos (see PLAN.md).

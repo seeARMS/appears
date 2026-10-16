@@ -13,6 +13,7 @@ import os
 @MainActor @Observable
 final class AppModel {
     var settings = AppSettings()
+    let updater = Updater()
     let engine = EngineClient()
     @ObservationIgnored let modelDownloader = ModelDownloadClient()
     private(set) var modelDownload = ModelDownloadStatus()

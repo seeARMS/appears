@@ -2,7 +2,7 @@
 
 The landing site for Appears, the open-source Mac menu bar app that notices what you're working on and quietly shows related files you already have. It will live at [appea.rs](https://appea.rs). Made by [Colin Armstrong](https://armstr.ng).
 
-Astro 7, built to plain static files, behind a small hand-written Cloudflare Worker. One page with its CSS inlined, a Markdown version for agents, `llms.txt`, and the app's (empty, for now) update feed. No analytics or third-party scripts of any kind, and no client JavaScript.
+Astro 7, built to plain static files, behind a small hand-written Cloudflare Worker. One page with its CSS inlined, a Markdown version for agents, `llms.txt`, and the app's signed update feed served from R2. No analytics or third-party scripts of any kind, and no client JavaScript.
 
 Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.txt`, structured data, shared `@id`s).
 
@@ -17,13 +17,13 @@ Follows the conventions in Colin's root `AGENTS.md` (Markdown versions, `llms.tx
 | Orbit mark and five menu bar states | `src/lib/orbit.ts`, `src/components/Mark.astro`, `src/components/Glyph.astro`; `scripts/brand.ts` generates the SVGs, favicon and Mac icon sizes |
 | Markdown for agents | `src/pages/index.md.ts` → `/index.md`; `src/worker.ts` also serves it at `/` when the Accept header prefers `text/markdown` (`src/lib/negotiate.ts`) |
 | `llms.txt` | `src/pages/llms.txt.ts` |
-| Sparkle update feed | `public/appcast.xml` (no items yet; `public/_headers` gives it a 5-minute cache) |
+| Sparkle update feed | `/appcast.xml` serves the signed R2 object unchanged, with a 5-minute cache; release notes come from the matching GitHub release |
 | Latest app, versioned downloads and model files | `src/lib/download.ts`, `src/worker.ts`, private `DOWNLOADS` R2 binding in `wrangler.jsonc`; `/app.dmg` redirects to the latest immutable version |
 | Share card | `public/og.png`, drawn by `scripts/og.ts` and `src/lib/og/` |
 | Headers, robots, sitemap | `public/_headers`, `public/robots.txt`, `public/sitemap.xml` (just `/`) |
 | www.appea.rs → appea.rs | `redirect/` |
 
-The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. `/`, `/index.md`, `/app.dmg`, `/downloads/*` and `/models/*` go through the Worker (`assets.run_worker_first`); other assets are served straight from the files. For `/`, the Worker fetches the built file with the original request, so redirects and conditional requests keep working, and adds `Accept` to `Vary`.
+The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. `/`, `/index.md`, `/app.dmg`, `/appcast.xml`, `/downloads/*` and `/models/*` go through the Worker (`assets.run_worker_first`); other assets are served straight from the files. For `/`, the Worker fetches the built file with the original request, so redirects and conditional requests keep working, and adds `Accept` to `Vary`.
 
 The R2 bucket stays private. `/app.dmg` reads `latest.json` and returns a `no-store` redirect to a versioned DMG. Versioned downloads support GET, HEAD, ETags and single byte ranges for resuming. The Worker caches small versioned app downloads (up to 64 MB) through the Cache API; model files stream without buffering into the cache. The release workflow uploads and verifies the separately hosted model before making the new app the latest. See the root README for setup and credentials. Don't deploy the download CTA before the first signed app and model files are ready.
 

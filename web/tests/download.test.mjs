@@ -25,6 +25,18 @@ test("R2 downloads, redirects and resumable transfers", async (t) => {
   });
 
   await bucket.put("latest.json", JSON.stringify({ version: "0.1.0" }));
+  await t.test("signed appcast is served byte for byte with a short cache", async () => {
+    assert.equal((await fetch("/appcast.xml")).status, 503);
+    const signed = '<?xml version="1.0"?><rss/>\n<!-- sparkle-signatures: example -->\n';
+    await bucket.put("appcast.xml", signed);
+    const response = await fetch("/appcast.xml");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/rss+xml; charset=utf-8");
+    assert.equal(response.headers.get("cache-control"), "public, max-age=300");
+    assert.equal(await response.text(), signed);
+    assert.equal(await (await fetch("/appcast.xml", { method: "HEAD" })).text(), "");
+    assert.equal((await fetch("/appcast.xml", { method: "POST" })).status, 405);
+  });
   const content = "0123456789";
   const object = await bucket.put("releases/v0.1.0/Appears.dmg", content);
   await bucket.put("releases/v0.1.0/Appears.dmg.sha256", "example checksum");

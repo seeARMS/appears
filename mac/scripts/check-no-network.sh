@@ -10,6 +10,13 @@ APP=${1:?usage: check-no-network.sh Appears.app}
 BINS=("$APP/Contents/MacOS/Appears")
 [[ -f "${BINS[0]}" ]] || { echo "App binary not found." >&2; exit 1; }
 if [[ -f "$APP/Contents/MacOS/Appears.debug.dylib" ]]; then BINS+=("$APP/Contents/MacOS/Appears.debug.dylib"); fi
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+if [[ -d "$SPARKLE" ]]; then
+  BINS+=("$SPARKLE/Sparkle" "$SPARKLE/Autoupdate" "$SPARKLE/Updater.app/Contents/MacOS/Updater")
+  /usr/libexec/PlistBuddy -c 'Print :SUEnableDownloaderService' "$APP/Contents/Info.plist" | grep -qx true || {
+    echo "Sparkle must use its isolated downloader." >&2; exit 1;
+  }
+fi
 status=0
 
 # Undefined (imported) symbols that open connections or resolve hosts.
@@ -27,11 +34,13 @@ fi
 
 ENGINE="$APP/Contents/XPCServices/AppearsEngine.xpc"
 DOWNLOADER="$APP/Contents/XPCServices/AppearsDownloader.xpc"
-python3 -I - "$ENGINE" "$DOWNLOADER" <<'PY'
+python3 -I - "$ENGINE" "$DOWNLOADER" "$SPARKLE/XPCServices/Downloader.xpc" <<'PY'
 import plistlib
 import subprocess
 import sys
 for index, path in enumerate(sys.argv[1:]):
+    if index == 2 and not __import__('os').path.exists(path):
+        raise SystemExit("Sparkle's isolated downloader is missing.")
     result = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
     entitlements = plistlib.loads(result.stdout)
     if entitlements.get("com.apple.security.app-sandbox") is not True:
@@ -39,7 +48,7 @@ for index, path in enumerate(sys.argv[1:]):
     network = {k: v for k, v in entitlements.items() if k.startswith("com.apple.security.network.")}
     if index == 0 and network:
         raise SystemExit("The engine must never have network entitlements.")
-    if index == 1:
+    if index >= 1:
         if network != {"com.apple.security.network.client": True}:
             raise SystemExit("The downloader must have network.client only.")
         allowed = {"com.apple.security.app-sandbox", "com.apple.security.network.client", "com.apple.security.get-task-allow"}

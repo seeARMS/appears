@@ -25,7 +25,7 @@ declare const caches: { default: WorkerCache };
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil(task: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/app.dmg" || url.pathname.startsWith("/downloads/") || url.pathname.startsWith("/models/")) {
+    if (url.pathname === "/app.dmg" || url.pathname === "/appcast.xml" || url.pathname.startsWith("/downloads/") || url.pathname.startsWith("/models/")) {
       const cacheable = url.pathname.startsWith("/downloads/") && request.method === "GET" &&
         !["range", "if-range", "if-none-match", "if-modified-since"].some((header) => request.headers.has(header));
       if (cacheable) {

@@ -10,6 +10,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralPane(model: model).tabItem { Label("General", systemImage: "circle.dotted") }
+            UpdatesPane(updater: model.updater).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
             SourcesPane(model: model).tabItem { Label("Sources", systemImage: "folder") }
             PrivacyPane(model: model).tabItem { Label("Privacy", systemImage: "lock") }
             StatsPane(model: model).tabItem { Label("Stats", systemImage: "chart.bar") }

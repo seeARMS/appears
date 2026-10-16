@@ -363,7 +363,7 @@ These are targets to measure in M0, not guesses to trust:
   - structured data with `@id` `https://appea.rs/#app`, author `https://armstr.ng/#person` and Colin's disambiguation string;
   - no lastmod;
   - no analytics, since the pitch is that nothing leaves the Mac.
-- **The update feed:** `public/appcast.xml` is Sparkle's feed. `release.sh` writes it, and it has a short cache.
+- **The update feed:** `/appcast.xml` serves a signed R2 object with a five-minute cache. The release build embeds the matching published GitHub release's changelog as native Markdown. Sparkle checks daily by default, with a switch in Settings and manual checks; scheduled discoveries appear quietly in Settings and the menu. The source build removes in-process networking and web views, leaving downloads in its sandboxed XPC service. Model updates follow the pin in each compatible app release.
 - **Deploys:** to the Colin Personal Cloudflare account, through the `wrangler-personal` profile, and by Workers Builds with root directory `web`. A `redirect/` Worker sends www to the bare domain.
 - **Draft disambiguation string:** "Open-source Mac menu bar app at appea.rs, made by Colin Armstrong, that notices what you're working on and shows related files you already have, such as old screenshots, photos and PDFs, using an on-device model; nothing leaves the computer."
 - **Outside this repo, at launch:** add Appears to the root `../AGENTS.md` (the sites table, the shared `@id`s, the disambiguation string), and to armstr.ng's `src/data/profile.ts` and projects page.
@@ -411,7 +411,7 @@ These are targets to measure in M0, not guesses to trust:
 **M5: Ship.**
 
 - Finish the brand and the site.
-- Set up signing, notarization, Sparkle and the Homebrew cask.
+- Configure signing and notarization credentials, verify Sparkle across two signed releases, and add the Homebrew cask.
 - Make the README GIF.
 - Open the repo and launch.
 
