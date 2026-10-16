@@ -53,6 +53,9 @@ final class AppModel {
     private(set) var glyph: Glyph = .idle
     private(set) var status: EngineStatus?
     private(set) var engineStatusError: String?
+    private(set) var isRequestingScan = false
+    private(set) var scanRequestMessage: String?
+    private(set) var scanRequestError: String?
     let loginItem = LoginItem()
     var settingsTab = SettingsTab.general
     var sourcePreview: Suggestion?
@@ -568,6 +571,23 @@ final class AppModel {
     }
 
     // MARK: - Settings
+
+    func scanNow() async {
+        guard !isRequestingScan else { return }
+        isRequestingScan = true
+        scanRequestMessage = nil
+        scanRequestError = nil
+        defer { isRequestingScan = false }
+        // Apply any source changes before asking the engine to scan them.
+        await sourcesUpdate?.value
+        do {
+            _ = try await engine.call(.rescan, EngineClient.Empty(), as: EngineClient.Empty.self)
+            scanRequestMessage = "Scan requested. New items will be indexed automatically."
+            await refreshStatus()
+        } catch {
+            scanRequestError = "Couldn’t request a scan. Try again, or reopen Appears."
+        }
+    }
 
     func sourcesChanged() {
         sourcePreview = nil

@@ -212,9 +212,6 @@ struct SourcesPane: View {
                     ))
                 }
             }
-            Section {
-                Button("Look for new items now") { Task { await model.engine.send(.rescan) } }
-            }
         }
         .formStyle(.grouped)
     }

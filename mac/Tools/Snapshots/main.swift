@@ -342,9 +342,31 @@ let weaker = [
     partial.notesReadable = false
     partial.messagesReadable = false
     model.showForSnapshot(nil, status: partial)
+    precondition(model.readinessDetail.contains("left to index"))
     render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-indexing", width: 560)
     search.showForSnapshot(query: "our trip", results: [])
     searchSnapshot("search-partial-index")
+    // An existing index can predate scan-date metadata. A missing date must not
+    // claim that these searchable items are waiting for their first scan.
+    var queued = status
+    queued.sources[2].lastChecked = nil
+    queued.sources[2].waiting = 42
+    queued.counts.waiting = 42
+    model.showForSnapshot(nil, status: queued)
+    precondition(model.readinessTitle == "Items queued for indexing")
+    precondition(model.readinessDetail.contains("queued to index") && model.readinessDetail.contains("every minute"))
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-queued", width: 560)
+    var starting = EngineStatus()
+    starting.error = "The search engine couldn’t start. Use Scan now to retry."
+    model.showForSnapshot(nil, status: starting)
+    precondition(model.canRequestScan) // An unready engine must not disable recovery.
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-retry", width: 560)
+    var scanning = status
+    scanning.progress.phase = .scanning
+    scanning.progress.scanned = 1_500
+    model.showForSnapshot(nil, status: scanning)
+    precondition(!model.canRequestScan)
+    render(SourcesPane(model: model).frame(width: 560, height: 600), "settings-sources-scanning", width: 560)
     var paused = status
     paused.progress.phase = .paused
     paused.progress.pausedReason = "Low Power Mode"
@@ -352,7 +374,7 @@ let weaker = [
     precondition(model.readinessTitle == "Indexing paused" && model.readinessDetail == "Low Power Mode")
     render(ReadinessView(model: model, details: true).padding(16).frame(width: 400), "source-health-paused", width: 400)
     var failed = status
-    failed.error = "Couldn’t check changed files. Use Look for new items now in Sources to retry."
+    failed.error = "Couldn’t check changed files. Use Scan now in Sources to retry."
     model.showForSnapshot(nil, status: failed)
     precondition(model.readinessTitle == "Index needs attention")
     render(ReadinessView(model: model, details: true).padding(16).frame(width: 400), "source-health-error", width: 400)

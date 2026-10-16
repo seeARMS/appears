@@ -5,6 +5,11 @@ enum SettingsTab: Hashable { case general, updates, sources, privacy, stats }
 
 @MainActor
 extension AppModel {
+    /// A request can also reconnect or wait for the engine to finish starting.
+    var canRequestScan: Bool {
+        modelDownload.phase == .ready && !isRequestingScan && status?.progress.phase != .scanning
+    }
+
     var readinessTitle: String {
         guard modelDownload.phase == .ready else { return "Preparing Appears" }
         if engineStatusError != nil || status?.error != nil { return "Index needs attention" }
@@ -14,7 +19,7 @@ extension AppModel {
         case .indexing: return "Reading your files…"
         case .paused: return "Indexing paused"
         case .idle:
-            if status.counts.waiting > 0 { return "More items waiting to be read" }
+            if status.counts.waiting > 0 { return "Items queued for indexing" }
             if status.sources.first(where: { $0.source == .file })?.lastChecked == nil, status.counts.indexedTotal == 0 { return "Getting your index started…" }
             return status.counts.indexedTotal > 0 ? "Ready to search" : "No items indexed yet"
         }
@@ -29,7 +34,12 @@ extension AppModel {
         if status.progress.phase == .paused { return status.progress.pausedReason ?? "Indexing will resume automatically." }
         let indexed = status.counts.indexedTotal.formatted()
         let waiting = status.counts.waiting
-        if waiting > 0 { return "\(indexed) searchable · \(waiting.formatted()) waiting. You can search while indexing continues." }
+        if waiting > 0 {
+            if status.progress.phase == .indexing {
+                return "\(indexed) searchable · \(waiting.formatted()) left to index. You can search while indexing continues."
+            }
+            return "\(indexed) searchable · \(waiting.formatted()) queued to index. Appears retries the queue automatically every minute."
+        }
         if status.counts.indexedTotal == 0 {
             return status.sources.first(where: { $0.source == .file })?.lastChecked == nil
                 ? "You can keep working while Appears checks your sources."
@@ -59,9 +69,30 @@ struct ReadinessView: View {
             if model.modelDownload.phase != .ready {
                 ModelDownloadView(status: model.modelDownload, retry: model.retryModelDownload)
             } else {
-                Text(model.readinessTitle).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.foreground)
+                HStack(alignment: .top) {
+                    Text(model.readinessTitle).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.foreground)
+                    Spacer(minLength: 8)
+                    if details {
+                        Button(model.isRequestingScan ? "Requesting scan…" : model.status?.progress.phase == .scanning ? "Scanning…" : "Scan now") {
+                            Task { await model.scanNow() }
+                        }
+                        .buttonStyle(OutlineButtonStyle())
+                        .disabled(!model.canRequestScan)
+                        .help("Check all enabled sources for new and changed items, then index them.")
+                    }
+                }
                 Text(model.readinessDetail).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
                     .fixedSize(horizontal: false, vertical: true)
+                if details {
+                    Text("Files update as they change. Messages are checked every minute; Notes every 10 minutes.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let error = model.scanRequestError {
+                    Text(error).font(.system(size: 12)).foregroundStyle(.red)
+                } else if let message = model.scanRequestMessage {
+                    Text(message).font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                }
                 if let missing = model.missingSourceAccess {
                     Text(missing).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
                 }
@@ -76,9 +107,10 @@ struct ReadinessView: View {
                             .font(.system(size: 12)).foregroundStyle(.orange)
                     }
                 }
-                if model.engineStatusError != nil || model.status?.error != nil {
-                    Button("Try again") { Task { await model.engine.send(.rescan); await model.refreshStatus() } }
+                if !details, model.engineStatusError != nil || model.status?.error != nil || model.scanRequestError != nil {
+                    Button("Try again") { Task { await model.scanNow() } }
                         .buttonStyle(OutlineButtonStyle())
+                        .disabled(model.isRequestingScan)
                 }
             }
             if let openSources { Button("View sources", action: openSources).buttonStyle(OutlineButtonStyle()) }
@@ -98,11 +130,11 @@ struct ReadinessView: View {
                 if !enabled { Text("Off") }
                 else if !readable { Text("Needs Full Disk Access") }
                 else {
-                    Text("\(source.indexed.formatted()) searchable\(source.waiting > 0 ? " · \(source.waiting.formatted()) waiting" : "")")
+                    Text("\(source.indexed.formatted()) searchable\(source.waiting > 0 ? " · \(source.waiting.formatted()) queued to index" : "")")
                     if let date = source.lastChecked {
                         Text("\(source.source == .file ? "Last scan" : "Last checked") \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))")
                             .help(date.formatted(date: .abbreviated, time: .shortened))
-                    } else { Text("Waiting for the first scan") }
+                    } else { Text("Updates checked automatically") }
                 }
             }
             .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
