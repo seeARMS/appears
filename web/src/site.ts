@@ -37,11 +37,13 @@ export const LICENSE_URL = "https://opensource.org/license/mit";
 export const HEADLINE = "What you already have, before you think to look for it.";
 export const LEDE =
   "Appears lives in your menu bar and follows along while you work. When you already have something that helps, like an old screenshot, a photo of a quote or a PDF from two years ago, it shows up. No searching, no typing.";
-export const STATUS = "Free for Mac";
 /** Where the Download buttons go. The release script puts the latest build here. */
 export const DOWNLOAD_URL = `${SITE}/app.dmg`;
 export const DOWNLOAD_LABEL = "Download for Mac";
-export const REQUIREMENTS = `Free and open source. Needs a ${HARDWARE} running ${OPERATING_SYSTEM}. The on-device model downloads during setup.`;
+/** Under the Download buttons on the page. */
+export const NOTE = "Free and open source.";
+/** The Markdown version and llms.txt keep the system requirements for agents. */
+export const REQUIREMENTS = `${NOTE} Needs a ${HARDWARE} running ${OPERATING_SYSTEM}. The on-device model downloads during setup.`;
 
 /** Under the hero mock. Everything in the mock is made up. */
 export const MOCK_CAPTION =
@@ -115,32 +117,93 @@ export const GLYPHS = [
 
 export const PRIVACY_HEADING = "Your stuff stays on your Mac.";
 export const PRIVACY_TEXT = "Appears sees a lot of what you do, so it's built to keep all of it to itself.";
-/** Each row's `icon` names an icon in src/components/Icon.astro. */
+/** Each row's `art` names its illustration in src/components/PrivacyArt.astro. */
 export const PRIVACY = [
   {
-    icon: "download",
-    label: "The model downloads during setup",
-    text: "On first launch, a separate sandboxed helper downloads the on-device model while you set up. It has no access to your files or screen, and checks every pinned file before the engine uses it. After that, Appears works offline.",
-  },
-  {
-    icon: "laptop",
+    art: "local",
     label: "Everything happens on your Mac",
-    text: "Appears does all its work on your Mac. No account, no cloud, nothing uploaded.",
+    text: "No account, no cloud, nothing uploaded. During setup, a sandboxed helper that can't see your files or screen downloads the on-device model. After that, Appears works offline.",
   },
   {
-    icon: "eye-off",
+    art: "forget",
     label: "It forgets what it sees",
     text: "It reads what you're working on, uses it, and lets it go. The only thing it remembers is which suggestions you found useful.",
   },
   {
-    icon: "lock",
+    art: "private",
     label: "It skips private things",
     text: "Password managers, password fields and private browser windows are off limits. Pause it from the menu bar whenever you like.",
   },
   {
-    icon: "code",
+    art: "open",
     label: "Anyone can check",
     text: `It's open source under the ${LICENSE} license, so these promises aren't just promises.`,
+  },
+] as const;
+
+// --- Questions ---------------------------------------------------------------------
+// For people who want the detail. Plain answers, no FAQPage markup (see ../AGENTS.md).
+
+export const FAQ_HEADING = "Questions, answered.";
+/** Each answer is a few short paragraphs. */
+export const FAQ = [
+  {
+    q: "How does it know what's related?",
+    a: [
+      "It runs Google's EmbeddingGemma 2, a small open model, on your Mac. The model understands what text and pictures are about, so a photo of a handwritten quote matches an email about the same kitchen, even with no words in common.",
+      "A plain text search catches names and numbers alongside it. Things you haven't opened in a while get a boost.",
+    ],
+  },
+  {
+    q: "What does it look at on my screen?",
+    a: [
+      "Only the window in front of you: its title, what it shows, and what you're typing.",
+      "That text stays in memory for one search, then it's gone.",
+    ],
+  },
+  {
+    q: "Which files does it look through?",
+    a: [
+      "Documents, PDFs, images and screenshots in your home folder, plus your Apple Notes. It skips system files, code projects and caches, and you can include or exclude folders in Settings.",
+      "Mail, Photos, audio and video aren't supported yet.",
+    ],
+  },
+  {
+    q: "Why is there a separate download during setup?",
+    a: [
+      "The model is about 900 MB, so the app downloads it while you set up, to keep the app itself small.",
+      "A sandboxed helper does the download. It can't see your files or screen, and every file is checked before use. After that, Appears works offline.",
+    ],
+  },
+  {
+    q: "How can I be sure nothing leaves my Mac?",
+    a: [
+      "The part that reads your files and runs the model has no network access; macOS blocks it. The app itself has no networking code, and every build is checked for it.",
+      "No account, no analytics, no crash reports.",
+    ],
+  },
+  {
+    q: "How often will it suggest something?",
+    a: [
+      "Rarely. Only when it's confident, a few times an hour at most, and less if you ignore it. The menu bar ring gets a dot; nothing pops up.",
+      "Press ⇧⌘Space to ask any time.",
+    ],
+  },
+  {
+    q: "Can it help me get ready for meetings?",
+    a: [
+      "With Calendar access (optional), it looks about 10 minutes before each meeting, using the title, who's invited and the notes. Join links and passcodes are left out.",
+    ],
+  },
+  {
+    q: "Will it slow down my Mac?",
+    a: [
+      "The first pass through your files takes a while, and pauses in Low Power Mode. After that it only checks what's changed, and a search takes a fraction of a second.",
+    ],
+  },
+  {
+    q: "What does it cost, and what do I need?",
+    a: [`Nothing: it's free and open source (${LICENSE}). It needs a ${HARDWARE} running ${OPERATING_SYSTEM}.`],
   },
 ] as const;
 
