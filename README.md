@@ -84,7 +84,7 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    cd mac && xcodegen && xcodebuild -project Appears.xcodeproj -scheme Appears -configuration Release -derivedDataPath build/DerivedData ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
    ```
 
-2. For local development before the model is hosted, prepare and seed the verified cache once, from the repo root. `mac/Models/` is git-ignored. This isn't needed by people downloading the released app:
+2. The app downloads its pinned model on first launch. For local development or offline testing, you can also prepare and seed the verified cache once, from the repo root. `mac/Models/` is git-ignored. This isn't needed by people downloading the released app:
 
    ```bash
    mac/scripts/fetch-model.sh
@@ -98,6 +98,8 @@ You need Xcode 27 (with its Metal toolchain), [XcodeGen](https://github.com/yona
    ```
 
 Setup asks for Accessibility (required), then optionally Full Disk Access (Notes, Messages and their photos, and no prompts for Desktop/Documents/Downloads), Calendar (looking ahead to meetings) and Screen Recording (OCR on ask). Builds are ad-hoc signed by default. macOS ties Accessibility and Full Disk Access to the exact signature, and an ad-hoc signature changes on every build, so each rebuild silently loses both permissions. To keep them, create `mac/Config/Local.xcconfig` (git-ignored) with a stable identity, then run `xcodegen` and rebuild. Either your team (`DEVELOPMENT_TEAM = …` and `CODE_SIGN_IDENTITY = Apple Development`) or a self-signed code-signing certificate from Keychain Access (`CODE_SIGN_IDENTITY = Appears Dev`) works. Without one, remove Appears from both lists in System Settings and add it again after each rebuild.
+
+First-run model setup was verified on 2026-10-15 with a Developer ID build: the restricted downloader installed all 12 pinned files from appea.rs, then the sandboxed engine indexed the 142-item demo and semantic search returned the kitchen quote photo. Moving from the old self-signed identity to Developer ID triggered macOS prompts to reuse the existing app-data containers. No sandbox restrictions were changed.
 
 The first index takes a while and pauses in Low Power Mode; the menu bar orbit has a wider gap while it's working. Measured on 2026-10-15 on Colin's Mac (about 11,000 files after the skip rules):
 
@@ -245,6 +247,8 @@ No R2 bucket, credentials, deployment or first release is created by adding thes
 
 Release tags must point to a commit reachable from `main`. For manual runs, select the version tag as the workflow ref and supply the same tag input. Validation runs before the job that can access the tag-only release environment.
 
+The first release, `v0.1.0`, was built, signed, notarized and uploaded by GitHub Actions on 2026-10-15. The model package is hosted at its pinned R2 prefix; `https://appea.rs/app.dmg` redirects to the immutable version download, and `https://appea.rs/appcast.xml` serves the signed update feed. Release credentials are configured in the `release` environment and backed up in 1Password.
+
 ## Licenses in distributions
 
 Appears' code is MIT licensed. Upstream code and model files retain their own licenses. Before Xcode signs the app, `mac/scripts/bundle-licenses.py` copies this project's license, the vendored model runtime's notices, Sparkle's license, and license/notice files from the exact resolved Swift dependency checkouts into `Appears.app/Contents/Resources/Licenses`. A manifest records revisions and checksums; CI and the release script verify it.
@@ -253,13 +257,11 @@ The separately downloaded model includes `LICENSE.txt` (Apache-2.0), `NOTICE.txt
 
 ## Not done yet
 
-- **Local thin-app model access:** during search testing, macOS denied the sandboxed engine access to the downloader container's `verified.json`, including with the self-signed development identity. Search reports this as an unreadable installed model. Core search, the app build and the privacy checks pass, but real-model search through the app is not verified until model access across those sandboxes is resolved. No permissions or sandbox restrictions were loosened.
 - **Calibration:** not learned yet. The confidence weights are hand-set from the eval; fitting them to the journal is next.
 - **Notes attachments** (scans, photos in notes) aren't indexed; note text is.
 - **Folders added under Include** are scanned, but not watched for changes until the next full rescan (every 6 hours) or a relaunch.
 - **Releases:**
-  - configure the Apple signing/notarization credentials, R2 bucket and GitHub settings above, then verify the first live workflow and download;
-  - configure the dedicated Sparkle signing key and verify an installed signed release updating to the next release, including the isolated downloader and any changed model pin;
+  - verify an installed signed release updating to the next release, including the isolated downloader and any changed model pin;
   - the Homebrew cask.
-- **`appears mcp` without a checkout or Full Disk Access:** the CLI isn't in the app or the Homebrew cask yet. Reading the app's index needs Full Disk Access for the agent's app. Tested 2026-10-15 on macOS 27: nothing signed with the self-signed dev certificate gets into the engine's container, even with the engine's exact identifier. Apple lets apps with the same Team ID read each other's containers, so shipping the CLI inside Appears.app under the release Team ID should work, but it's untested until there is a Team ID. Moving the index out of the container would let any process read Notes and Documents text, so it stays where it is.
+- **`appears mcp` without a checkout or Full Disk Access:** the CLI isn't in the app or the Homebrew cask yet. Reading the app's index needs Full Disk Access for the agent's app. Tested 2026-10-15 on macOS 27: nothing signed with the self-signed dev certificate gets into the engine's container, even with the engine's exact identifier. Apple lets apps with the same Team ID read each other's containers, so shipping the CLI inside Appears.app under the release Team ID should work, but that packaging and access remain untested. Moving the index out of the container would let any process read Notes and Documents text, so it stays where it is.
 - **Not in v0:** voice memos and audio, video, Mail, Photos (see PLAN.md).
