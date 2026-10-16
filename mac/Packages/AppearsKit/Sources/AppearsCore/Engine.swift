@@ -167,7 +167,7 @@ public final class Engine: Sendable {
                     else { try await self.indexer.filesChanged(paths) }
                     await self.indexPending()
                 } catch {
-                    await self.state.setScanError("Couldn’t check changed files. Use Look for new items now in Sources to retry.")
+                    await self.state.setScanError("Couldn’t check changed files. Use Scan now in Sources to retry.")
                 }
             }
         }
