@@ -162,7 +162,7 @@ public struct FileScanner: Sendable {
     }
 
     /// Walks every root, or just the changed directories, with the same skip rules.
-    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) rethrows {
+    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) throws {
         for root in directories ?? roots {
             let rootURL = URL(filePath: root)
             guard shouldWatchFolder(root) else { continue }
@@ -170,13 +170,20 @@ public struct FileScanner: Sendable {
         }
     }
 
-    private func walk(_ folder: URL, _ found: (Item) throws -> Void) rethrows {
-        guard let children = try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
-        ) else { return }
+    private func walk(_ folder: URL, _ found: (Item) throws -> Void) throws {
+        let children: [URL]
+        do {
+            children = try FileManager.default.contentsOfDirectory(
+                at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
+            )
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            return
+        }
         let skipText = isDataFolder(folder, children: children)
         for child in children {
-            guard let values = try? child.resourceValues(forKeys: Set(Self.keys)) else { continue }
+            let values: URLResourceValues
+            do { values = try child.resourceValues(forKeys: Set(Self.keys)) }
+            catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { continue }
             if values.isDirectory == true {
                 // Bundles (apps, Photos libraries, .rtfd, Pages documents) are skipped whole.
                 if values.isPackage == true { continue }

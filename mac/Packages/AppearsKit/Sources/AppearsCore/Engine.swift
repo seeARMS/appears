@@ -320,8 +320,8 @@ struct FileChanges: Sendable {
     init(paths: [String], flags: [FSEventStreamEventFlags], acceptsDirectory: (String) -> Bool) {
         for (path, rawFlag) in zip(paths, flags) {
             let flag = Int(rawFlag)
-            if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
-                       | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped) != 0,
+            if flag & (kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped) != 0 { fullScan = true }
+            else if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0,
                acceptsDirectory(path) { fullScan = true }
             if flag & kFSEventStreamEventFlagItemIsDir != 0,
                flag & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0,

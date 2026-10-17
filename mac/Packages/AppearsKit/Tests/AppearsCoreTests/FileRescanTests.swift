@@ -27,6 +27,10 @@ import Testing
         }
         #expect(combined.fullScan)
         #expect(combined.directories == changes.directories)
+        for flag in [kFSEventStreamEventFlagUserDropped, kFSEventStreamEventFlagKernelDropped] {
+            let recovery = FileChanges(paths: ["/fixture/Private"], flags: [FSEventStreamEventFlags(flag)], acceptsDirectory: scanner.shouldWatchFolder)
+            #expect(recovery.fullScan, "Dropped events require recovery even when their reported path is excluded")
+        }
     }
 
     @Test func subtreeScansReconcileRenamesAndRemovalsWithoutTouchingSiblings() async throws {
@@ -80,8 +84,44 @@ import Testing
         let included = folder.appending(path: "Library/Research")
         let scanner = FileScanner(settings: SourceSettings(includes: [included.path], excludes: [folder.appending(path: "Private").path]), home: folder.path)
         var found: [String] = []
-        scanner.scan(in: paths.map { folder.appending(path: $0).path }) { found.append($0.path) }
+        try scanner.scan(in: paths.map { folder.appending(path: $0).path }) { found.append($0.path) }
         #expect(found == [included.appending(path: "quote.txt").path])
+    }
+
+    @Test func unreadableDirectoriesDoNotDeleteExistingItemsOrEmbeddings() async throws {
+        let folder = URL(filePath: FileManager.default.currentDirectoryPath).appending(path: ".build/appears-unreadable-\(UUID().uuidString)")
+        let home = folder.appending(path: "Home")
+        let blocked = home.appending(path: "Imported")
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let file = blocked.appending(path: "quote.txt")
+        try "A synthetic kitchen quote.".write(to: file, atomically: true, encoding: .utf8)
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let embedder = HashingEmbedder()
+        let vectors = VectorIndex(dimension: embedder.dimension)
+        let indexer = Indexer(store: store, vectors: vectors, embedder: embedder,
+                              settings: SourceSettings(notes: false, messages: false, homeOverride: home.path))
+        await indexer.setPoliteness(false)
+        _ = try await indexer.scanFiles()
+        _ = try await indexer.indexPending()
+        let original = try #require(try store.item(path: file.path))
+        let unit = try #require(try store.units(itemID: original.id).first)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
+        for directories: [String]? in [nil, [blocked.path]] {
+            do {
+                _ = try await indexer.scanFiles(in: directories)
+                Issue.record("A failed directory read must abort reconciliation")
+            } catch let error as CocoaError {
+                #expect(error.code == .fileReadNoPermission)
+            }
+            #expect(try store.item(path: file.path) == original)
+            #expect(try store.units(itemID: original.id).first?.unit == unit.unit)
+            #expect(try store.units(itemID: original.id).first?.vector == unit.vector)
+            #expect(vectors.count == 1)
+        }
     }
 
     @Test func unchangedScansDoNotUpdateItemsOrDiscardUsageAndEmbeddings() async throws {
