@@ -37,6 +37,31 @@ public struct SourceSettings: Sendable, Codable, Equatable {
     }
 }
 
+/// A filesystem read that was skipped. Kept in memory for Sources, never logged publicly.
+public struct FileScanIssue: Sendable, Codable, Equatable {
+    public var path: String
+    public var permissionDenied: Bool
+
+    init(path: String, error: any Error) {
+        self.path = path
+        let error = error as NSError
+        let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        permissionDenied = (error.domain == NSCocoaErrorDomain && error.code == CocoaError.fileReadNoPermission.rawValue)
+            || [error, underlying].compactMap { $0 }.contains {
+                $0.domain == NSPOSIXErrorDomain && ($0.code == Int(EACCES) || $0.code == Int(EPERM))
+            }
+    }
+
+    func contains(_ candidate: String) -> Bool {
+        candidate == path || candidate.hasPrefix(path.hasSuffix("/") ? path : path + "/")
+    }
+}
+
+struct FileScanResult: Sendable {
+    var items: [Item]
+    var issues: [FileScanIssue] = []
+}
+
 /// Finds the files worth indexing under the home folder and the included folders.
 public struct FileScanner: Sendable {
     public let settings: SourceSettings
@@ -129,7 +154,7 @@ public struct FileScanner: Sendable {
     }
 
     /// Whether to descend into a folder.
-    func shouldEnter(_ url: URL, isRoot: Bool) -> Bool {
+    func shouldEnter(_ url: URL, isRoot: Bool, checkRepository: Bool = true) -> Bool {
         let path = url.path
         if isExcluded(path) { return false }
         if isRoot { return true }
@@ -142,7 +167,7 @@ public struct FileScanner: Sendable {
         if Self.skippedHomePaths.contains(where: { path == home + "/" + $0 }), !isUnderInclude(path) { return false }
         // Code checkouts are full of READMEs and docs that aren't "things you have";
         // include a repo explicitly to index it.
-        if FileManager.default.fileExists(atPath: url.appending(path: ".git").path), !isUnderInclude(path) {
+        if checkRepository, FileManager.default.fileExists(atPath: url.appending(path: ".git").path), !isUnderInclude(path) {
             return false
         }
         return true
@@ -162,32 +187,50 @@ public struct FileScanner: Sendable {
     }
 
     /// Walks every root, or just the changed directories, with the same skip rules.
-    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) throws {
+    @discardableResult
+    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) throws -> [FileScanIssue] {
+        var issues: [FileScanIssue] = []
         for root in directories ?? roots {
+            try Task.checkCancellation()
             let rootURL = URL(filePath: root)
             guard shouldWatchFolder(root) else { continue }
-            try walk(rootURL, found)
+            try walk(rootURL, preserveMissing: roots.contains(root), issues: &issues, found)
         }
+        return issues
     }
 
-    private func walk(_ folder: URL, _ found: (Item) throws -> Void) throws {
+    private func walk(_ folder: URL, preserveMissing: Bool = false, issues: inout [FileScanIssue], _ found: (Item) throws -> Void) throws {
+        try Task.checkCancellation()
         let children: [URL]
         do {
             children = try FileManager.default.contentsOfDirectory(
                 at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
             )
         } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            // A missing configured root may be an unplugged drive. Removing an Include
+            // confirms removal; a missing descendant still reconciles as a deletion.
+            if preserveMissing { issues.append(FileScanIssue(path: folder.path, error: error)) }
+            return
+        } catch {
+            issues.append(FileScanIssue(path: folder.path, error: error))
             return
         }
         let skipText = isDataFolder(folder, children: children)
         for child in children {
+            try Task.checkCancellation()
+            // Reject excluded and generated trees before asking for their metadata.
+            guard shouldEnter(child, isRoot: false, checkRepository: false) else { continue }
             let values: URLResourceValues
             do { values = try child.resourceValues(forKeys: Set(Self.keys)) }
             catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { continue }
+            catch {
+                issues.append(FileScanIssue(path: child.path, error: error))
+                continue
+            }
             if values.isDirectory == true {
                 // Bundles (apps, Photos libraries, .rtfd, Pages documents) are skipped whole.
                 if values.isPackage == true { continue }
-                if shouldEnter(child, isRoot: false) { try walk(child, found) }
+                if shouldEnter(child, isRoot: false) { try walk(child, issues: &issues, found) }
             } else if values.isRegularFile == true, let item = item(child, values) {
                 if skipText, Self.plainTextExtensions.contains(child.pathExtension.lowercased()) { continue }
                 try found(item)
@@ -197,6 +240,11 @@ public struct FileScanner: Sendable {
 
     /// The item for one file, or nil if it isn't indexable.
     public func item(at url: URL) -> Item? {
+        try? readItem(at: url)
+    }
+
+    /// Unlike `item(at:)`, distinguishes an unreadable path from a deleted or skipped one.
+    func readItem(at url: URL) throws -> Item? {
         // File events include every compiler output and app data file. Reject paths we
         // would skip before asking FileProvider and the filesystem for their metadata.
         guard let kind = Self.kind(forExtension: url.pathExtension),
@@ -208,7 +256,10 @@ public struct FileScanner: Sendable {
                 if Self.plainTextExtensions.contains(url.pathExtension.lowercased()),
                    let siblings = try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
                    isDataFolder(parent, children: siblings) { return nil }
-                guard let values = try? url.resourceValues(forKeys: Set(Self.keys)), values.isRegularFile == true else { return nil }
+                let values: URLResourceValues
+                do { values = try url.resourceValues(forKeys: Set(Self.keys)) }
+                catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { return nil }
+                guard values.isRegularFile == true else { return nil }
                 return item(url, values)
             }
             if !shouldEnter(folder, isRoot: false) { return nil }

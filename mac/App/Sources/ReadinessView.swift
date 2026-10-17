@@ -7,11 +7,12 @@ enum SettingsTab: Hashable { case general, suggestions, sources, privacy, activi
 extension AppModel {
     /// A request can also reconnect or wait for the engine to finish starting.
     var canRequestScan: Bool {
-        modelDownload.phase == .ready && !isRequestingScan && status?.progress.phase != .scanning
+        modelDownload.phase == .ready && !isRequestingScan && status?.isScanning != true && status?.progress.phase != .scanning
     }
 
     var readinessTitle: String {
         guard modelDownload.phase == .ready else { return "Preparing Appears" }
+        if status?.isScanning == true { return "Looking for new items…" }
         if engineStatusError != nil || status?.error != nil { return "Index needs attention" }
         guard let status, status.ready else { return "Starting the search engine…" }
         switch status.progress.phase {
@@ -27,8 +28,9 @@ extension AppModel {
 
     var readinessDetail: String {
         if let engineStatusError { return engineStatusError }
-        if let error = status?.error { return error }
         guard let status else { return "Your files will be searchable as soon as the engine is ready." }
+        if status.isScanning { return "Checking enabled sources. Already indexed items remain searchable." }
+        if let error = status.error { return error }
         if !status.ready { return "Loading the on-device model. This can take a moment on the first launch." }
         if status.progress.phase == .scanning { return "\(status.progress.scanned.formatted()) items found so far. Already indexed items remain searchable." }
         if status.progress.phase == .paused { return status.progress.pausedReason ?? "Indexing will resume automatically." }
@@ -73,12 +75,12 @@ struct ReadinessView: View {
                     Text(model.readinessTitle).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.foreground)
                     Spacer(minLength: 8)
                     if details {
-                        Button(model.isRequestingScan ? "Requesting scan…" : model.status?.progress.phase == .scanning ? "Scanning…" : "Scan now") {
+                        Button(model.isRequestingScan ? "Requesting scan…" : model.status?.isScanning == true || model.status?.progress.phase == .scanning ? "Scanning…" : "Scan now") {
                             Task { await model.scanNow() }
                         }
                         .buttonStyle(OutlineButtonStyle())
                         .disabled(!model.canRequestScan)
-                        .help("Check all enabled sources for new and changed items, then index them.")
+                        .help("Check all enabled sources and retry items that couldn’t be read, then index them.")
                     }
                 }
                 Text(model.readinessDetail).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
@@ -96,10 +98,31 @@ struct ReadinessView: View {
                 if let missing = model.missingSourceAccess {
                     Text(missing).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
                 }
+                if let issues = model.status?.fileScanIssues, !issues.isEmpty {
+                    Text("\(issues.count.formatted()) \(issues.count == 1 ? "path couldn’t" : "paths couldn’t") be checked. Other files continue scanning; existing results are kept.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if details {
+                        ForEach(Array(issues.prefix(5)), id: \.path) { issue in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text((issue.path as NSString).abbreviatingWithTildeInPath).textSelection(.enabled)
+                                Text(issue.permissionDenied ? "Permission needed" : "Temporarily unavailable")
+                            }
+                            .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if issues.count > 5 {
+                            Text("And \((issues.count - 5).formatted()) more.").font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                        }
+                        Text("Restore access or reconnect the drive, then choose Scan now. Folder permission changes are checked automatically.")
+                            .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if details, let status = model.status, status.ready {
                     ForEach(status.sources) { source in sourceRow(source, status: status) }
                     if status.counts.unreadable > 0 {
-                        Text("\(status.counts.unreadable.formatted()) items couldn’t be read. Other results are still available; unreadable items are retried when they change.")
+                        Text("\(status.counts.unreadable.formatted()) items couldn’t be read. Other results are still available; unreadable items are retried when they change or you choose Scan now.")
                             .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
                     }
                     if status.watchedFolders.isEmpty {
@@ -108,9 +131,9 @@ struct ReadinessView: View {
                     }
                 }
                 if !details, model.engineStatusError != nil || model.status?.error != nil || model.scanRequestError != nil {
-                    Button("Try again") { Task { await model.scanNow() } }
+                    Button(model.status?.isScanning == true ? "Scanning…" : "Try again") { Task { await model.scanNow() } }
                         .buttonStyle(OutlineButtonStyle())
-                        .disabled(model.isRequestingScan)
+                        .disabled(!model.canRequestScan)
                 }
             }
             if let openSources { Button("View sources", action: openSources).buttonStyle(OutlineButtonStyle()) }

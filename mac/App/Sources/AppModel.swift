@@ -56,6 +56,8 @@ final class AppModel {
     private(set) var isRequestingScan = false
     private(set) var scanRequestMessage: String?
     private(set) var scanRequestError: String?
+    @ObservationIgnored private var awaitingScanCompletion = false
+    @ObservationIgnored private var scanRequestedAfter: Date?
     let loginItem = LoginItem()
     var sourcePreview: Suggestion?
     /// What the panel shows.
@@ -157,7 +159,7 @@ final class AppModel {
             }
             while !Task.isCancelled {
                 await self?.refreshStatus()
-                let busy = self?.status.map { $0.progress.phase != .idle || !$0.ready } ?? true
+                let busy = self?.status.map { $0.isScanning || $0.progress.phase != .idle || !$0.ready } ?? true
                 try? await Task.sleep(for: .seconds(self?.modelDownload.phase != .ready ? 1 : (busy ? 3 : 20)))
             }
         }
@@ -181,8 +183,22 @@ final class AppModel {
             do {
                 status = try await engine.call(.status, EngineClient.Empty(), as: EngineStatus.self)
                 engineStatusError = nil
+                if awaitingScanCompletion, let status {
+                    if status.isScanning {
+                        scanRequestMessage = "Scanning enabled sources… Existing results remain searchable."
+                    } else if status.lastScanCompletedAt != scanRequestedAfter {
+                        awaitingScanCompletion = false
+                        if status.error != nil { scanRequestMessage = "Scan finished. Some sources need attention." }
+                        else if !status.fileScanIssues.isEmpty {
+                            let count = status.fileScanIssues.count
+                            scanRequestMessage = "Scan complete. \(count.formatted()) \(count == 1 ? "path" : "paths") skipped; see Sources for details."
+                        } else { scanRequestMessage = "Scan complete. New items will be indexed automatically." }
+                    }
+                }
             } catch {
                 status = nil
+                awaitingScanCompletion = false
+                scanRequestMessage = nil
                 engineStatusError = "The search engine isn’t responding. Try again, or reopen Appears."
             }
         }
@@ -576,12 +592,14 @@ final class AppModel {
         isRequestingScan = true
         scanRequestMessage = nil
         scanRequestError = nil
+        scanRequestedAfter = status?.lastScanCompletedAt
         defer { isRequestingScan = false }
         // Apply any source changes before asking the engine to scan them.
         await sourcesUpdate?.value
         do {
             _ = try await engine.call(.rescan, EngineClient.Empty(), as: EngineClient.Empty.self)
-            scanRequestMessage = "Scan requested. New items will be indexed automatically."
+            awaitingScanCompletion = true
+            scanRequestMessage = "Scanning enabled sources… Existing results remain searchable."
             await refreshStatus()
         } catch {
             scanRequestError = "Couldn’t request a scan. Try again, or reopen Appears."

@@ -1,8 +1,45 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import AppearsCore
 
 @Suite struct SourceHealthTests {
+    @Test(.timeLimit(.minutes(1))) func retryReportsRunningCompletionAndFailureAndCoalescesRequests() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "appears-retry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let walk = RetryWalk()
+        defer { walk.finish.signal() }
+        let engine = try Engine(folder: folder.appending(path: "Engine"), embedder: HashingEmbedder(),
+                                settings: SourceSettings(notes: false, messages: false, homeOverride: folder.appending(path: "Home").path),
+                                fileWalk: walk.walk)
+        let item = Item(source: .file, path: folder.appending(path: "Home/retry.txt").path, kind: .document,
+                        title: "Synthetic unreadable item", size: 1, created: .now, modified: .now, lastUsed: nil)
+        let (id, _) = try engine.store.record(item, signature: "unchanged")
+        try engine.store.markFailed(itemID: id)
+        _ = try await engine.handle(.rescan, payload: Data("{}".utf8))
+        await walk.waitUntilStarted()
+        #expect(try engine.store.counts().waiting == 1, "Explicit retry requeues unchanged unreadable items")
+        let running = await engine.status()
+        #expect(running.isScanning)
+        #expect(running.lastScanCompletedAt == nil)
+        _ = try await engine.handle(.rescan, payload: Data("{}".utf8))
+        #expect(walk.state.withLock { $0.count } == 1, "Repeated requests share the full source pass")
+        walk.finish.signal()
+        await engine.refresh()
+        let failed = await engine.status()
+        #expect(!failed.isScanning)
+        #expect(failed.lastScanCompletedAt != nil)
+        #expect(failed.error?.contains("Couldn’t scan files") == true)
+        #expect(failed.error?.contains("Synthetic private filename") == false)
+        walk.state.withLock { $0.fail = false }
+        await engine.refresh()
+        let recovered = await engine.status()
+        #expect(recovered.error == nil)
+        #expect(!recovered.isScanning)
+        #expect(recovered.lastScanCompletedAt != failed.lastScanCompletedAt)
+        #expect(!walk.state.withLock { $0.timedOut })
+    }
+
     @Test func sourceCountsAndSuccessfulCheckDatesSurviveReopening() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "appears-health-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -25,6 +62,10 @@ import Testing
         #expect(statuses.first { $0.source == .file } == SourceStatus(source: .file, indexed: 1, lastChecked: date))
         #expect(statuses.first { $0.source == .notes } == SourceStatus(source: .notes, waiting: 1))
         #expect(statuses.first { $0.source == .messages } == SourceStatus(source: .messages, unreadable: 1))
+        try reopened.retryFailed()
+        let retried = try reopened.sourceStatuses()
+        #expect(retried.first { $0.source == .messages } == SourceStatus(source: .messages, waiting: 1))
+        #expect(retried.first { $0.source == .file } == statuses.first { $0.source == .file })
     }
 
     @Test func directoryEventsRespectSkipRulesAndExplicitIncludes() {
@@ -65,6 +106,14 @@ import Testing
         let nested = imported.appending(path: "permit.txt")
         try "A synthetic permit for the kitchen.".write(to: nested, atomically: true, encoding: .utf8)
         try await waitUntil("directory import") { try engine.store.item(path: nested.path) != nil }
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: imported.path) }
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: imported.path)
+        try await waitUntil("directory permission warning") {
+            await engine.status().fileScanIssues.contains { $0.path == imported.path && $0.permissionDenied }
+        }
+        #expect(try engine.store.item(path: nested.path) != nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: imported.path)
+        try await waitUntil("directory permission recovery") { await engine.status().fileScanIssues.isEmpty }
         let renamed = included.appending(path: "Renamed")
         try FileManager.default.moveItem(at: imported, to: renamed)
         let moved = renamed.appending(path: "permit.txt")
@@ -79,11 +128,36 @@ import Testing
         #expect(try engine.store.sourceStatuses().first { $0.source == .file }?.lastChecked != nil)
     }
 
-    private func waitUntil(_ label: String = #function, _ predicate: () throws -> Bool) async throws {
+    private func waitUntil(_ label: String = #function, _ predicate: () async throws -> Bool) async throws {
         for _ in 0..<100 {
-            if try predicate() { return }
+            if try await predicate() { return }
             try await Task.sleep(for: .milliseconds(100))
         }
         Issue.record("A live file update did not reach the index within ten seconds: \(label)")
+    }
+}
+
+private final class RetryWalk: Sendable {
+    let started = DispatchSemaphore(value: 0)
+    let finish = DispatchSemaphore(value: 0)
+    let state = Mutex((count: 0, fail: true, timedOut: false))
+
+    func walk(_ scanner: FileScanner) throws -> [Item] {
+        let first = state.withLock { $0.count += 1; return $0.count == 1 }
+        if first {
+            started.signal()
+            let result = finish.wait(timeout: .now() + 5)
+            state.withLock { $0.timedOut = result == .timedOut }
+        }
+        if state.withLock({ $0.fail }) {
+            throw CocoaError(.fileReadNoPermission, userInfo: [NSFilePathErrorKey: "Synthetic private filename"])
+        }
+        return []
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { self.started.wait(); continuation.resume() }
+        }
     }
 }

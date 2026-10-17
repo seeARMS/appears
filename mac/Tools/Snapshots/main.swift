@@ -363,7 +363,19 @@ let weaker = [
     starting.error = "The search engine couldn’t start. Use Scan now to retry."
     model.showForSnapshot(nil, status: starting)
     precondition(model.canRequestScan) // An unready engine must not disable recovery.
+    precondition(model.readinessDetail == starting.error)
     render(SourcesPane(model: model).frame(width: 560, height: 580), "settings-sources-retry", width: 560)
+    var skipped = status
+    skipped.fileScanIssues = [try! JSONDecoder().decode(FileScanIssue.self, from: Data(#"{"path":"/Users/demo/Downloads/Imported quotes","permissionDenied":true}"#.utf8))]
+    model.showForSnapshot(nil, status: skipped)
+    precondition(model.readinessTitle == "Ready to search" && model.canRequestScan)
+    render(ReadinessView(model: model, details: true).padding(16).frame(width: 560), "source-health-skipped", width: 560)
+    var checking = skipped
+    checking.isScanning = true
+    checking.progress.phase = .indexing
+    model.showForSnapshot(nil, status: checking)
+    precondition(model.readinessTitle == "Looking for new items…" && !model.canRequestScan)
+    render(ReadinessView(model: model, details: true).padding(16).frame(width: 560), "source-health-checking", width: 560)
     var scanning = status
     scanning.progress.phase = .scanning
     scanning.progress.scanned = 1_500
