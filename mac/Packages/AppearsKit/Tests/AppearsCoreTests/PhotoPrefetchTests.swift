@@ -7,6 +7,7 @@ import Testing
 private actor PhotoGate {
     var opened = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    var waiting: Int { waiters.count }
     func wait() async {
         if opened { return }
         await withCheckedContinuation { waiters.append($0) }
@@ -124,15 +125,21 @@ private enum PhotoTestFailure: Error { case didNotSettle }
         let fixture = try PhotoFixture()
         defer { try? FileManager.default.removeItem(at: fixture.folder) }
         let events = PhotoEvents(), model = PhotoGate(), preparation = PhotoGate()
-        let indexer = fixture.indexer(PhotoEmbedder(events: events, onImage: { id in if id == 1 { await model.wait() } }),
+        let modelFinished = PhotoGate()
+        let indexer = fixture.indexer(PhotoEmbedder(events: events, onImage: { id in
+            if id == 1 { await model.wait(); await modelFinished.open() }
+        }),
                                      extract: { id in if id == 2 { await preparation.wait() } })
         await indexer.setPoliteness(false)
         let ended = Mutex(false)
         let run = Task { defer { ended.withLock { $0 = true } }; return try await indexer.indexPending() }
-        try await photoSettled { await events.firstImageAndPrefetchStarted }
+        try await photoSettled { await preparation.waiting == 1 }
         run.cancel()
         await model.open()
-        // The decoder deliberately ignores cancellation until its gate opens.
+        try await photoSettled { await modelFinished.opened }
+        // Let cancellation unwind the completed model operation. The extraction is
+        // already blocked and deliberately ignores cancellation until its gate opens.
+        try await Task.sleep(for: .milliseconds(20))
         #expect(!ended.withLock { $0 })
         await preparation.open()
         do { _ = try await run.value; Issue.record("Cancelled indexing returned successfully") }
