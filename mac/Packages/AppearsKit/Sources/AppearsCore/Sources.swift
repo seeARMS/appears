@@ -38,7 +38,7 @@ public struct SourceSettings: Sendable, Codable, Equatable {
 }
 
 /// A filesystem read that was skipped. Kept in memory for Sources, never logged publicly.
-public struct FileScanIssue: Sendable, Codable, Equatable {
+public struct FileScanIssue: Error, Sendable, Codable, Equatable {
     public var path: String
     public var permissionDenied: Bool
 
@@ -258,7 +258,14 @@ public struct FileScanner: Sendable {
                    isDataFolder(parent, children: siblings) { return nil }
                 let values: URLResourceValues
                 do { values = try url.resourceValues(forKeys: Set(Self.keys)) }
-                catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { return nil }
+                catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+                    // A missing file is a deletion only if its configured root is still
+                    // available. Otherwise an unplugged drive could lose its saved index.
+                    guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                        throw FileScanIssue(path: folder.path, error: error)
+                    }
+                    return nil
+                }
                 guard values.isRegularFile == true else { return nil }
                 return item(url, values)
             }

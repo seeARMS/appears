@@ -337,8 +337,9 @@ public actor Indexer {
             let item: Item?
             do { item = try scanner.readItem(at: URL(filePath: path)) }
             catch {
-                fileScanIssues.removeAll { $0.path == path }
-                fileScanIssues.append(FileScanIssue(path: path, error: error))
+                let issue = (error as? FileScanIssue) ?? FileScanIssue(path: path, error: error)
+                fileScanIssues.removeAll { $0.path == issue.path }
+                fileScanIssues.append(issue)
                 continue
             }
             fileScanIssues.removeAll { $0.path == path }

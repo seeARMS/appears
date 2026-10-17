@@ -187,6 +187,9 @@ import Testing
         let original = try #require(try store.item(path: file.path))
         let offline = folder.appending(path: "Offline")
         try FileManager.default.moveItem(at: included, to: offline)
+        try await indexer.filesChanged([file.path])
+        #expect(try store.item(path: file.path) == original, "A file event from an unavailable included root is not a confirmed deletion")
+        #expect(vectors.count == 1)
         for directories: [String]? in [nil, [included.path]] {
             _ = try await indexer.scanFiles(in: directories)
             #expect(try store.item(path: file.path) == original)
