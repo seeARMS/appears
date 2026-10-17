@@ -207,14 +207,19 @@ let weaker = [
         .init(id: "joan", name: "Joan Lee", addresses: ["joan@example.test"]),
     ])
     let contactModel = AppModel(contacts: ContactDirectory(snapshot: contactFixture))
+    let messagePassages = [
+        "Me: Did the builder get back to you?\n+14155550142: The kitchen quote includes moving the outlet.",
+        "joan@example.test: Kitchen quote: $2,400.",
+        "+14155550149: The builder sent the revised kitchen quote this morning. It includes the cabinets and the new outlets by the window.",
+    ]
     let contactResults = ["+14155550142", "joan@example.test", "+14155550149"].enumerated().map { index, address in
         let item = Item(id: Int64(101 + index), source: .messages, path: "messages:\(index)", kind: .message,
                         title: address, size: 30, created: Date(), modified: Date(), lastUsed: nil,
                         message: .init(rowID: Int64(index), guid: "fixture-\(index)", chatID: Int64(index), conversationURL: nil))
-        let text = "Me: Does the kitchen quote cover the outlet?\n\(address): Moving the outlet is included."
-        return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: text),
-                          reason: "Related · from October 2026", snippet: text.replacingOccurrences(of: "\n", with: " "),
-                          score: 1, confidence: 0.8, features: features)
+        return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: messagePassages[index]),
+                          reason: "Related · from October 2026", snippet: messagePassages[index],
+                          score: 1, confidence: 0.8, features: features,
+                          line: index == 1 ? MatchedLine(segments: [.init("joan@example.test: Kitchen quote: "), .init("$2,400", emphasized: true)]) : nil)
     }
     var contactStatus = EngineStatus()
     contactStatus.ready = true
@@ -227,6 +232,14 @@ let weaker = [
     let contactSearch = SearchModel(app: contactModel)
     contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults)
     render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-contacts", width: 640)
+    let kitchenNote = Item(id: 110, source: .notes, path: "notes:demo-kitchen", kind: .note, title: "Kitchen walkthrough",
+                    size: 1, created: Date(), modified: Date(), lastUsed: nil)
+    let noteResult = Suggestion(item: kitchenNote, unit: Unit(kind: .text, locator: .whole, text: "Ask Dana to include the kitchen outlet in the revised quote."),
+                                reason: "Mentions Dana Ruiz", snippet: "Ask Dana to include the kitchen outlet in the revised quote.",
+                                score: 0.7, confidence: 0.7, features: features)
+    contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults + [noteResult, suggestions[1]])
+    render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-excerpts", width: 640)
+    contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults)
     contactSearch.sourcePreview = contactResults[0]
     render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-contact-preview", width: 640)
     var status = EngineStatus()

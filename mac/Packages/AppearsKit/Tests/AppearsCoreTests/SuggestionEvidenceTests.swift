@@ -71,4 +71,40 @@ import Testing
         #expect(SuggestionEvidence(item, terms: ["password"]).segments.isEmpty)
         #expect(item.line?.concealed == true)
     }
+
+    @Test func searchShowsShortMatchingMessagesInsteadOfTheContactReason() {
+        let text = "Me: Any update?\nDana: Paid final rent.\nMe: Thanks!"
+        let result = SuggestionEvidence(suggestion(text, reason: "Mentions Dana Ruiz · from April 2025", snippet: "Me: Any update?"),
+                                        terms: ["final", "rent"], style: .search)
+        #expect(result.isQuotation)
+        #expect(result.segments.map(\.text).joined() == "Dana: Paid final rent.")
+        #expect(result.segments.filter(\.emphasized).map(\.text) == ["final", "rent"])
+    }
+
+    @Test func searchShowsMeaningOnlyPassagesEvenWithASpecificNameReason() {
+        let result = SuggestionEvidence(suggestion("Paid yesterday.", reason: "Mentions Dana Ruiz"), terms: ["rent"], style: .search)
+        #expect(result.isQuotation)
+        #expect(result.segments.map(\.text).joined() == "Paid yesterday.")
+        let answer = MatchedLine(segments: [.init("Password: "), .init("trout-meadow-88", emphasized: true)], concealed: true)
+        let item = suggestion("Password: trout-meadow-88", line: answer)
+        #expect(SuggestionEvidence(item, style: .search).segments == answer.segments)
+        #expect(item.line?.concealed == true)
+    }
+
+    @Test func searchStillRequiresCleanMatchingOCRForImages() {
+        let text = "Electrical, 6 new outlets $1,650"
+        #expect(SuggestionEvidence(suggestion(text, image: true), terms: ["outlets"], style: .search).isQuotation)
+        #expect(SuggestionEvidence(suggestion(text, image: true), terms: ["plumbing"], style: .search).segments.isEmpty)
+        #expect(SuggestionEvidence(suggestion("01 020 300 450 678 900 outlets", image: true), terms: ["outlets"], style: .search).segments.isEmpty)
+    }
+
+    @Test func searchSkipsPunctuationNoiseButKeepsShortRepliesAndValues() {
+        let result = SuggestionEvidence(suggestion("—\n...\nPaid yesterday."), style: .search)
+        #expect(result.segments.map(\.text).joined() == "Paid yesterday.")
+        #expect(SuggestionEvidence(suggestion("—\n..."), style: .search).segments.isEmpty)
+        for text in ["1200", "👍", "❤️"] {
+            let reply = SuggestionEvidence(suggestion(text), style: .search)
+            #expect(reply.segments.map(\.text).joined() == text)
+        }
+    }
 }
