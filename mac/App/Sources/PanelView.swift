@@ -116,6 +116,7 @@ struct PanelView: View {
             Message(title: "Couldn't look", text: error, action: nil)
         } else if let preview = model.sourcePreview {
             SourcePreviewView(suggestion: preview, title: model.contacts.presentation(for: preview.item)?.title,
+                              contacts: model.contacts,
                               back: { model.sourcePreview = nil }) {
                 model.act(.opened, on: preview); close()
             }

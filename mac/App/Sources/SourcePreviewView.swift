@@ -7,10 +7,14 @@ import SwiftUI
 struct SourcePreviewView: View {
     let suggestion: Suggestion
     var title: String? = nil
+    var contacts: ContactDirectory? = nil
     let back: () -> Void
     let open: () -> Void
 
-    private var passage: String { suggestion.unit.text.isEmpty ? suggestion.snippet : suggestion.unit.text }
+    private var passage: String {
+        if suggestion.unit.text.isEmpty { return contacts?.displaySnippet(for: suggestion) ?? suggestion.snippet }
+        return contacts?.displayText(suggestion.unit.text, for: suggestion.item) ?? suggestion.unit.text
+    }
     private var source: String { suggestion.item.source == .messages ? "Messages" : "Apple Notes" }
 
     var body: some View {
@@ -29,7 +33,7 @@ struct SourcePreviewView: View {
                 .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground).padding(.top, 4)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let line = suggestion.line { QuotedLine(line: line) }
+                    if let line = suggestion.line { QuotedLine(line: contacts?.displayLine(line, for: suggestion.item) ?? line) }
                     Text(passage.isEmpty ? "No readable passage is available. Open the original to view it." : passage)
                         .font(.system(size: 13)).lineSpacing(4).foregroundStyle(Theme.foreground)
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)

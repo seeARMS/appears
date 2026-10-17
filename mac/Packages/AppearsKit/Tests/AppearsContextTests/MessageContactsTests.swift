@@ -79,4 +79,61 @@ struct MessageContactsTests {
         file.source = .file
         #expect(directory.presentation(for: file) == nil)
     }
+
+    private func suggestion(text: String, snippet: String? = nil, item: Item? = nil) -> Suggestion {
+        Suggestion(item: item ?? self.item(), unit: Unit(kind: .text, locator: .whole, text: text),
+                   reason: "Related", snippet: snippet ?? text.replacingOccurrences(of: "\n", with: " "),
+                   score: 1, confidence: 0.8,
+                   features: Features(cosine: 0.8, zScore: 5, agreement: true, entityHit: true,
+                                      daysSinceTouched: 1, fused: 1, forgotten: 1, novelty: 1))
+    }
+
+    @Test func resolvesSpeakersInFlattenedSearchExcerptsAndMultilinePreviews() {
+        let directory = MessageContacts(people: [dana, joan])
+        let text = "Me: Where is the ladder?\n+14155550142: By the garage.\n+14155550143: Beside the shelves."
+        let original = suggestion(text: text)
+        #expect(directory.displaySnippet(for: original) == "Me: Where is the ladder? Dana Ruiz: By the garage. Joan Lee: Beside the shelves.")
+        #expect(directory.displayText(text, for: original.item) == "Me: Where is the ladder?\nDana Ruiz: By the garage.\nJoan Lee: Beside the shelves.")
+        #expect(original.unit.text == text)
+        #expect(original.snippet.contains("+14155550142"))
+    }
+
+    @Test func preservesBodyNumbersAndHandlesClippedUnicodeExcerpts() {
+        let directory = MessageContacts(people: [dana, joan])
+        let text = "Me: 🪜 Call +14155550142: ask about the ladder.\n+14155550142: It’s by the garage.\n+14155550143: Thanks!"
+        let clipped = suggestion(text: text, snippet: "…the ladder. +14155550142: It’s by the garage. +14155550143: Thanks…")
+        #expect(directory.displaySnippet(for: clipped) == "…the ladder. Dana Ruiz: It’s by the garage. Joan Lee: Thanks…")
+        let full = directory.displaySnippet(for: suggestion(text: text))
+        #expect(full.hasPrefix("Me: 🪜 Call +14155550142: ask about the ladder."))
+        #expect(directory.displayText(text, for: item()).hasPrefix("Me: 🪜 Call +14155550142: ask about the ladder."))
+        let partialSpeaker = suggestion(text: text, snippet: "…5550142: It’s by the garage.…")
+        #expect(directory.displaySnippet(for: partialSpeaker) == partialSpeaker.snippet)
+    }
+
+    @Test func leavesUnknownAmbiguousAndNonMessageSpeakersAlone() {
+        let collision = MessageContacts.Person(id: "other", name: "Different Person", addresses: dana.addresses)
+        let directory = MessageContacts(people: [dana, collision])
+        let text = "Me: Where?\n+14155550142: By the garage.\n+14155550149: Thanks."
+        let original = suggestion(text: text)
+        #expect(directory.displaySnippet(for: original) == original.snippet)
+        #expect(MessageContacts().displayText(text, for: item()) == text)
+        var note = item()
+        note.source = .notes
+        #expect(MessageContacts(people: [dana]).displaySnippet(for: suggestion(text: text, item: note)) == original.snippet)
+        #expect(MessageContacts(people: [dana]).displayText(text, for: note) == text)
+        let email = suggestion(text: "Me: Where?\nDANA@EXAMPLE.TEST: By the garage.")
+        #expect(MessageContacts(people: [dana]).displaySnippet(for: email) == "Me: Where? Dana Ruiz: By the garage.")
+    }
+
+    @Test func preservesAnswerEmphasisAndClipboardPrivacyAcrossSplitSenderSegments() {
+        let directory = MessageContacts(people: [dana, joan])
+        let line = MatchedLine(segments: [.init("+1415"), .init("5550142", emphasized: true),
+                                         .init(": Gate code: "), .init("1234", emphasized: true),
+                                         .init("\n+14155550143: Thanks")], concealed: true)
+        let displayed = directory.displayLine(line, for: item())
+        #expect(displayed.text == "Dana Ruiz: Gate code: 1234\nJoan Lee: Thanks")
+        #expect(displayed.segments.contains(.init("1234", emphasized: true)))
+        #expect(displayed.concealed)
+        #expect(line.text.hasPrefix("+14155550142:"))
+    }
 }

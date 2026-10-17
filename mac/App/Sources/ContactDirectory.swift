@@ -98,6 +98,9 @@ final class ContactDirectory {
     }
 
     func presentation(for item: Item) -> MessageContacts.Presentation? { snapshot.presentation(for: item) }
+    func displayText(_ text: String, for item: Item) -> String { snapshot.displayText(text, for: item) }
+    func displaySnippet(for suggestion: Suggestion) -> String { snapshot.displaySnippet(for: suggestion) }
+    func displayLine(_ line: MatchedLine, for item: Item) -> MatchedLine { snapshot.displayLine(line, for: item) }
 }
 
 /// A message's contact photo, or initials when the contact has no photo. Attached photos

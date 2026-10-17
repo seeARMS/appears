@@ -60,6 +60,7 @@ struct SearchView: View {
             ReadinessView(model: model.app, openSources: openSettings).padding(24)
         } else if let preview = model.sourcePreview {
             SourcePreviewView(suggestion: preview, title: model.app.contacts.presentation(for: preview.item)?.title,
+                              contacts: model.app.contacts,
                               back: { model.sourcePreview = nil }) {
                 if model.open(preview) { finish() }
             }
@@ -213,9 +214,9 @@ private struct SearchResultRow: View {
                     Text(location).font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
                         .lineLimit(1).truncationMode(.middle)
                     if selected, let line = suggestion.line {
-                        QuotedLine(line: line).padding(.top, 4)
+                        QuotedLine(line: contacts.displayLine(line, for: suggestion.item)).padding(.top, 4)
                     } else if selected, suggestion.item.kind != .image, !suggestion.snippet.isEmpty {
-                        Text(suggestion.snippet).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                        Text(contacts.displaySnippet(for: suggestion)).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
                             .lineLimit(2).padding(.top, 3)
                     }
                 }
@@ -235,7 +236,7 @@ private struct SearchResultRow: View {
             Button("Open", action: open)
             if suggestion.item.fileURL != nil { Button("Show in Finder", action: reveal) }
             else { Button("Preview passage", action: preview) }
-            if let line = suggestion.line { Button("Copy Line") { line.copyToPasteboard() } }
+            if let line = suggestion.line { Button("Copy Line") { contacts.displayLine(line, for: suggestion.item).copyToPasteboard() } }
         }
         .task(id: suggestion.id) {
             if suggestion.item.source == .messages { await contacts.refresh() }

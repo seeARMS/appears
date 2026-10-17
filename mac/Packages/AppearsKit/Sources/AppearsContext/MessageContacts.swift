@@ -112,6 +112,78 @@ public struct MessageContacts: Sendable {
                             initials: initials, photo: person?.photo, isGroup: group)
     }
 
+    /// Resolve only the speaker at the start of each indexed conversation line.
+    /// Numbers and email addresses in the message itself stay verbatim.
+    public func displayText(_ text: String, for item: Item) -> String {
+        guard item.source == .messages, item.kind == .message else { return text }
+        var result = text
+        for replacement in speakers(in: text).reversed() {
+            result.replaceSubrange(replacement.range, with: replacement.name)
+        }
+        return result
+    }
+
+    /// Search excerpts have their newlines collapsed and may start midway through a
+    /// message. Locate the excerpt in its source so an inline number is never a sender.
+    public func displaySnippet(for suggestion: Suggestion) -> String {
+        let snippet = suggestion.snippet
+        guard suggestion.item.source == .messages, suggestion.item.kind == .message else { return snippet }
+        let source = suggestion.unit.text
+        guard !source.isEmpty else { return displayText(snippet, for: suggestion.item) }
+        func flat(_ text: String) -> String {
+            text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        }
+        let flattened = flat(source)
+        var excerpt = snippet[...]
+        if excerpt.hasPrefix("…") { excerpt = excerpt.dropFirst() }
+        if excerpt.hasSuffix("…") { excerpt = excerpt.dropLast() }
+        guard !excerpt.isEmpty, let location = flattened.range(of: String(excerpt)) else { return snippet }
+        let offset = flattened.distance(from: flattened.startIndex, to: location.lowerBound)
+        let leading = snippet.hasPrefix("…") ? 1 : 0
+        var result = snippet
+        for replacement in speakers(in: source).reversed() {
+            let start = flat(String(source[..<replacement.range.lowerBound])).count - offset
+            let length = flat(String(source[replacement.range])).count
+            guard start >= 0, start + length <= excerpt.count else { continue }
+            let lower = snippet.index(snippet.startIndex, offsetBy: leading + start)
+            let upper = snippet.index(lower, offsetBy: length)
+            result.replaceSubrange(lower..<upper, with: replacement.name)
+        }
+        return result
+    }
+
+    /// Keep answer emphasis and concealed clipboard handling when a quoted line
+    /// includes a sender, even when its address spans several styled segments.
+    public func displayLine(_ line: MatchedLine, for item: Item) -> MatchedLine {
+        guard item.source == .messages, item.kind == .message else { return line }
+        let text = line.text
+        var result = line
+        for replacement in speakers(in: text).reversed() {
+            let start = text.distance(from: text.startIndex, to: replacement.range.lowerBound)
+            let end = text.distance(from: text.startIndex, to: replacement.range.upperBound)
+            var offset = 0
+            result.segments = result.segments.flatMap { segment -> [MatchedLine.Segment] in
+                let count = segment.text.count
+                defer { offset += count }
+                guard offset < end, offset + count > start else { return [segment] }
+                var parts: [MatchedLine.Segment] = []
+                if start > offset { parts.append(.init(String(segment.text.prefix(start - offset)), emphasized: segment.emphasized)) }
+                if start >= offset { parts.append(.init(replacement.name, emphasized: segment.emphasized)) }
+                if end < offset + count { parts.append(.init(String(segment.text.suffix(offset + count - end)), emphasized: segment.emphasized)) }
+                return parts
+            }
+        }
+        return result
+    }
+
+    private func speakers(in text: String) -> [(range: Range<String.Index>, name: String)] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
+            guard let colon = line.firstIndex(of: ":"),
+                  let person = person(for: String(line[..<colon])) else { return nil }
+            return (line.startIndex..<colon, person.name)
+        }
+    }
+
     private func person(for address: String) -> Person? {
         let key = Self.key(address)
         return ambiguous.contains(key) ? nil : people[key]
