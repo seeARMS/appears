@@ -45,7 +45,7 @@ final class PassageSelector: Sendable {
         cache.withLock { values in
             Dictionary(uniqueKeysWithValues: suggestions.compactMap { result in
                 guard let evidence = result.evidence,
-                      let vector = values[EmbeddingDocument(title: "", text: evidence.text)] else { return nil }
+                      let vector = values[EmbeddingDocument(title: result.item.title, text: evidence.text)] else { return nil }
                 return (result.id, vector)
             })
         }
@@ -56,7 +56,7 @@ final class PassageSelector: Sendable {
         var unit: Unit
         var text: String
         var sources: [PassageEvidence.Source]
-        var document: EmbeddingDocument { EmbeddingDocument(title: "", text: text) }
+        var document: EmbeddingDocument { EmbeddingDocument(title: item.title, text: text) }
     }
 
     func select(_ candidates: [Suggestion], query: [Float], embedder: any Embedder,
@@ -104,14 +104,21 @@ final class PassageSelector: Sendable {
             }
         }
 
-        var choices: [[Passage]] = []
+        var possibleChoices: [[Passage]] = []
         var documents: [EmbeddingDocument] = []
         var admitted: Set<EmbeddingDocument> = []
+        // Preserve the existing structured value contract (dates, amounts, codes):
+        // constrain candidate passages before semantic scoring, rather than extract
+        // an unrelated value from the whole unit after choosing the displayed quote.
+        func answersValue(_ passage: Passage) -> Bool {
+            guard let question, !question.kinds.isEmpty else { return false }
+            return MatchedLine.find(in: passage.text, for: question, terms: terms) != nil
+        }
         for candidate in candidates {
             try Task.checkCancellation()
             // Visual evidence and OCR keep their existing readability/overlap policy.
             guard candidate.unit.kind == .text, candidate.item.kind != .image || candidate.item.source == .messages else {
-                choices.append([])
+                possibleChoices.append([])
                 continue
             }
             let possible: [Passage]
@@ -122,18 +129,23 @@ final class PassageSelector: Sendable {
                 possible = Self.passages(candidate.unit.text, item: candidate.item, unit: candidate.unit,
                                          message: nil, modified: candidate.item.modified)
             }
-            var retained: [Passage] = []
-            for passage in possible {
+            let answering = possible.filter(answersValue)
+            possibleChoices.append(answering.isEmpty ? possible : answering)
+        }
+        // Share the fixed inference budget round-robin. A verbose early result must
+        // not spend every slot before later candidates receive any source evidence.
+        for offset in 0..<(possibleChoices.map(\.count).max() ?? 0) {
+            for possible in possibleChoices where possible.indices.contains(offset) {
+                let passage = possible[offset]
                 let document = passage.document
                 if !admitted.contains(document) {
                     guard documents.count < maximumDocuments else { continue }
                     admitted.insert(document)
                     documents.append(document)
                 }
-                retained.append(passage)
             }
-            choices.append(retained)
         }
+        let choices = possibleChoices.map { $0.filter { admitted.contains($0.document) } }
 
         var vectors = cache.withLock { values in
             Dictionary(uniqueKeysWithValues: documents.compactMap { document in values[document].map { (document, $0) } })
@@ -172,11 +184,15 @@ final class PassageSelector: Sendable {
             // Fine-grained evidence can lower a broad match's relevance/confidence. It
             // cannot turn weak retrieval into a new confident ambient interruption.
             let support = min(1, max(0, best.1) / max(0.05, candidate.features.cosine))
-            let result = Suggestion(item: passage.item, unit: passage.unit, reason: candidate.reason,
+            var unit = passage.unit
+            // The indexed window can contain a now-hidden or unsent neighbour. Return
+            // only the source text just validated above, including for inline previews.
+            if passage.item.source == .messages, contexts != nil { unit.text = evidence.text }
+            let result = Suggestion(item: passage.item, unit: unit, reason: candidate.reason,
                                     snippet: evidence.text, score: candidate.score * support,
                                     confidence: candidate.confidence * support, features: candidate.features,
                                     line: question.flatMap {
-                                        MatchedLine.find(in: passage.item.source == .messages ? evidence.text : passage.unit.text, for: $0, terms: terms)
+                                        MatchedLine.find(in: evidence.text, for: $0, terms: terms)
                                     },
                                     evidence: evidence, ambientEligible: candidate.ambientEligible)
             results.append(result)
@@ -239,18 +255,19 @@ final class PassageSelector: Sendable {
     }
 
     /// All offsets address the unmodified source string. Sentence boundaries are generic;
-    /// no topic words, acronym lists, question types or generated answers are involved.
+    /// no topic words, acronym lists or generated answers are involved in segmentation.
     static func passages(_ text: String, item: Item, unit: Unit, message: MessageReference?, modified: Date) -> [Passage] {
         var ranges: [Range<String.Index>] = []
         let tokenizer = NLTokenizer(unit: .sentence)
-        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, _ in
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, stop in
+            guard ranges.count < 24 else { stop = true; return }
             let body = String(text[paragraph])
             tokenizer.string = body
             tokenizer.enumerateTokens(in: body.startIndex..<body.endIndex) { local, _ in
                 let lower = text.index(paragraph.lowerBound, offsetBy: body.distance(from: body.startIndex, to: local.lowerBound))
                 let upper = text.index(lower, offsetBy: body.distance(from: local.lowerBound, to: local.upperBound))
                 var start = lower
-                while start < upper {
+                while start < upper, ranges.count < 24 {
                     var end = text.index(start, offsetBy: 480, limitedBy: upper) ?? upper
                     if end < upper, let space = text[start..<end].lastIndex(where: \.isWhitespace), space > start { end = space }
                     var trimmed = start..<end

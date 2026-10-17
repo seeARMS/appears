@@ -361,6 +361,7 @@ struct Eval: AsyncParsableCommand {
             if verbose || found.count < min(expected.count, 3) {
                 for s in response.suggestions {
                     print("    \(expected.contains(short(s.item.path)) ? "+" : "-") \(short(s.item.path))  \(String(format: "%.2f", s.confidence))  \(s.reason)  \(describe(s.features))")
+                    if let evidence = s.evidence { print("      passage: \(evidence.text.replacingOccurrences(of: "\n", with: " / "))") }
                 }
             }
         }

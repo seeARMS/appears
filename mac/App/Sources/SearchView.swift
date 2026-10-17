@@ -258,7 +258,8 @@ private struct SearchResultRow: View {
     }
 
     private func excerpt(_ evidence: SuggestionEvidence) -> AttributedString {
-        let segments = suggestion.line.map { contacts.displayLine($0, for: suggestion.item).segments } ?? evidence.segments
+        let segments = suggestion.evidence != nil ? evidence.segments
+            : suggestion.line.map { contacts.displayLine($0, for: suggestion.item).segments } ?? evidence.segments
         return segments.reduce(into: AttributedString()) { text, segment in
             var run = AttributedString(segment.text)
             if segment.emphasized {

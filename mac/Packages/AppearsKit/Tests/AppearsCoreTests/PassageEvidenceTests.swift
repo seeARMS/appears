@@ -7,7 +7,7 @@ import Testing
 
 /// Known semantic vectors deliberately connect phrases without shared keywords. These
 /// tests verify provenance, ranking and rendering independently of an embedding model.
-private struct PassageTestEmbedder: Embedder {
+struct PassageTestEmbedder: Embedder {
     let modelID = "passage-test"
     let dimension = 3
     let supportsImages = false
@@ -86,7 +86,10 @@ private struct PassageTestEmbedder: Embedder {
         try store.setNeverShow(itemID: answer.id)
         let recall = Recall(store: store, vectors: vectors, embedder: PassageTestEmbedder(), messages: MessagesReader(url: fixture.url))
         let response = try await recall.run(RecallRequest(context: .text("Which winery did the UPS guy recommend?"), trigger: .pull, limit: 10))
+        #expect(!response.suggestions.isEmpty)
         #expect(response.suggestions.allSatisfy { $0.evidence?.text.contains(Self.answer) != true })
+        #expect(response.suggestions.allSatisfy { !$0.unit.text.contains(Self.answer) },
+                "Inline previews must not expose a hidden neighbour from a stale indexed window")
     }
 
     @Test func unsendWhileScoringDiscardsTheSource() async throws {
@@ -140,5 +143,68 @@ private struct PassageTestEmbedder: Embedder {
         let a = PassageEvidence(text: Self.answer, sources: [.init(itemID: 1, unitID: 2, message: nil, modified: date, utf16Location: 10, utf16Length: 30)], cosine: 1)
         let b = PassageEvidence(text: Self.answer, sources: [.init(itemID: 2, unitID: 3, message: nil, modified: date, utf16Location: 10, utf16Length: 30)], cosine: 1)
         #expect(!a.overlaps(b), "Identical words in distinct sources are not duplicates")
+    }
+
+    private func candidate(_ text: String, number: Int, store: IndexStore) throws -> Suggestion {
+        let date = Date(timeIntervalSince1970: 100)
+        let item = Item(source: .notes, path: "notes:passage-\(number)", kind: .note, title: "Note \(number)",
+                        size: Int64(text.utf8.count), created: date, modified: date, lastUsed: nil)
+        let (id, _) = try store.record(item, signature: "fixture")
+        _ = try store.replaceUnits(itemID: id, title: item.title, units: [
+            (AppearsCore.Unit(kind: .text, locator: .whole, text: text), [Float(0.95), 0.31225, 0]),
+        ])
+        let stored = try #require(try store.item(path: item.path))
+        let unit = try #require(try store.units(itemID: id).first?.unit)
+        return Suggestion(item: stored, unit: unit, reason: "Related", snippet: text, score: 1, confidence: 0.9,
+                          features: Features(cosine: 0.95, zScore: 5, agreement: true, entityHit: true,
+                                             daysSinceTouched: 100, fused: 0.05, forgotten: 1, novelty: 1))
+    }
+
+    @Test func verboseCandidatesCannotStarveLaterEvidence() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "passage-budget-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        var candidates = try (0..<40).map { number in
+            try candidate((0..<12).map { "Note \(number) sentence \($0) describes ordinary household repairs." }.joined(separator: " "),
+                          number: number, store: store)
+        }
+        let answer = try candidate(Self.answer, number: 40, store: store)
+        candidates.append(answer)
+        let results = try await PassageSelector().select(candidates, query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                        store: store, messages: nil, excluded: [], question: nil, terms: [])
+        #expect(results.count == candidates.count)
+        #expect(results.first?.id == answer.id)
+        #expect(results.first?.evidence?.text == Self.answer)
+    }
+
+    @Test func valueQuestionsSelectAndScoreTheAnsweringSourceRange() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "passage-line-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let quote = "We agreed that membership starts in spring."
+        let result = try candidate(quote + "\nAn unrelated sentence about membership administration.\nInvoice total: $120.", number: 0, store: store)
+        let question = try #require(Question(.text("How much was the invoice?")))
+        #expect(MatchedLine.find(in: result.unit.text, for: question) != nil)
+        let results = try await PassageSelector().select([result], query: [1, 0, 0], embedder: PassageTestEmbedder(preferred: quote),
+                                                        store: store, messages: nil, excluded: [], question: question, terms: ["invoice"])
+        let selected = try #require(results.first)
+        #expect(selected.evidence?.text.contains("Invoice total: $120.") == true)
+        #expect(selected.line?.text == "Invoice total: $120.")
+        #expect(selected.evidence?.text.contains(selected.line?.text ?? "missing") == true)
+        #expect(selected.confidence == 0, "A value constraint cannot bypass weak semantic support")
+    }
+
+    @Test func sourceRangeBudgetBoundsBothParagraphsAndLongSentences() throws {
+        let date = Date(timeIntervalSince1970: 100)
+        let item = Item(id: 1, source: .notes, path: "notes:bounded", kind: .note, title: "Long note", size: 1,
+                        created: date, modified: date, lastUsed: nil)
+        for text in [(0..<200).map { "Paragraph \($0) contains a sentence." }.joined(separator: "\n"),
+                     String(repeating: "word ", count: 10_000)] {
+            let unit = AppearsCore.Unit(id: 1, itemID: 1, kind: .text, locator: .whole, text: text)
+            let passages = PassageSelector.passages(text, item: item, unit: unit, message: nil, modified: date)
+            #expect(!passages.isEmpty)
+            #expect(passages.count <= 47, "At most 24 source ranges plus their adjacent pairs")
+            #expect(passages.allSatisfy { $0.text.count <= 480 })
+        }
     }
 }
