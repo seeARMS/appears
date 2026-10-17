@@ -211,4 +211,22 @@ struct PassageTestEmbedder: Embedder {
             }, "The range cap must retain the source's tail, including long single sentences")
         }
     }
+
+    @Test func staleVisibleQuestionCannotConstrainTheActiveDraft() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "passage-context-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let design = "The kitchen design uses white oak cabinets and a blue island."
+        let result = try candidate(design + "\nAn older planning discussion.\nDeadline: August 14, 2023.", number: 0, store: store)
+        let vectors = VectorIndex(dimension: 3)
+        vectors.upsert(id: result.unit.id, kind: .text, vector: [0.95, 0.31225, 0])
+        let context = ContextSnapshot(appName: "Mail", focusedText: "Can you review the new kitchen design?",
+                                      visibleText: "When is the deadline?")
+        #expect(Question(context)?.kinds.contains(.date) == true)
+        let recall = Recall(store: store, vectors: vectors, embedder: PassageTestEmbedder(preferred: design))
+        let response = try await recall.run(RecallRequest(context: context, trigger: .pull))
+        let selected = try #require(response.suggestions.first)
+        #expect(selected.evidence?.text == design)
+        #expect(selected.line == nil)
+    }
 }

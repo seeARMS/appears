@@ -280,9 +280,17 @@ public struct Recall: Sendable {
         var messageImageStats = imageStats
         var messageFullTextParts = fullTextParts
         var passageQueryVector = queryVector
+        var passageQuestion = Question(context)
         if !candidates.isEmpty {
-            let draft = QueryBuilder.build(ContextSnapshot(appName: context.appName, selection: context.selection, focusedText: context.focusedText)) { terms in
+            let draftContext = ContextSnapshot(appName: context.appName, selection: context.selection, focusedText: context.focusedText)
+            let draft = QueryBuilder.build(draftContext) { terms in
                 (try? store.documentFrequencies(terms)) ?? ([:], 0)
+            }
+            if draft.dense.count >= 12 {
+                // The structured question must come from the same active text as the
+                // passage vector. An old question in window history cannot constrain
+                // evidence for a different draft, even when both queries encode alike.
+                passageQuestion = Question(draftContext)
             }
             if draft.dense.count >= 12, draft.dense != query.dense {
                 messageQuery = draft
@@ -379,7 +387,7 @@ public struct Recall: Sendable {
         }
         scored.sort { $0.score > $1.score }
 
-        let question = Question(context)
+        let question = passageQuestion
         let terms = query.matchable + query.contextMatchable + query.rareTerms
         let broad = scored.enumerated().map { position, entry in
             Suggestion(item: entry.candidate.item, unit: entry.candidate.unit,

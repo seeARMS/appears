@@ -195,7 +195,6 @@
       "title": "Rosa",
       "visible": "Rosa: we're finally doing Portugal in June!! where did you stay in Lisbon?",
       "focused": "You'll love it. I’ll send you our itinerary",
-      "line": "Airbnb in Alfama",
       "expect": [
         "Documents/Travel/Lisbon 2023/itinerary.md"
       ]
@@ -273,6 +272,17 @@
         "Documents/Outings/Courier recommendation.md"
       ],
       "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "An explicit question about the old Lisbon lodging",
+      "app": "Messages",
+      "title": "Rosa",
+      "focused": "What was the street address of the Airbnb where we stayed in Lisbon?",
+      "visible": "Rosa: we're finally doing Portugal in June!! where did you stay in Lisbon?",
+      "expect": [
+        "Documents/Travel/Lisbon 2023/itinerary.md"
+      ],
+      "line": "Airbnb in Alfama"
     }
   ],
   "search": [
@@ -474,6 +484,13 @@
       "title": "Weekend plans",
       "focused": "What was the confirmation number for our hotel reservation?",
       "visible": "The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow."
+    },
+    {
+      "name": "An old visible date question does not override a new draft",
+      "app": "Mail",
+      "title": "Design review",
+      "focused": "Please review the amplifier enclosure design.",
+      "visible": "When were the brakes last looked at? Call Eastshore Honda."
     }
   ]
 }
