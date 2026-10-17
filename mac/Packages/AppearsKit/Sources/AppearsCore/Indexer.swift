@@ -40,6 +40,7 @@ public actor Indexer {
     private var scanningMessages = false
     private var messageHandles: [Int64: Handle] = [:]
     private var settingsRevision = 0
+    private var messagesRevision = 0
     private var messageSeconds = (read: 0.0, embed: 0.0, write: 0.0)
     private var onProgress: (@Sendable (IndexProgress) -> Void)?
     private var fileScan: Task<Int, any Error>?
@@ -47,14 +48,18 @@ public actor Indexer {
     private var pendingDirectories = Set<String>()
     private let fileWalk: @Sendable (FileScanner, [String]?, @Sendable (Int) -> Void) throws -> [Item]
     private var activeWalk: UUID?
+    private let photoExtraction: (@Sendable (Item) async -> Extraction?)?
+    private var photoPreparation: PhotoPreparation?
 
     public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil,
-                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil) {
+                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil,
+                photoExtraction: (@Sendable (Item) async -> Extraction?)? = nil) {
         self.store = store
         self.vectors = vectors
         self.embedder = embedder
         self.settings = settings
         self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
+        self.photoExtraction = photoExtraction
         if let fileWalk { self.fileWalk = { scanner, _, _ in try fileWalk(scanner) } }
         else {
             self.fileWalk = { scanner, directories, progress in
@@ -87,6 +92,7 @@ public actor Indexer {
         let old = self.settings
         self.settings = settings
         settingsRevision += 1
+        photoPreparation?.task.cancel()
         if fileScan != nil { fullScanPending = true; pendingDirectories.removeAll() }
         var removed = try store.itemIDs(under: settings.excludes.filter { !old.excludes.contains($0) })
         if old.notes, !settings.notes { removed += try store.itemIDs(source: .notes) }
@@ -307,6 +313,11 @@ public actor Indexer {
                 try store.markMessagesPending(rowIDs: neighbours.map(\.rowID))
             }
         }
+        if !changedChats.isEmpty {
+            // Neighbour edits change photo context without changing the attachment signature.
+            messagesRevision += 1
+            if photoPreparation?.item.source == .messages { photoPreparation?.task.cancel() }
+        }
         messageCursor = cursor
         messagesCheckedAt = started
         try store.didCheck(.messages, at: started)
@@ -336,6 +347,20 @@ public actor Indexer {
     /// cancelled. Returns how many items it indexed.
     @discardableResult
     public func indexPending() async throws -> Int {
+        do {
+            let done = try await indexWaiting()
+            await discardPhotoPreparation()
+            if let gemma = embedder as? any UnloadsVision { await gemma.unloadVision() }
+            return done
+        } catch {
+            // Drain even a decoder/OCR operation which takes time to observe cancellation.
+            // A subsequent run must never accumulate another detached preparation task.
+            await discardPhotoPreparation()
+            throw error
+        }
+    }
+
+    private func indexWaiting() async throws -> Int {
         let total = try store.counts().waiting
         guard total > 0 else { return 0 }
         report { $0.phase = .indexing; $0.done = 0; $0.total = total }
@@ -354,24 +379,30 @@ public actor Indexer {
             if batch.isEmpty { break }
             report { $0.phase = .indexing; $0.pausedReason = nil }
             var handled = Set<Int64>()
-            for item in batch where !handled.contains(item.id) {
+            for (offset, item) in batch.enumerated() where !handled.contains(item.id) {
                 try Task.checkCancellation()
                 let group = item.kind == .message
                     ? Array(batch.filter { $0.kind == .message && !handled.contains($0.id) }.prefix(8))
                     : [item]
                 handled.formUnion(group.map(\.id))
+                let signatures = try group.map { try store.pendingSignature(itemID: $0.id) }
+                let following = batch.dropFirst(offset + 1).first
                 let started = Date()
                 do {
                     try await withTimeout(seconds: Self.itemTimeout) {
                         if item.kind == .message { try await self.indexMessageTexts(group) }
-                        else { try await self.index(item) }
+                        else if item.kind == .image {
+                            try await self.indexPhoto(item, following: following?.kind == .image ? following : nil)
+                        } else { try await self.index(item) }
                     }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     // One bad file never stops the run: mark it and move on. It's retried when it changes.
                     indexLog.error("Couldn't index a \(item.kind.rawValue, privacy: .public) (\(item.size, privacy: .public) bytes): \(error.localizedDescription, privacy: .public) \(item.path, privacy: .private)")
-                    for failed in group where (try? store.item(path: failed.path)?.id) == failed.id { try? store.markFailed(itemID: failed.id) }
+                    for (failed, signature) in zip(group, signatures) {
+                        if let signature { try? store.markFailed(itemID: failed.id, signature: signature) }
+                    }
                 }
                 let seconds = Date().timeIntervalSince(started)
                 if seconds > 10 {
@@ -389,7 +420,7 @@ public actor Indexer {
                 }
             }
         }
-        if let gemma = embedder as? any UnloadsVision { await gemma.unloadVision() }
+        try Task.checkCancellation()
         indexLog.info("Indexing run finished: \(done, privacy: .public) items in \(Int(Date().timeIntervalSince(runStarted)), privacy: .public)s")
         return done
     }
@@ -397,7 +428,9 @@ public actor Indexer {
     /// Reads, embeds and stores one item. An unreadable item is marked so it isn't retried
     /// until it changes.
     func index(_ item: Item) async throws {
-        let revision = settingsRevision
+        guard let record = try store.indexingRecord(itemID: item.id) else { return }
+        let item = record.item
+        let revision = contentRevision(for: item)
         guard item.source != .messages || settings.messages else { return }
         let extraction: Extraction?
         if item.source == .messages {
@@ -408,9 +441,16 @@ public actor Indexer {
         } else {
             extraction = await Extractor.extract(item)
         }
-        guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
+        try await index(item, extraction: extraction, revision: revision, signature: record.signature)
+    }
+
+    private func index(_ item: Item, extraction: Extraction?, revision: ContentRevision, signature: String,
+                       preparedImages: [PreparedImageEmbedding]? = nil, fileVersion: PhotoFileVersion? = nil) async throws {
+        try Task.checkCancellation()
+        guard revision == contentRevision(for: item), try store.pendingSignature(itemID: item.id) == signature else { return }
+        if let fileVersion, try photoChanged(item, since: fileVersion, signature: signature) { return }
         guard let extraction, !extraction.isEmpty else {
-            try store.markFailed(itemID: item.id)
+            try store.markFailed(itemID: item.id, signature: signature)
             return
         }
         var units: [(unit: Unit, vector: [Float])] = []
@@ -424,7 +464,12 @@ public actor Indexer {
             }
         }
         if !extraction.images.isEmpty, embedder.supportsImages {
-            let vectors = try await embedder.embed(images: extraction.images.map(\.image))
+            var vectors: [[Float]] = []
+            if let preparedImages {
+                for image in preparedImages { vectors.append(try await image.vector()) }
+            } else {
+                vectors = try await embedder.embed(images: extraction.images.map(\.image))
+            }
             for (image, vector) in zip(extraction.images, vectors) {
                 units.append((Unit(kind: .image, locator: image.locator, text: image.text), vector))
             }
@@ -440,8 +485,116 @@ public actor Indexer {
             try store.touch(path: item.path, at: lastUsed)
         }
         // A source can be switched off while embedding awaits the GPU. Never put it back.
-        guard revision == settingsRevision, try store.item(path: item.path)?.id == item.id else { return }
-        try commit(item, units: units)
+        try Task.checkCancellation()
+        guard revision == contentRevision(for: item), try store.pendingSignature(itemID: item.id) == signature else { return }
+        if let fileVersion, try photoChanged(item, since: fileVersion, signature: signature) { return }
+        try commit(item, units: units, signature: signature)
+    }
+
+    private func photoChanged(_ item: Item, since version: PhotoFileVersion, signature: String) throws -> Bool {
+        let current = PhotoFileVersion(item)
+        guard current != version else { return false }
+        if current == nil {
+            try store.markFailed(itemID: item.id, signature: signature)
+        } else if item.source == .file {
+            if let fresh = FileScanner(settings: settings).item(at: URL(filePath: item.path)) {
+                try store.record(fresh, signature: FileScanner.signature(fresh))
+            } else {
+                try store.markFailed(itemID: item.id, signature: signature)
+            }
+        }
+        // A changed, still-readable photo stays pending, even if its size and whole-second
+        // scanner signature haven't changed. Read it again rather than failing that version.
+        return true
+    }
+
+    private struct PreparedPhoto: Sendable {
+        let extraction: Extraction?
+        let images: [PreparedImageEmbedding]
+        let fileVersion: PhotoFileVersion?
+    }
+
+    private struct ContentRevision: Sendable, Equatable {
+        let settings: Int
+        let messages: Int?
+    }
+
+    private func contentRevision(for item: Item) -> ContentRevision {
+        ContentRevision(settings: settingsRevision, messages: item.source == .messages ? messagesRevision : nil)
+    }
+
+    private struct PhotoPreparation: Sendable {
+        let item: Item
+        let signature: String
+        let revision: ContentRevision
+        let task: Task<PreparedPhoto, any Error>
+    }
+
+    /// Only one following photo may be decoded, OCR'd and converted to model pixels.
+    /// The detached task does no embedding model work; forwards use the shared scheduler.
+    private func startPhotoPreparation(_ item: Item) throws {
+        guard photoPreparation == nil, let record = try store.indexingRecord(itemID: item.id) else { return }
+        let paths = [record.item.path, record.item.fileURL?.path,
+                     record.item.source == .messages ? messagesReader.database.url.path : nil].compactMap { $0 }
+        guard (record.item.source != .messages || settings.messages), !settings.excludedKinds.contains(.image),
+              !settings.excludes.contains(where: { excluded in
+                  paths.contains { $0 == excluded || $0.hasPrefix(excluded.hasSuffix("/") ? excluded : excluded + "/") }
+              }) else {
+            vectors.remove(ids: try store.remove(itemIDs: [item.id]))
+            return
+        }
+        let item = record.item, reader = messagesReader, handles = messageHandles
+        let embedder = embedder, extract = photoExtraction
+        let task = Task.detached(priority: .medium) {
+            try await withTimeout(seconds: Self.itemTimeout) {
+                try Task.checkCancellation()
+                let fileVersion = PhotoFileVersion(item)
+                let extraction: Extraction?
+                if let extract { extraction = await extract(item) }
+                else if item.source == .messages { extraction = await reader.extraction(for: item, handles: handles) }
+                else { extraction = await Extractor.extract(item) }
+                try Task.checkCancellation()
+                let images = try (embedder.supportsImages ? extraction?.images ?? [] : []).map {
+                    try Task.checkCancellation()
+                    return try embedder.prepare(image: $0.image)
+                }
+                return PreparedPhoto(extraction: extraction, images: images, fileVersion: fileVersion)
+            }
+        }
+        photoPreparation = PhotoPreparation(item: item, signature: record.signature, revision: contentRevision(for: item), task: task)
+    }
+
+    private func indexPhoto(_ item: Item, following: Item?) async throws {
+        if let preparation = photoPreparation, preparation.item.id != item.id {
+            await discardPhotoPreparation()
+        }
+        if photoPreparation == nil { try startPhotoPreparation(item) }
+        guard let preparation = photoPreparation else { return }
+        let prepared: PreparedPhoto
+        do {
+            prepared = try await withTaskCancellationHandler {
+                try await preparation.task.value
+            } onCancel: { preparation.task.cancel() }
+        } catch {
+            photoPreparation = nil
+            // Source/context changes cancel only the obsolete preparation, not the run.
+            if !Task.isCancelled, preparation.revision != contentRevision(for: preparation.item) { return }
+            throw error
+        }
+        photoPreparation = nil
+        try Task.checkCancellation()
+        guard preparation.revision == contentRevision(for: preparation.item),
+              try store.pendingSignature(itemID: item.id) == preparation.signature else { return }
+        if let following { try startPhotoPreparation(following) }
+        try await index(preparation.item, extraction: prepared.extraction, revision: preparation.revision,
+                        signature: preparation.signature, preparedImages: prepared.images, fileVersion: prepared.fileVersion)
+    }
+
+    private func discardPhotoPreparation() async {
+        guard let preparation = photoPreparation else { return }
+        preparation.task.cancel()
+        _ = await preparation.task.result
+        photoPreparation = nil
     }
 
     /// A Messages history has many small documents: send up to eight through the model at once.
@@ -476,8 +629,8 @@ public actor Indexer {
         messageSeconds.write += Date().timeIntervalSince(writeStarted)
     }
 
-    private func commit(_ item: Item, units: [(unit: Unit, vector: [Float])]) throws {
-        let (added, removed) = try store.replaceUnits(itemID: item.id, title: item.title, units: units)
+    private func commit(_ item: Item, units: [(unit: Unit, vector: [Float])], signature: String? = nil) throws {
+        let (added, removed) = try store.replaceUnits(itemID: item.id, title: item.title, units: units, signature: signature)
         vectors.remove(ids: removed)
         for (unit, vector) in zip(added, units.map(\.vector)) {
             vectors.upsert(id: unit.id, kind: unit.kind, vector: vector)
@@ -496,6 +649,22 @@ public actor Indexer {
     }
 }
 
+/// Detect edits/deletions of the local photo even before a watcher has reconciled it.
+private struct PhotoFileVersion: Sendable, Equatable {
+    let size: Int64
+    let modified: Date
+    let fileID: UInt64?
+
+    init?(_ item: Item) {
+        guard !item.metadataOnly, let url = item.fileURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? Int64, let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.size = size
+        self.modified = modified
+        fileID = attributes[.systemFileNumber] as? UInt64
+    }
+}
+
 /// Embedders that can free their image model between indexing runs.
 public protocol UnloadsVision: Sendable {
     func unloadVision() async
@@ -507,7 +676,7 @@ struct TimeoutError: LocalizedError {
 }
 
 /// Runs `work`, throwing `TimeoutError` if it takes longer than `seconds`. The work is
-/// cancelled, but work that ignores cancellation keeps running in the background.
+/// cancelled; structured concurrency waits for it to observe cancellation before returning.
 func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await work() }

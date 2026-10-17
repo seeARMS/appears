@@ -270,6 +270,20 @@ public final class IndexStore: Sendable {
         }
     }
 
+    /// Capture the current content version, rather than a possibly stale pending batch.
+    func indexingRecord(itemID: Int64) throws -> (item: Item, signature: String)? {
+        try pool.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM item WHERE id = ? AND state = 0", arguments: [itemID])
+                .map { (Self.item($0), $0["signature"]) }
+        }
+    }
+
+    func pendingSignature(itemID: Int64) throws -> String? {
+        try pool.read { db in
+            try String.fetchOne(db, sql: "SELECT signature FROM item WHERE id = ? AND state = 0", arguments: [itemID])
+        }
+    }
+
     /// Every item path from one source, with its id, for finding deleted files after a scan.
     public func paths(source: ItemSource) throws -> [String: Int64] {
         try pool.read { db in
@@ -382,8 +396,11 @@ public final class IndexStore: Sendable {
         }
     }
 
-    public func markFailed(itemID: Int64) throws {
-        try pool.write { db in try db.execute(sql: "UPDATE item SET state = 2 WHERE id = ?", arguments: [itemID]) }
+    public func markFailed(itemID: Int64, signature: String? = nil) throws {
+        try pool.write { db in
+            try db.execute(sql: "UPDATE item SET state = 2 WHERE id = ? AND (? IS NULL OR signature = ?)",
+                           arguments: [itemID, signature, signature])
+        }
     }
 
     /// Records that a file was open on screen just now, which makes it "recently used".
@@ -411,9 +428,13 @@ public final class IndexStore: Sendable {
     /// Replaces an item's units and marks it indexed. Returns the new units with their ids
     /// and the ids of the units they replaced.
     public func replaceUnits(
-        itemID: Int64, title: String, units: [(unit: Unit, vector: [Float])]
+        itemID: Int64, title: String, units: [(unit: Unit, vector: [Float])], signature: String? = nil
     ) throws -> (added: [Unit], removed: [Int64]) {
         try pool.write { db in
+            if let signature {
+                guard try String.fetchOne(db, sql: "SELECT signature FROM item WHERE id = ? AND state = 0", arguments: [itemID]) == signature
+                else { return ([], []) }
+            }
             let removed = try Int64.fetchAll(db, sql: "SELECT id FROM unit WHERE item_id = ?", arguments: [itemID])
             try db.execute(sql: "DELETE FROM unit WHERE item_id = ?", arguments: [itemID])
             var added: [Unit] = []
