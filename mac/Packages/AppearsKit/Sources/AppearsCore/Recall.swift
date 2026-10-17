@@ -83,8 +83,12 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
     /// When the context asks for a value ("what was the wifi password?"), the unit's line
     /// that holds it.
     public let line: MatchedLine?
+    public let evidence: PassageEvidence?
+    /// Refining a longer panel cannot broaden the original first-three ambient gate.
+    public let ambientEligible: Bool?
 
-    public init(item: Item, unit: Unit, reason: String, snippet: String, score: Double, confidence: Double, features: Features, line: MatchedLine? = nil) {
+    public init(item: Item, unit: Unit, reason: String, snippet: String, score: Double, confidence: Double, features: Features,
+                line: MatchedLine? = nil, evidence: PassageEvidence? = nil, ambientEligible: Bool? = nil) {
         self.item = item
         self.unit = unit
         self.reason = reason
@@ -93,6 +97,8 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
         self.confidence = confidence
         self.features = features
         self.line = line
+        self.evidence = evidence
+        self.ambientEligible = ambientEligible
     }
 }
 
@@ -160,14 +166,17 @@ public struct Recall: Sendable {
     public let embedder: any Embedder
     public var settings = RankingSettings()
     private let pictures = PictureCache()
+    private let passages = PassageSelector()
+    private let messages: MessagesReader?
 
-    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder) {
+    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, messages: MessagesReader? = nil) {
         self.store = store
         self.vectors = vectors
         self.embedder = embedder
+        self.messages = messages
     }
 
-    public func run(_ request: RecallRequest, now: Date = Date(), groupMessageConversations: Bool = false) async throws -> RecallResponse {
+    public func run(_ request: RecallRequest, now: Date = Date()) async throws -> RecallResponse {
         try Task.checkCancellation()
         let started = Date()
         let prepared = ContinuousClock.now
@@ -270,13 +279,15 @@ public struct Recall: Sendable {
         var messageTextStats = textStats
         var messageImageStats = imageStats
         var messageFullTextParts = fullTextParts
-        if candidates.values.contains(where: { $0.item.source == .messages }) {
+        var passageQueryVector = queryVector
+        if !candidates.isEmpty {
             let draft = QueryBuilder.build(ContextSnapshot(appName: context.appName, selection: context.selection, focusedText: context.focusedText)) { terms in
                 (try? store.documentFrequencies(terms)) ?? ([:], 0)
             }
             if draft.dense.count >= 12, draft.dense != query.dense {
                 messageQuery = draft
                 let vector = try await embedder.embed(queries: [draft.dense])[0]
+                passageQueryVector = vector
                 try Task.checkCancellation()
                 let text = vectors.search(vector, kind: .text, limit: 200)
                 let images = vectors.search(vector, kind: .image, limit: 60)
@@ -327,13 +338,14 @@ public struct Recall: Sendable {
             let boost = strongMatch != nil ? settings.entityBoost : (contextMatch != nil ? settings.contextEntityBoost : 1)
             let rankScore = relevance * forgotten * novelty * boost
 
-            let evidence = item.source == .messages ? messageCosine : cosine
+            // The draft is the question for every source. Visible history may discover
+            // a candidate, but cannot make a file (or a message) confidently answer an
+            // unrelated draft merely because its topic is still on screen.
+            let evidence = messageCosine
             let unitCosine = evidence[candidate.unit.id] ?? 0
-            let stats = item.source == .messages
-                ? (candidate.unit.kind == .image ? messageImageStats : messageTextStats)
-                : (candidate.unit.kind == .image ? imageStats : textStats)
-            let matchedParts = item.source == .messages ? messageFullTextParts : fullTextParts
-            let entityHit = item.source == .messages ? messageQuery.matchable.contains(where: haystack.contains) : strongMatch != nil
+            let stats = candidate.unit.kind == .image ? messageImageStats : messageTextStats
+            let matchedParts = messageFullTextParts
+            let entityHit = messageQuery.matchable.contains(where: haystack.contains)
             let features = Features(
                 cosine: unitCosine,
                 zScore: evidence[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
@@ -348,7 +360,16 @@ public struct Recall: Sendable {
             // Rank fusion alone rewards whatever tops each list, however weak (the best image
             // match for a text-only context is usually noise), so weigh in how convincing it is.
             let recentFactor = recent && item.source != .messages && request.trigger == .ambient ? settings.recentAmbientConfidence : 1
-            let confidence = Confidence.estimate(features) * recentFactor
+            var confidence = Confidence.estimate(features) * recentFactor
+            if item.source != .messages {
+                var surrounding = features
+                surrounding.cosine = cosine[candidate.unit.id] ?? 0
+                let originalStats = candidate.unit.kind == .image ? imageStats : textStats
+                surrounding.zScore = cosine[candidate.unit.id].map(originalStats.z) ?? 0
+                surrounding.agreement = cosine[candidate.unit.id] != nil && fullTextParts.contains(part(candidate.unit))
+                surrounding.entityHit = strongMatch != nil
+                confidence = min(confidence, Confidence.estimate(surrounding) * recentFactor)
+            }
             // Recall intent is about the context, not any one item: it makes Appears surer
             // without ranking anything higher.
             var unasked = features
@@ -358,33 +379,43 @@ public struct Recall: Sendable {
         }
         scored.sort { $0.score > $1.score }
 
-        // A typed search shows conversations, rather than repeating the same contact for
-        // each message's overlapping context window. Keep the best-ranked text passage
-        // before capping the pool, so duplicates don't crowd out other results. Photos
-        // are individual things to find; titles aren't identities (especially for groups).
-        if groupMessageConversations {
-            var seen: Set<Int64> = []
-            scored = scored.filter { entry in
-                let item = entry.candidate.item
-                guard item.source == .messages, item.kind == .message, let reference = item.message else { return true }
-                return seen.insert(reference.chatID).inserted
-            }
+        let question = Question(context)
+        let terms = query.matchable + query.contextMatchable + query.rareTerms
+        let broad = scored.enumerated().map { position, entry in
+            Suggestion(item: entry.candidate.item, unit: entry.candidate.unit,
+                       reason: Self.reason(entry.candidate.item, unit: entry.candidate.unit, matched: entry.matched, query: query, now: now),
+                       snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
+                       score: entry.score, confidence: entry.confidence, features: entry.features,
+                       line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) },
+                       ambientEligible: request.trigger == .ambient ? position < 3 : nil)
         }
+        var windows: Set<String> = []
+        let distinct = broad.filter { result in
+            guard result.unit.kind == .text, let chat = result.item.message?.chatID else { return true }
+            return windows.insert("\(chat)\u{0}\(result.unit.text)").inserted
+        }
+        // Bound source reads/inference, then collapse identical evidence before applying
+        // the result limit. Both related results and typed search use the same passages.
+        let refined = try await passages.select(Array(distinct.prefix(48)), query: passageQueryVector, embedder: embedder,
+                                                store: store, messages: messages, excluded: excluded,
+                                                question: question, terms: terms)
 
         // Variety: maximal marginal relevance over the top few, with a nudge away from a
         // second item from the same folder.
-        let pool = Array(scored.prefix(24))
-        let poolVectors = (try? store.vectors(unitIDs: pool.map(\.candidate.unit.id))) ?? [:]
-        let topScore = pool.first?.score ?? 1
+        let pool = Array(refined.prefix(24))
+        let poolVectors = (try? store.vectors(unitIDs: pool.map(\.unit.id))) ?? [:]
+        let evidenceVectors = passages.vectors(for: pool)
+        let topScore = max(pool.first?.score ?? 1, .leastNormalMagnitude)
         var chosen: [Int] = []
         var usedFolders: Set<String> = []
         while chosen.count < request.limit {
             var best: (index: Int, value: Double)?
             for (index, entry) in pool.enumerated() where !chosen.contains(index) {
-                let folder = entry.candidate.item.folder
+                let folder = entry.item.folder
                 let folderPenalty = !folder.isEmpty && usedFolders.contains(folder) ? 0.85 : 1
                 let similarity = chosen.map { other -> Double in
-                    guard let a = poolVectors[entry.candidate.unit.id], let b = poolVectors[pool[other].candidate.unit.id] else { return 0 }
+                    guard let a = evidenceVectors[entry.id] ?? poolVectors[entry.unit.id],
+                          let b = evidenceVectors[pool[other].id] ?? poolVectors[pool[other].unit.id] else { return 0 }
                     return Double(VectorMath.dot(a, b))
                 }.max() ?? 0
                 let value = settings.diversity * folderPenalty * entry.score / topScore - (1 - settings.diversity) * similarity
@@ -392,26 +423,11 @@ public struct Recall: Sendable {
             }
             guard let best else { break }
             chosen.append(best.index)
-            let folder = pool[best.index].candidate.item.folder
+            let folder = pool[best.index].item.folder
             if !folder.isEmpty { usedFolders.insert(folder) }
         }
 
-        // The fact itself, when the context asks for one.
-        let question = Question(context)
-        let terms = query.matchable + query.contextMatchable + query.rareTerms
-        let suggestions = chosen.map { index -> Suggestion in
-            let entry = pool[index]
-            return Suggestion(
-                item: entry.candidate.item,
-                unit: entry.candidate.unit,
-                reason: Self.reason(entry.candidate.item, unit: entry.candidate.unit, matched: entry.matched, query: query, now: now),
-                snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
-                score: entry.score,
-                confidence: entry.confidence,
-                features: entry.features,
-                line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) }
-            )
-        }
+        let suggestions = chosen.map { pool[$0] }
         try Task.checkCancellation()
         return RecallResponse(
             suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000

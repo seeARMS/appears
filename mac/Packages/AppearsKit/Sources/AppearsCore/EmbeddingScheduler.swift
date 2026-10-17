@@ -86,6 +86,10 @@ final class ScheduledEmbedder: Embedder, UnloadsVision {
         return result
     }
 
+    func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
+        try await scheduler.run(priority: .interactive) { try await self.base.embed(passages: passages) }
+    }
+
     func embed(images: [CGImage]) async throws -> [[Float]] {
         var result: [[Float]] = []
         for image in images {

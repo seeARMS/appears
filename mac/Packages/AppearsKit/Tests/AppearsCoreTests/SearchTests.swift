@@ -24,14 +24,14 @@ private struct SearchTestEmbedder: Embedder {
     @discardableResult
     private func add(_ engine: Engine, path: String, source: ItemSource = .file, kind: ItemKind = .document,
                      vector: [Float] = [1, 0, 0], age: Double = 0, chatID: Int64? = nil,
-                     title: String? = nil) throws -> Int64 {
+                     title: String? = nil, text: String = "Ruiz cabinetry estimate") throws -> Int64 {
         let date = Date().addingTimeInterval(-age * 86_400)
         let reference = chatID.map { MessageReference(rowID: 1, guid: path, chatID: $0, conversationURL: nil) }
         let item = Item(source: source, path: path, kind: kind, title: title ?? (path as NSString).lastPathComponent,
                         size: 1, created: date, modified: date, lastUsed: nil, message: reference)
         let (id, _) = try engine.store.record(item, signature: "test")
         let units = try engine.store.replaceUnits(itemID: id, title: item.title, units: [
-            (AppearsCore.Unit(kind: kind == .image ? .image : .text, locator: .whole, text: "Ruiz cabinetry estimate"), vector),
+            (AppearsCore.Unit(kind: kind == .image ? .image : .text, locator: .whole, text: text), vector),
         ]).added
         for unit in units { engine.vectors.upsert(id: unit.id, kind: unit.kind, vector: vector) }
         return id
@@ -79,7 +79,27 @@ private struct SearchTestEmbedder: Embedder {
         #expect(try await search.run(SearchRequest(text: "wifi", limit: -1), sources: SourceSettings()).suggestions.count == 1)
     }
 
-    @Test func strongestMessageRepresentsConversationBeforeCandidateAndResultLimits() async throws {
+    @Test func distinctDiscussionsInTheSameChatRemainAvailable() async throws {
+        let (engine, folder) = try engine()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = try add(engine, path: "messages:kitchen", source: .messages, kind: .message, chatID: 1, text: "The cabinet estimate includes moving the outlet.")
+        let second = try add(engine, path: "messages:bathroom", source: .messages, kind: .message, chatID: 1, text: "The bathroom invoice includes replacing the sink.")
+        let otherChat = try add(engine, path: "messages:other", source: .messages, kind: .message, chatID: 2, text: "The cabinet estimate includes moving the outlet.")
+        let response = try await Search(recall: engine.recall).run(SearchRequest(text: "renovation budget"), sources: SourceSettings())
+        #expect(Set(response.suggestions.map(\.id)) == [first, second, otherChat])
+        #expect(response.suggestions.allSatisfy { $0.evidence != nil })
+    }
+
+    @Test func titleOnlyItemsDoNotRequireAnInventedQuote() async throws {
+        let (engine, folder) = try engine()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = try add(engine, path: folder.appending(path: "Kitchen quote.md").path, text: "")
+        let response = try await Search(recall: engine.recall).run(SearchRequest(text: "kitchen quote"), sources: SourceSettings())
+        #expect(response.suggestions.first?.id == id)
+        #expect(response.suggestions.first?.evidence == nil)
+    }
+
+    @Test func identicalWindowsCollapseBeforeCandidateAndResultLimitsInBothModes() async throws {
         let (engine, folder) = try engine()
         defer { try? FileManager.default.removeItem(at: folder) }
         // More duplicates than Recall's 24-item pool: grouping only the final response
@@ -104,7 +124,8 @@ private struct SearchTestEmbedder: Embedder {
         #expect(stats.pulls == 0 && stats.ambient == 0 && stats.shadow == 0)
         let related = try await engine.recall.run(RecallRequest(context: .text("renovation budget"), trigger: .pull))
         #expect(related.suggestions.count == 3)
-        #expect(related.suggestions.allSatisfy { $0.item.message?.chatID == 1 })
+        #expect(related.suggestions.first?.id == best)
+        #expect(Set(related.suggestions.compactMap { $0.item.message?.chatID }).count == 3)
     }
 
     @Test func groupingPreservesPhotosDistinctChatsAndItemsWithoutConversationMetadata() async throws {

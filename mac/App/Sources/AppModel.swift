@@ -26,6 +26,7 @@ final class AppModel {
     @ObservationIgnored let calendar = CalendarWatcher()
     @ObservationIgnored private var policy = SurfacePolicy()
     @ObservationIgnored private var ambientLookups = AmbientLookupSchedule()
+    @ObservationIgnored private var pullRevision = 0
 
     enum Glyph: Equatable {
         case idle, working, found, paused, needsSetup
@@ -103,7 +104,7 @@ final class AppModel {
     /// Keep those confident matches first, followed by the other ranked candidates.
     static func ambientPanelSuggestions(_ candidates: [Suggestion], isConfident: (Double) -> Bool,
                                         maySuggest: (Suggestion) -> Bool = { _ in true }) -> [Suggestion] {
-        let confident = candidates.prefix(ambientCandidateLimit).filter { isConfident($0.confidence) && maySuggest($0) }
+        let confident = candidates.prefix(ambientCandidateLimit).filter { $0.ambientEligible != false && isConfident($0.confidence) && maySuggest($0) }
         guard !confident.isEmpty else { return [] }
         let confidentIDs = Set(confident.map(\.id))
         let remaining = candidates.filter { maySuggest($0) && !confidentIDs.contains($0.id) }
@@ -432,6 +433,8 @@ final class AppModel {
 
     /// The hotkey or a click: read the window now and show what relates, always.
     func pull() async {
+        pullRevision += 1
+        let revision = pullRevision
         // An ambient result is already waiting: show it.
         if let waiting, waiting.meeting != nil || reader.capture(includeBrowserURL: true)?.snapshot.fingerprint(salt: settings.salt) == waiting.fingerprint {
             selectedIndex = 0
@@ -475,16 +478,18 @@ final class AppModel {
         shown = Shown(mode: .pull, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
                       fingerprint: "", suggestions: [])
         onShow?(true)
-        defer { isPulling = false }
+        defer { if pullRevision == revision { isPulling = false } }
         // Apps that draw their own text (Google Docs, some Electron apps) need OCR.
         if settings.ocrOnPull, captured.snapshot.visibleText.count + captured.snapshot.focusedText.count < 200,
            let text = await ScreenText.frontmostWindowText() {
             captured.snapshot.visibleText = text
             captured.snapshot.origin = .ocr
         }
+        guard !Task.isCancelled, pullRevision == revision else { return }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
         do {
             let response = try await engine.related(RecallRequest(context: captured.snapshot, trigger: .pull, limit: Self.contextResultLimit))
+            guard !Task.isCancelled, pullRevision == revision else { return }
             let topic = captured.snapshot.topicFingerprint(salt: settings.salt)
             let eligible = response.suggestions.filter { !policy.isDismissed(itemID: $0.item.id, topic: topic) }
             var entry = Shown(mode: .pull, bundleID: captured.snapshot.bundleID, appName: captured.snapshot.appName, windowTitle: captured.snapshot.windowTitle,
@@ -494,20 +499,16 @@ final class AppModel {
             entry.entryID = await engine.log(journalEntry(entry, dwell: ambientLookups.dwell(), context: captured.snapshot))
             if shown?.fingerprint == fingerprint { shown?.entryID = entry.entryID }
         } catch {
+            guard !Task.isCancelled, pullRevision == revision else { return }
             pullError = error.localizedDescription
             shown = nil
         }
-        onShow?(true)
-    }
-
-    /// Hovering over the glyph while it shows a result.
-    func peek() {
-        guard let waiting else { return }
-        shown = waiting
-        onShow?(false)
+        if !Task.isCancelled, pullRevision == revision { onShow?(true) }
     }
 
     func panelClosed() {
+        pullRevision += 1
+        isPulling = false
         sourcePreview = nil
         guard let current = shown else { return }
         if current.mode == .ambient, !current.interacted {
@@ -645,26 +646,29 @@ final class AppModel {
         return !FileScanner(settings: sources).isExcluded(item.fileURL?.path ?? item.path)
     }
 
-    /// `-ask`: wait for the engine to be ready and idle, then ask with scripted text.
+    /// `-ask`: exercise the real Related panel while background indexing continues.
     private func scriptedPull(_ text: String) async {
         while true {
+            guard !Task.isCancelled else { return }
             let status = await engine.status()
-            NSLog("Appears scripted ask: waiting (ready %@, phase %@, waiting %d)", String(describing: status?.ready), status?.progress.phase.rawValue ?? "nil", status?.counts.waiting ?? -1)
-            if let status, status.ready, status.progress.phase == .idle, status.counts.waiting == 0 { break }
-            try? await Task.sleep(for: .seconds(5))
+            if status?.ready == true { break }
+            try? await Task.sleep(for: .seconds(1))
         }
+        pullRevision += 1
+        let revision = pullRevision
         let context = ContextSnapshot(appName: "Mail", bundleID: "com.apple.mail", windowTitle: "Scripted", focusedText: text, origin: .text)
         isPulling = true
         selectedIndex = 0
         shown = Shown(mode: .pull, appName: "Mail", windowTitle: "Scripted", fingerprint: "", suggestions: [])
         onShow?(true)
         let response = try? await engine.related(RecallRequest(context: context, trigger: .pull, limit: Self.contextResultLimit))
+        guard !Task.isCancelled, pullRevision == revision else { return }
         let suggestions = response?.suggestions ?? []
         shown = Shown(mode: .pull, appName: "Mail", windowTitle: "Scripted", fingerprint: context.fingerprint(salt: settings.salt),
                       suggestions: Array(suggestions.prefix(Self.contextResultLimit)), evidenceTerms: (response?.query.entities ?? []) + (response?.query.rareTerms ?? []))
         isPulling = false
         onShow?(true)
-        NSLog("Appears scripted ask: %@", (shown?.suggestions ?? []).map { "\($0.item.title) (\(String(format: "%.2f", $0.confidence)))" }.joined(separator: ", "))
+        NSLog("Appears scripted ask completed: %d results", suggestions.count)
     }
 
     func pause(for interval: TimeInterval?) {
