@@ -181,6 +181,7 @@ public actor AgentIndex {
 /// Recall embeds its query through an embedder. For "related to this file" the file's own
 /// vector is the query, so this hands it back instead of running the model.
 struct FileQueryEmbedder: Embedder {
+    var supportsPassageRefinement: Bool { false }
     let base: any Embedder
     let vector: [Float]
 

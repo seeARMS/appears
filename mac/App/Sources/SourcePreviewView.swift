@@ -33,7 +33,10 @@ struct SourcePreviewView: View {
                 .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground).padding(.top, 4)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let line = suggestion.line { QuotedLine(line: contacts?.displayLine(line, for: suggestion.item) ?? line) }
+                    if let evidence = suggestion.evidence {
+                        QuotedLine(line: MatchedLine(segments: [.init(evidence.text)]))
+                    }
+                    else if let line = suggestion.line { QuotedLine(line: contacts?.displayLine(line, for: suggestion.item) ?? line) }
                     Text(passage.isEmpty ? "No readable passage is available. Open the original to view it." : passage)
                         .font(.system(size: 13)).lineSpacing(4).foregroundStyle(Theme.foreground)
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
@@ -41,7 +44,9 @@ struct SourcePreviewView: View {
                 .padding(.vertical, 14)
             }
             .frame(maxHeight: .infinity)
-            Text(suggestion.item.source == .messages ? "Indexed conversation around the match" : "Indexed passage from this note")
+            Text(suggestion.item.source == .messages
+                 ? (suggestion.evidence == nil ? "Indexed conversation around the match" : "Source messages containing the match")
+                 : "Indexed passage from this note")
                 .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground).padding(.bottom, 10)
             HStack {
                 Button("Copy passage") { copyPassage() }.buttonStyle(OutlineButtonStyle()).disabled(passage.isEmpty)

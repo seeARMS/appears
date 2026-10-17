@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 @testable import AppearsCore
 
 /// A tiny, made-up Messages database. No test opens the user's Messages or another app's index.
-private struct MessageFixture {
+struct MessageFixture {
     let folder: URL
     let database: DatabaseQueue
     let url: URL

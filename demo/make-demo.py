@@ -546,6 +546,23 @@ for i in range(14):
                ["# " + " ".join(random.sample(words, 3)).title()] + [" ".join(random.sample(words, 7)) for _ in range(6)],
                age=random.uniform(40, 1000), dark=i % 3 == 0)
 
+write("Documents/Work/Workshop account.md", """
+# Saturday woodworking workshop
+
+The workshop account lets members reserve a bench for Saturday projects.
+Username: robin.grove
+Role: workshop member
+""", age=120)
+
+write("Documents/Outings/Courier recommendation.md", """
+    Was this at your gate?
+    Yes, this morning.
+    The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow.
+    They host complimentary tastings on the third Saturday of each month.
+    You can bring your own picnic.
+    The map screenshot was about a small vegetation fire nearby.
+""", age=120)
+
 (ROOT / "manifest.json").write_text(json.dumps({"about": "Days since each demo file was last touched. The eval sets modification dates from this.", "ages": dict(sorted(ages.items()))}, indent=2) + "\n")
 (ROOT / "messages.json").write_text(json.dumps(MESSAGES, indent=2) + "\n")
 print(f"wrote {len(ages)} files")

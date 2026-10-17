@@ -39,6 +39,25 @@ private func emptyResponse() -> RecallResponse {
 }
 
 @Suite struct SearchSchedulingTests {
+    @Test func evidenceScoringTakesTheNextSlotAheadOfIndexing() async throws {
+        let base = ImageBatchEmbedder()
+        let scheduled = ScheduledEmbedder(base)
+        let context = try #require(CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 8,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try #require(context.makeImage())
+        let current = Task { try await scheduled.embed(images: [image]) }
+        await base.started.wait()
+        let background = Task { try await scheduled.embed(documents: [.init(title: "", text: "Indexing")]) }
+        try await settled { await scheduled.scheduler.waiting == 1 }
+        let evidence = Task { try await scheduled.embed(passages: [.init(title: "", text: "Evidence")]) }
+        try await settled { await scheduled.scheduler.waiting == 2 }
+        await base.finish.open()
+        _ = try await current.value
+        _ = try await evidence.value
+        _ = try await background.value
+        #expect(await base.order == ["image", "passage", "document"])
+    }
+
     @Test func aMultiImageBatchYieldsToAQueryBetweenImages() async throws {
         let base = ImageBatchEmbedder()
         let scheduled = ScheduledEmbedder(base)
@@ -205,7 +224,14 @@ private actor ImageBatchEmbedder: Embedder {
         order.append("query")
         return queries.map { _ in [1, 0, 0] }
     }
-    func embed(documents: [EmbeddingDocument]) async throws -> [[Float]] { [] }
+    func embed(documents: [EmbeddingDocument]) async throws -> [[Float]] {
+        order.append("document")
+        return documents.map { _ in [1, 0, 0] }
+    }
+    func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
+        order.append("passage")
+        return passages.map { _ in [1, 0, 0] }
+    }
     func embed(images: [CGImage]) async throws -> [[Float]] {
         #expect(images.count == 1, "A query must not wait behind every image in a PDF")
         order.append("image")

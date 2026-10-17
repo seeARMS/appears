@@ -154,7 +154,9 @@ private func emphasized(_ line: MatchedLine?) -> [String] {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
-        let embedder = HashingEmbedder()
+        // The line formatter now receives only the semantically selected passage.
+        // Control that selection here; real encoder behavior has model-backed tests.
+        let embedder = PassageTestEmbedder(preferred: "WiFi: PineHollow-Guest\nPassword: trout-meadow-88")
         let vectors = VectorIndex(dimension: embedder.dimension)
         let indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: SourceSettings())
         let old = Date().addingTimeInterval(-400 * 86_400)

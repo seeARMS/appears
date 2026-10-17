@@ -1,6 +1,41 @@
 import AppKit
 import AppearsCore
 
+/// Exercise the native Related panel through the same toggle used by the status item.
+/// A controlled late reply verifies that closing during a lookup cannot reopen it.
+@MainActor
+func verifyRelatedPanel(_ app: AppModel) async {
+    var replies: [CheckedContinuation<Void, Never>] = []
+    let controller = StatusController(model: app, pull: {
+        await withCheckedContinuation { replies.append($0) }
+        app.onShow?(true)
+    })
+    func wait(_ condition: () -> Bool) async {
+        for _ in 0..<100 {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        preconditionFailure("The controlled Related panel did not settle")
+    }
+    controller.togglePull()
+    await wait { replies.count == 1 }
+    controller.close()
+    replies.removeFirst().resume()
+    await Task.yield()
+    precondition(!controller.isVisible, "A cancelled lookup cannot reopen Related")
+    controller.togglePull()
+    await wait { replies.count == 1 }
+    replies.removeFirst().resume()
+    await wait { controller.isVisible }
+    // No timer or hover owns the panel: it stays until another deliberate toggle.
+    try? await Task.sleep(for: .seconds(1))
+    precondition(controller.isVisible)
+    controller.togglePull()
+    precondition(!controller.isVisible, "A second status-item toggle closes Related")
+    app.onShow = nil
+    print("Verified Related stays open, toggles closed, and rejects a late reply after closing")
+}
+
 @MainActor
 private final class SearchFixture {
     var calls: [String] = []

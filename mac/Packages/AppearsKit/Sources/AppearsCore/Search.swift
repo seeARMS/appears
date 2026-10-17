@@ -46,7 +46,7 @@ public struct Search: Sendable {
         let context = ContextSnapshot(selection: QueryBuilder.clean(text).count < 12 ? "Anything about \(text)" : text, origin: .text)
         return try await recall.run(
             RecallRequest(context: context, trigger: .pull, limit: min(max(request.limit, 1), 20), exclude: excluded),
-            now: now, groupMessageConversations: true
+            now: now
         )
     }
 }

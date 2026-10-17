@@ -83,7 +83,7 @@ public final class Engine: Sendable {
     private let sources: Mutex<(settings: SourceSettings, revision: UInt64)>
 
     public init(folder: URL, embedder: any Embedder, settings: SourceSettings,
-                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil) throws {
+                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil, messagesURL: URL? = nil) throws {
         let embedder = ScheduledEmbedder(embedder)
         sources = Mutex((settings, 0))
         store = try IndexStore(url: folder.appending(path: "index.sqlite"))
@@ -91,7 +91,7 @@ public final class Engine: Sendable {
         vectors = VectorIndex(dimension: embedder.dimension)
         self.embedder = embedder
         indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: settings, fileWalk: fileWalk)
-        recall = Recall(store: store, vectors: vectors, embedder: embedder)
+        recall = Recall(store: store, vectors: vectors, embedder: embedder, messages: messagesURL.map(MessagesReader.init(url:)))
         // A new model can't share vectors with the old one: start over.
         if try store.meta("model_id") != embedder.modelID {
             try store.removeAll()
@@ -240,8 +240,11 @@ public final class Engine: Sendable {
             return try encoder.encode(await status())
         case .related:
             let request = try decoder.decode(RecallRequest.self, from: payload)
+            let revision = sources.withLock { $0.revision }
             if let path = request.context.documentPath { try? store.touch(path: path) }
-            return try encoder.encode(try await recall.run(request))
+            let response = try await recall.run(request)
+            guard sources.withLock({ $0.revision }) == revision else { throw CancellationError() }
+            return try encoder.encode(response)
         case .search:
             let request = try decoder.decode(SearchRequest.self, from: payload)
             let trace = SearchTrace()

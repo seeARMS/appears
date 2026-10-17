@@ -102,6 +102,12 @@ let weaker = [
     precondition(ambient.count == 10 && ambient.prefix(2).map(\.id) == [suggestions[0].id, suggestions[1].id])
     precondition(AppModel.ambientPanelSuggestions(weaker + extra + suggestions, isConfident: policy.isConfident).isEmpty,
                  "A strong result outside the first three must not trigger the ambient dot")
+    let reordered = suggestions.map { result in
+        Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
+                   score: result.score, confidence: result.confidence, features: result.features, ambientEligible: false)
+    }
+    precondition(AppModel.ambientPanelSuggestions(reordered, isConfident: policy.isConfident).isEmpty,
+                 "Passage refinement cannot promote a tail candidate into a new ambient signal")
     var deduplication = SurfacePolicy()
     deduplication.didSurface(itemIDs: [suggestions[0].item.id], topic: "fixture")
     let novel = AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident) {
@@ -324,6 +330,7 @@ let weaker = [
     verifySettingsWindow(model, out: out)
     verifyLaunchBehavior()
     await verifySearchUpdates(model, suggestions: suggestions)
+    await verifyRelatedPanel(model)
     let search = SearchModel(app: model)
     func searchSnapshot(_ name: String) {
         render(SearchView(model: search, close: {}, finish: {}, openSettings: {}, resize: { _ in }), name, width: 640)

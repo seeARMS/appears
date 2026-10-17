@@ -195,7 +195,6 @@
       "title": "Rosa",
       "visible": "Rosa: we're finally doing Portugal in June!! where did you stay in Lisbon?",
       "focused": "You'll love it. I’ll send you our itinerary",
-      "line": "Airbnb in Alfama",
       "expect": [
         "Documents/Travel/Lisbon 2023/itinerary.md"
       ]
@@ -252,27 +251,74 @@
       "expect": [
         "messages:demo-rent-payment"
       ]
+    },
+    {
+      "name": "A courier recommended a winery: exact source evidence",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "what was the winery the delivery guy mentioned?",
+      "visible": "We were talking about a small vegetation fire nearby.",
+      "expect": [
+        "Documents/Outings/Courier recommendation.md"
+      ],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "The same recommendation asked with different words",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "Which tasting room did the parcel carrier tell us about?",
+      "expect": [
+        "Documents/Outings/Courier recommendation.md"
+      ],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "An explicit question about the old Lisbon lodging",
+      "app": "Messages",
+      "title": "Rosa",
+      "focused": "What was the street address of the Airbnb where we stayed in Lisbon?",
+      "visible": "Rosa: we're finally doing Portugal in June!! where did you stay in Lisbon?",
+      "expect": [
+        "Documents/Travel/Lisbon 2023/itinerary.md"
+      ],
+      "line": "Rua dos Remédios 41"
+    },
+    {
+      "name": "A label-only username question keeps its source answer",
+      "app": "Mail",
+      "title": "Saturday woodworking workshop",
+      "focused": "What's the username for my woodworking workshop account?",
+      "expect": [
+        "Documents/Work/Workshop account.md"
+      ],
+      "line": "Username: robin.grove"
     }
   ],
   "search": [
     {
-      "name": "Search: repeated rent messages, distinct conversations with the same name",
+      "name": "Search: separate rent discussions and conversations with the same name",
       "text": "Juniper Court rent payment confirmed",
       "limit": 3,
       "expectedConversations": [9101, 9102],
+      "expectedPaths": [
+        "messages:search-rent-paid",
+        "messages:search-rent-thanks",
+        "messages:search-rent-receipt"
+      ],
       "messages": [
         {
           "path": "messages:search-rent-paid",
           "title": "Household",
           "chatID": 9101,
-          "text": "Me: Did you pay the Juniper Court rent?\nAlex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.",
+          "text": "Alex: Yes, the July Juniper Court rent payment is confirmed. I paid $750 this morning.",
           "age": 2
         },
         {
           "path": "messages:search-rent-thanks",
           "title": "Household",
           "chatID": 9101,
-          "text": "Alex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.\nMe: Thanks for confirming the rent payment!",
+          "text": "Me: Thanks for confirming the October Juniper Court rent payment! The October payment was $780.",
           "age": 2
         },
         {
@@ -439,6 +485,27 @@
       "app": "Messages",
       "title": "Jordan Vale",
       "focused": "want to watch a movie?"
+    },
+    {
+      "name": "Same discussion, unrelated amplifier question",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "Have you repaired the amplifier yet?",
+      "visible": "The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow."
+    },
+    {
+      "name": "Same discussion, unsupported booking confirmation",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "What was the confirmation number for our hotel reservation?",
+      "visible": "The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow."
+    },
+    {
+      "name": "An old visible date question does not override a new draft",
+      "app": "Mail",
+      "title": "Design review",
+      "focused": "Please review the amplifier enclosure design.",
+      "visible": "When were the brakes last looked at? Call Eastshore Honda."
     }
   ]
 }

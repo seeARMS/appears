@@ -1,4 +1,5 @@
 import AppearsCore
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -16,8 +17,8 @@ private let demoFiles: URL = {
 }()
 
 /// An index of demo/files with the hashing embedder: it matches words, not meaning.
-/// The cabin card has fixed OCR text so protocol tests also run on virtual Macs
-/// without Vision's hardware support. Real OCR is exercised by the model suite.
+/// Images use deterministic metadata, with fixed OCR for the cabin card, so protocol
+/// tests do not depend on Vision hardware. Real OCR is exercised by the model suite.
 private actor DemoIndex {
     static let shared = DemoIndex()
     private var built: Task<URL, Error>?
@@ -29,8 +30,18 @@ private actor DemoIndex {
                 let embedder = HashingEmbedder()
                 let engine = try Engine(folder: folder, embedder: embedder, settings: SourceSettings(notes: false))
                 await engine.indexer.setPoliteness(false)
+                struct Dates: Decodable { var ages: [String: Double] }
+                let ages = try JSONDecoder().decode(Dates.self, from: Data(contentsOf: demoFiles.deletingLastPathComponent().appending(path: "manifest.json"))).ages
+                let now = Date()
                 try FileScanner(settings: SourceSettings(notes: false), home: demoFiles.path).scan { item in
-                    try engine.store.record(item, signature: FileScanner.signature(item))
+                    var fixture = item
+                    let relative = String(item.path.dropFirst(demoFiles.path.count + 1))
+                    if let age = ages[relative] {
+                        fixture.created = now.addingTimeInterval(-age * 86_400)
+                        fixture.modified = fixture.created
+                        fixture.lastUsed = nil
+                    }
+                    try engine.store.record(fixture, signature: FileScanner.signature(item))
                 }
                 let card = try #require(try engine.store.item(path: demoFiles.appending(path: "Desktop/IMG_2031.jpg").path))
                 // The invented card's content from demo/make-demo.py, before OCR.
@@ -47,11 +58,35 @@ private actor DemoIndex {
                     (AppearsCore.Unit(kind: .text, locator: .whole, text: text), vector),
                     (AppearsCore.Unit(kind: .image, locator: .whole, text: text), vector),
                 ])
+                // Match the no-OCR fallback on virtual Macs for every other image.
+                // Otherwise local Vision results change file-similarity rankings.
+                for image in try engine.store.pending(limit: 1_000) where image.kind == .image {
+                    let title = "\(image.title) (\((image.folder as NSString).lastPathComponent))"
+                    let vector = try await embedder.embed(documents: [.init(title: title, text: image.title)])[0]
+                    _ = try engine.store.replaceUnits(itemID: image.id, title: image.title, units: [
+                        (AppearsCore.Unit(kind: .text, locator: .whole, text: ""), vector),
+                    ])
+                }
                 try await engine.indexer.indexPending()
                 return folder
             }
         }
         return try await built!.value
+    }
+}
+
+/// File similarity must use stored vectors, independent of language-passage inference.
+private struct FileOnlyTestEmbedder: Embedder {
+    let base = HashingEmbedder()
+    var modelID: String { base.modelID }
+    var dimension: Int { base.dimension }
+    var supportsImages: Bool { base.supportsImages }
+    func embed(queries: [String]) async throws -> [[Float]] { try await base.embed(queries: queries) }
+    func embed(documents: [EmbeddingDocument]) async throws -> [[Float]] { try await base.embed(documents: documents) }
+    func embed(images: [CGImage]) async throws -> [[Float]] { try await base.embed(images: images) }
+    func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
+        struct UnexpectedPassageInference: Error {}
+        throw UnexpectedPassageInference()
     }
 }
 
@@ -192,11 +227,12 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
         let link = FileManager.default.temporaryDirectory.appending(path: "appears-link-\(UUID().uuidString)")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: demoFiles.appending(path: "Documents/House"))
         defer { try? FileManager.default.removeItem(at: link) }
+        let index = AgentIndex(folder: try await DemoIndex.shared.folder(), sources: SourceSettings()) { FileOnlyTestEmbedder() }
         let answers = try await exchange([
             call(1, "related_to_file", #"{"path":"\#(file)","limit":5}"#),
             call(2, "related_to_file", #"{"path":"file://\#(file.replacingOccurrences(of: " ", with: "%20"))","limit":5}"#),
             call(3, "related_to_file", #"{"path":"\#(link.path)/Kitchen measurements.md","limit":5}"#),
-        ], index: try await demoIndex())
+        ], index: index)
         for id in [1, 2, 3] {
             let found = results(try response(answers, id: id)).compactMap { $0["path"]?.string }
             #expect(!found.isEmpty)
