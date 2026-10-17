@@ -330,7 +330,7 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         }
         var found: [String] = []
         let scanner = FileScanner(settings: SourceSettings(), home: home.path)
-        scanner.scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        try scanner.scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
         #expect(Set(found) == ["Documents/plan.md", "Desktop/Screenshot.png"])
         for path in ["Documents/plan.md", "Library/Caches/x.txt", "src/repo/README.md",
                      "Documents/node_modules/pkg/readme.md", "Desktop/Screenshot.png", "Documents/notes.xyz"] {
@@ -340,7 +340,7 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         var withRepo: [String] = []
         let settings = SourceSettings(includes: [home.appending(path: "src/repo").path], excludes: [home.appending(path: "Desktop").path])
         let includingRepo = FileScanner(settings: settings, home: home.path)
-        includingRepo.scan { withRepo.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        try includingRepo.scan { withRepo.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
         #expect(Set(withRepo) == ["Documents/plan.md", "src/repo/README.md"])
         #expect(includingRepo.item(at: home.appending(path: "src/repo/README.md")) != nil)
         #expect(includingRepo.item(at: home.appending(path: "Desktop/Screenshot.png")) == nil)
@@ -359,7 +359,7 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         try fm.createDirectory(at: home.appending(path: "conductor/x"), withIntermediateDirectories: true)
         try "agent".write(to: home.appending(path: "conductor/x/plan.md"), atomically: true, encoding: .utf8)
         var found: [String] = []
-        FileScanner(settings: SourceSettings(), home: home.path).scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
+        try FileScanner(settings: SourceSettings(), home: home.path).scan { found.append($0.path.replacingOccurrences(of: home.path + "/", with: "")) }
         #expect(Set(found) == ["Documents/notes.md", "Documents/StockData/chart.png"])
         #expect(FileScanner(settings: SourceSettings(), home: home.path).item(at: dump.appending(path: "t1.txt")) == nil)
     }

@@ -9,6 +9,7 @@ import GRDB
 public final class IndexStore: Sendable {
     public let url: URL
     private let pool: DatabasePool
+    private let hasStatusCounts: Bool
     /// Turns words into the terms the full-text index stores, with its own tokenizer.
     private let stemmer: DatabaseQueue
 
@@ -38,6 +39,7 @@ public final class IndexStore: Sendable {
             config.label = "index.sqlite (read-only)"
             config.readonly = true
             pool = try DatabasePool(path: url.path, configuration: config)
+            hasStatusCounts = try pool.read { try $0.tableExists("item_count") && $0.tableExists("unit_count") }
             return
         }
         let folder = url.deletingLastPathComponent()
@@ -51,6 +53,7 @@ public final class IndexStore: Sendable {
         config.foreignKeysEnabled = true
         pool = try DatabasePool(path: url.path, configuration: config)
         try Self.migrator.migrate(pool)
+        hasStatusCounts = true
         Self.protect(url)
     }
 
@@ -121,6 +124,41 @@ public final class IndexStore: Sendable {
                 CREATE INDEX item_pending ON item (
                     state, (CASE kind WHEN 'image' THEN 1 ELSE 0 END), modified DESC
                 ) WHERE state = 0
+                """)
+        }
+        migrator.registerMigration("v5-status-counts") { db in
+            // Status is polled while indexing. Maintain a few aggregate rows in the same
+            // transaction as each change, instead of recounting the entire index per poll.
+            try db.execute(sql: """
+                CREATE INDEX item_source_path ON item(source, path);
+                CREATE TABLE item_count (
+                    source TEXT NOT NULL, kind TEXT NOT NULL, state INTEGER NOT NULL,
+                    n INTEGER NOT NULL, PRIMARY KEY (source, kind, state)
+                ) WITHOUT ROWID;
+                INSERT INTO item_count SELECT source, kind, state, count(*) FROM item GROUP BY source, kind, state;
+                CREATE TABLE unit_count (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL);
+                INSERT INTO unit_count SELECT 1, count(*) FROM unit;
+                CREATE TRIGGER item_count_ai AFTER INSERT ON item BEGIN
+                    INSERT INTO item_count VALUES (new.source, new.kind, new.state, 1)
+                    ON CONFLICT(source, kind, state) DO UPDATE SET n = n + 1;
+                END;
+                CREATE TRIGGER item_count_ad AFTER DELETE ON item BEGIN
+                    UPDATE item_count SET n = n - 1
+                    WHERE source = old.source AND kind = old.kind AND state = old.state;
+                END;
+                CREATE TRIGGER item_count_au AFTER UPDATE OF source, kind, state ON item
+                WHEN old.source != new.source OR old.kind != new.kind OR old.state != new.state BEGIN
+                    UPDATE item_count SET n = n - 1
+                    WHERE source = old.source AND kind = old.kind AND state = old.state;
+                    INSERT INTO item_count VALUES (new.source, new.kind, new.state, 1)
+                    ON CONFLICT(source, kind, state) DO UPDATE SET n = n + 1;
+                END;
+                CREATE TRIGGER unit_count_ai AFTER INSERT ON unit BEGIN
+                    UPDATE unit_count SET n = n + 1 WHERE id = 1;
+                END;
+                CREATE TRIGGER unit_count_ad AFTER DELETE ON unit BEGIN
+                    UPDATE unit_count SET n = n - 1 WHERE id = 1;
+                END;
                 """)
         }
         return migrator
@@ -239,6 +277,31 @@ public final class IndexStore: Sendable {
             let rows = try Row.fetchCursor(db, sql: "SELECT id, path FROM item WHERE source = ?", arguments: [source.rawValue])
             while let row = try rows.next() { paths[row["path"]] = row["id"] }
             return paths
+        }
+    }
+
+    /// Only the files a walk can reconcile. A subtree removal must not remove siblings
+    /// or another source. Binary prefix ranges use item_source_path, including Unicode paths.
+    func fileRecords(in directories: [String]?) throws -> [String: (item: Item, signature: String)] {
+        try pool.read { db in
+            var result: [String: (item: Item, signature: String)] = [:]
+            func read(_ sql: String, arguments: StatementArguments = []) throws {
+                let rows = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+                while let row = try rows.next() {
+                    let item = Self.item(row)
+                    result[item.path] = (item, row["signature"])
+                }
+            }
+            if let directories {
+                for directory in directories {
+                    let prefix = directory.hasSuffix("/") ? String(directory.dropLast()) : directory
+                    try read("SELECT * FROM item WHERE source = 'file' AND path >= ? AND path < ?",
+                             arguments: [prefix + "/", prefix + "0"])
+                }
+            } else {
+                try read("SELECT * FROM item WHERE source = 'file'")
+            }
+            return result
         }
     }
 
@@ -513,7 +576,10 @@ public final class IndexStore: Sendable {
     public func sourceStatuses() throws -> [SourceStatus] {
         try pool.read { db in
             try [ItemSource.file, .notes, .messages].map { source in
-                let rows = try Row.fetchAll(db, sql: "SELECT state, count(*) AS n FROM item WHERE source = ? GROUP BY state", arguments: [source.rawValue])
+                let sql = hasStatusCounts
+                    ? "SELECT state, sum(n) AS n FROM item_count WHERE source = ? GROUP BY state"
+                    : "SELECT state, count(*) AS n FROM item WHERE source = ? GROUP BY state"
+                let rows = try Row.fetchAll(db, sql: sql, arguments: [source.rawValue])
                 var status = SourceStatus(source: source)
                 for row in rows {
                     let count: Int = row["n"]
@@ -538,7 +604,10 @@ public final class IndexStore: Sendable {
     public func counts() throws -> IndexCounts {
         try pool.read { db in
             var counts = IndexCounts()
-            for row in try Row.fetchAll(db, sql: "SELECT kind, state, count(*) AS n FROM item GROUP BY kind, state") {
+            let sql = hasStatusCounts
+                ? "SELECT kind, state, sum(n) AS n FROM item_count WHERE n > 0 GROUP BY kind, state"
+                : "SELECT kind, state, count(*) AS n FROM item GROUP BY kind, state"
+            for row in try Row.fetchAll(db, sql: sql) {
                 let n: Int = row["n"]
                 let state: Int = row["state"]
                 counts.items += n
@@ -546,7 +615,7 @@ public final class IndexStore: Sendable {
                 if state == 2 { counts.unreadable += n }
                 if state == 1, let kind = ItemKind(rawValue: row["kind"]) { counts.indexed[kind, default: 0] += n }
             }
-            counts.units = try Int.fetchOne(db, sql: "SELECT count(*) FROM unit") ?? 0
+            counts.units = try Int.fetchOne(db, sql: hasStatusCounts ? "SELECT n FROM unit_count WHERE id = 1" : "SELECT count(*) FROM unit") ?? 0
             return counts
         }
     }

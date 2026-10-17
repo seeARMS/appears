@@ -43,8 +43,9 @@ public actor Indexer {
     private var messageSeconds = (read: 0.0, embed: 0.0, write: 0.0)
     private var onProgress: (@Sendable (IndexProgress) -> Void)?
     private var fileScan: Task<Int, any Error>?
-    private var scanAgain = false
-    private let fileWalk: @Sendable (FileScanner, @Sendable (Int) -> Void) throws -> [Item]
+    private var fullScanPending = false
+    private var pendingDirectories = Set<String>()
+    private let fileWalk: @Sendable (FileScanner, [String]?, @Sendable (Int) -> Void) throws -> [Item]
     private var activeWalk: UUID?
 
     public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, settings: SourceSettings, messagesURL: URL? = nil,
@@ -54,11 +55,11 @@ public actor Indexer {
         self.embedder = embedder
         self.settings = settings
         self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
-        if let fileWalk { self.fileWalk = { scanner, _ in try fileWalk(scanner) } }
+        if let fileWalk { self.fileWalk = { scanner, _, _ in try fileWalk(scanner) } }
         else {
-            self.fileWalk = { scanner, progress in
+            self.fileWalk = { scanner, directories, progress in
                 var items: [Item] = []
-                try scanner.scan { item in
+                try scanner.scan(in: directories) { item in
                     try Task.checkCancellation()
                     items.append(item)
                     if items.count % 500 == 0 { progress(items.count) }
@@ -86,7 +87,7 @@ public actor Indexer {
         let old = self.settings
         self.settings = settings
         settingsRevision += 1
-        if fileScan != nil { scanAgain = true }
+        if fileScan != nil { fullScanPending = true; pendingDirectories.removeAll() }
         var removed = try store.itemIDs(under: settings.excludes.filter { !old.excludes.contains($0) })
         if old.notes, !settings.notes { removed += try store.itemIDs(source: .notes) }
         if !settings.messages {
@@ -107,24 +108,42 @@ public actor Indexer {
     /// Walks the home folder and included folders, recording new and changed files and
     /// removing ones that are gone. Returns how many files it found.
     @discardableResult
-    public func scanFiles() async throws -> Int {
-        // One active walk and at most one follow-up, regardless of FSEvents volume.
-        scanAgain = true
+    public func scanFiles(in directories: [String]? = nil) async throws -> Int {
+        // Coalesce directory changes without promoting ordinary events to a home scan.
+        if let directories {
+            pendingDirectories.formUnion(directories)
+        } else {
+            fullScanPending = true
+            pendingDirectories.removeAll()
+        }
         if let fileScan { return try await fileScan.value }
         let task = Task {
             defer { fileScan = nil }
             var found = 0
             repeat {
-                scanAgain = false
-                found = try await performFileScan()
-            } while scanAgain
+                let directories = fullScanPending ? nil : Self.minimalDirectories(pendingDirectories)
+                fullScanPending = false
+                pendingDirectories.removeAll()
+                found = try await performFileScan(in: directories)
+            } while fullScanPending || !pendingDirectories.isEmpty
             return found
         }
         fileScan = task
         return try await task.value
     }
 
-    private func performFileScan() async throws -> Int {
+    /// Keep an ancestor once when a burst includes both it and its descendants.
+    static func minimalDirectories(_ paths: Set<String>) -> [String] {
+        var result: [String] = []
+        for path in paths.sorted() {
+            if !result.contains(where: { path == $0 || path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }) {
+                result.append(path)
+            }
+        }
+        return result
+    }
+
+    private func performFileScan(in directories: [String]?) async throws -> Int {
         // A rescan can enter while indexing awaits the embedder. Preserve that
         // run's progress, including its scanned count and paused state.
         let showsScanProgress = progress.phase == .idle
@@ -143,8 +162,8 @@ public actor Indexer {
         // FileProvider metadata and directory enumeration can block for seconds. Keep
         // that work off this actor so settings, status, and indexing can still advance.
         let traversal = Task.detached(priority: .utility) {
-            let known = try store.paths(source: .file)
-            return (known, try walk(scanner) { count in
+            let known = try store.fileRecords(in: directories)
+            return (known, try walk(scanner, directories) { count in
                 Task { await self.reportFileWalk(count, id: walkID) }
             })
         }
@@ -152,25 +171,35 @@ public actor Indexer {
             try await traversal.value
         } onCancel: { traversal.cancel() }
         activeWalk = nil
-        guard revision == settingsRevision else { scanAgain = true; return 0 }
+        guard revision == settingsRevision else { fullScanPending = true; return 0 }
         if showsScanProgress, progress.phase == .scanning { report { $0.scanned = items.count } }
         var known = snapshot
         var found = 0
         for batch in items.chunked(100) {
             try Task.checkCancellation()
-            guard revision == settingsRevision else { scanAgain = true; return found }
+            guard revision == settingsRevision else { fullScanPending = true; return found }
             for item in batch {
-                known.removeValue(forKey: item.path)
-                try store.record(item, signature: FileScanner.signature(item))
+                let previous = known.removeValue(forKey: item.path)
+                let signature = FileScanner.signature(item)
+                var comparable = item
+                comparable.id = previous?.item.id ?? item.id
+                comparable.lastUsed = previous?.item.lastUsed
+                // SQLite stores Unix seconds; round-trip filesystem dates the same way
+                // before comparing, rather than rewriting for sub-microsecond rounding.
+                comparable.created = Date(timeIntervalSince1970: item.created.timeIntervalSince1970)
+                comparable.modified = Date(timeIntervalSince1970: item.modified.timeIntervalSince1970)
+                if previous?.item != comparable || previous?.signature != signature {
+                    try store.record(item, signature: signature)
+                }
                 found += 1
             }
             await Task.yield()
         }
-        guard revision == settingsRevision else { scanAgain = true; return found }
-        let removed = try store.remove(itemIDs: Array(known.values))
+        guard revision == settingsRevision else { fullScanPending = true; return found }
+        let removed = try store.remove(itemIDs: known.values.map { $0.item.id })
         vectors.remove(ids: removed)
         try store.didCheck(.file)
-        indexLog.info("Scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
+        indexLog.info("\(directories == nil ? "Full" : "Folder", privacy: .public) scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
         if showsScanProgress, progress.phase == .scanning { report { $0.scanned = found } }
         return found
     }
@@ -286,8 +315,10 @@ public actor Indexer {
 
     /// Files that FSEvents says changed: record them, or remove them if they're gone.
     public func filesChanged(_ paths: [String]) throws {
-        if fileScan != nil { scanAgain = true }
         let scanner = FileScanner(settings: settings)
+        if fileScan != nil {
+            pendingDirectories.formUnion(paths.map { ($0 as NSString).deletingLastPathComponent }.filter(scanner.shouldWatchFolder))
+        }
         var removed: [Int64] = []
         for path in Set(paths) {
             if let item = scanner.item(at: URL(filePath: path)) {

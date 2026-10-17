@@ -155,27 +155,35 @@ public struct FileScanner: Sendable {
         while folder.path.count > 1 {
             if roots.contains(folder.path) { return true }
             if !shouldEnter(folder, isRoot: false) { return false }
+            if (try? folder.resourceValues(forKeys: [.isPackageKey]).isPackage) == true { return false }
             folder.deleteLastPathComponent()
         }
         return false
     }
 
-    /// Walks every root and calls `found` for each indexable file.
-    public func scan(_ found: (Item) throws -> Void) rethrows {
-        for root in roots {
+    /// Walks every root, or just the changed directories, with the same skip rules.
+    public func scan(in directories: [String]? = nil, _ found: (Item) throws -> Void) throws {
+        for root in directories ?? roots {
             let rootURL = URL(filePath: root)
-            guard shouldEnter(rootURL, isRoot: true) else { continue }
+            guard shouldWatchFolder(root) else { continue }
             try walk(rootURL, found)
         }
     }
 
-    private func walk(_ folder: URL, _ found: (Item) throws -> Void) rethrows {
-        guard let children = try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
-        ) else { return }
+    private func walk(_ folder: URL, _ found: (Item) throws -> Void) throws {
+        let children: [URL]
+        do {
+            children = try FileManager.default.contentsOfDirectory(
+                at: folder, includingPropertiesForKeys: Self.keys, options: [.skipsHiddenFiles]
+            )
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            return
+        }
         let skipText = isDataFolder(folder, children: children)
         for child in children {
-            guard let values = try? child.resourceValues(forKeys: Set(Self.keys)) else { continue }
+            let values: URLResourceValues
+            do { values = try child.resourceValues(forKeys: Set(Self.keys)) }
+            catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { continue }
             if values.isDirectory == true {
                 // Bundles (apps, Photos libraries, .rtfd, Pages documents) are skipped whole.
                 if values.isPackage == true { continue }
