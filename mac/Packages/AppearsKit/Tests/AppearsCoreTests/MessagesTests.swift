@@ -159,12 +159,13 @@ private actor MessageEmbedder: Embedder {
         #expect(text.contains("kitchen remodel quote"))
         #expect(text.contains("1188 Example St"))
         #expect(!text.contains("Lunch today"))
-        #expect(address.openURL?.scheme == "imessage")
+        #expect(address.openURL?.absoluteString == "sms://open?message-guid=message-2")
         #expect(address.modified == fixture.old.addingTimeInterval(60))
         #expect(try store.item(path: "messages:7")?.modified.timeIntervalSinceNow ?? -1 > -60)
         let photo = try #require(try store.item(path: "messages:3:photo:photo-1"))
         #expect(photo.kind == .image && photo.source == .messages)
         #expect(photo.fileURL == fixture.photo)
+        #expect(photo.openURL == fixture.photo)
         #expect(try store.units(itemID: photo.id).contains { $0.unit.kind == .image })
         #expect(try store.item(path: "messages:4") == nil)
         #expect(try store.item(path: "messages:5") == nil)
@@ -175,6 +176,58 @@ private actor MessageEmbedder: Embedder {
         // A second full scan does no embedding work for unchanged content.
         try await indexer.scanMessages()
         #expect(try await indexer.indexPending() == 0)
+    }
+
+    @Test func opensOldGroupMessagesAtTheirGUID() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let guid = "583F1690-5F4F-4861-BC8B-7245BAA69743"
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE chat SET style = 43, chat_identifier = 'chat-kitchen', guid = 'iMessage;+;chat-kitchen'")
+            try db.execute(sql: "UPDATE message SET guid = ? WHERE ROWID = 1", arguments: [guid])
+        }
+        let indexer = try fixture.makeIndexer()
+        try await indexer.scanMessages()
+        let store = await indexer.store
+        let item = try #require(try store.item(path: "messages:1"))
+        #expect(item.created == fixture.old)
+        #expect(item.message?.conversationURL == nil)
+        #expect(item.openURL?.absoluteString == "sms://open?message-guid=\(guid)")
+    }
+
+    @Test func removedMessagePhotoFallsBackToItsSourceMessage() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let indexer = try fixture.makeIndexer()
+        try await indexer.scanMessages()
+        let store = await indexer.store
+        let photo = try #require(try store.item(path: "messages:3:photo:photo-1"))
+        #expect(photo.openURL == fixture.photo)
+        try FileManager.default.removeItem(at: fixture.photo)
+        #expect(photo.openURL == photo.messageURL)
+        #expect(photo.openURL?.absoluteString == "sms://open?message-guid=message-3")
+    }
+
+    @Test func messageLinksEncodeTheGUIDAsOneQueryValue() throws {
+        let guid = "made-up&body=example?#fragment"
+        let url = try #require(MessagesLink.url(messageGUID: guid))
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        #expect(components.scheme == "sms")
+        #expect(components.host == "open")
+        #expect(components.queryItems == [URLQueryItem(name: "message-guid", value: guid)])
+        #expect(components.fragment == nil)
+        #expect(MessagesLink.url(messageGUID: "") == nil)
+        #expect(MessagesLink.url(messageGUID: " \n") == nil)
+    }
+
+    @Test func missingMessageGUIDFallsBackToConversationOrMessages() throws {
+        let conversation = try #require(URL(string: "imessage://+14155550142"))
+        var item = Item(source: .messages, path: "messages:1", kind: .message, title: "Kitchen crew", size: 0,
+                        created: .distantPast, modified: .distantPast, lastUsed: nil,
+                        message: MessageReference(rowID: 1, guid: "", chatID: 1, conversationURL: conversation))
+        #expect(item.openURL == conversation)
+        item.message?.conversationURL = nil
+        #expect(item.openURL == URL(filePath: "/System/Applications/Messages.app"))
     }
 
     @Test func switchesOffBothSourcesAndCanRebuild() async throws {

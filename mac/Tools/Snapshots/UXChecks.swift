@@ -5,6 +5,10 @@ import AppearsCore
 private final class SearchFixture {
     var calls: [String] = []
     var replies: [CheckedContinuation<RecallResponse, any Error>] = []
+    var opens: [CheckedContinuation<Bool, Never>] = []
+    func open(_ item: Item) async -> Bool {
+        await withCheckedContinuation { opens.append($0) }
+    }
     func search(_ request: SearchRequest) async throws -> RecallResponse {
         calls.append(request.text)
         return try await withCheckedThrowingContinuation { replies.append($0) }
@@ -21,7 +25,7 @@ private final class SearchFixture {
 @MainActor
 func verifySearchUpdates(_ app: AppModel, suggestions: [Suggestion]) async {
     let fixture = SearchFixture()
-    let model = SearchModel(app: app, search: fixture.search)
+    let model = SearchModel(app: app, search: fixture.search, openItem: fixture.open)
     func wait(_ condition: () -> Bool) async {
         for _ in 0..<200 {
             if condition() { return }
@@ -38,7 +42,8 @@ func verifySearchUpdates(_ app: AppModel, suggestions: [Suggestion]) async {
     let selected = model.selected!.id
     model.query = "kitchen quote"
     precondition(model.results == suggestions && model.selected?.id == selected)
-    precondition(model.isSearching && !model.open(suggestions[0]), "An old result must not open during an update")
+    let openedDuringUpdate = await model.open(suggestions[0])
+    precondition(model.isSearching && !openedDuringUpdate, "An old result must not open during an update")
     await wait { fixture.calls.count == 2 }
     model.query = "kitchen permit"
     // The replacement must dispatch while the previous backend call is still suspended.
@@ -89,9 +94,29 @@ func verifySearchUpdates(_ app: AppModel, suggestions: [Suggestion]) async {
     precondition(fixture.calls.last == "final draft", "Typing inside the debounce sends only the latest query")
     fixture.respond(suggestions)
     await wait { !model.isSearching }
+    for reopen in [false, true] {
+        let pendingOpen = Task { await model.open(suggestions[0]) }
+        await wait { fixture.opens.count == 1 }
+        if reopen { model.clear(); model.begin() }
+        let calls = fixture.calls.count
+        model.query = reopen ? "reopened query" : "newer query"
+        fixture.opens.removeFirst().resume(returning: true)
+        let shouldClose = await pendingOpen.value
+        precondition(!shouldClose && model.hasQuery, "A stale open completion must not close a newer search or reopened window")
+        await wait { fixture.calls.count == calls + 1 }
+        fixture.respond(suggestions)
+        await wait { !model.isSearching }
+    }
+    for success in [false, true] {
+        let pendingOpen = Task { await model.open(suggestions[0]) }
+        await wait { fixture.opens.count == 1 }
+        fixture.opens.removeFirst().resume(returning: success)
+        let shouldClose = await pendingOpen.value
+        precondition(shouldClose == success, "Only a successful open in the current search should close it")
+    }
     model.clear()
     await verifyXPCCancellation()
-    print("Verified debounce, independent query replacement, stale replies, clear/reopen, selection, source changes, failures and XPC cancellation races")
+    print("Verified debounce, query replacement, stale replies and open completions, clear/reopen, selection, source changes, failures and XPC cancellation races")
 }
 
 /// Exercise the actual reply bridge without starting the engine or touching user files.

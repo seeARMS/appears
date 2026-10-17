@@ -83,7 +83,7 @@ final class SearchController: NSObject, NSWindowDelegate {
             default: break
             }
             if event.keyCode == 36 || event.keyCode == 76 {
-                if let selected = model.selected, model.open(selected, reveal: true) { close(restoreFocus: false) }
+                openSelection(reveal: true)
                 return true
             }
         }
@@ -95,9 +95,16 @@ final class SearchController: NSObject, NSWindowDelegate {
         case 125: model.moveSelection(1); return true
         case 126: model.moveSelection(-1); return true
         case 36, 76:
-            if let selected = model.selected, model.open(selected, reveal: modifiers.contains(.command)) { close(restoreFocus: false) }
+            openSelection()
             return true
         default: return false
+        }
+    }
+
+    private func openSelection(reveal: Bool = false) {
+        guard let selected = model.selected else { return }
+        Task {
+            if await model.open(selected, reveal: reveal) { close(restoreFocus: false) }
         }
     }
 

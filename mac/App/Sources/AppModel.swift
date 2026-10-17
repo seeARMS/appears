@@ -530,7 +530,7 @@ final class AppModel {
         record(outcome, for: current, item: suggestion, position: position)
         switch outcome {
         case .opened:
-            if let url = suggestion.item.openURL { NSWorkspace.shared.open(url) }
+            Task { await ResultOpener.open(suggestion.item) }
         case .revealed:
             if let url = suggestion.item.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         case .dismissed, .blocked:

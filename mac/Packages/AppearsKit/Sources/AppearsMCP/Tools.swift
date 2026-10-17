@@ -27,7 +27,7 @@ enum Tools {
                     "type": "object",
                     "properties": [
                         "path": ["type": "string", "description": "A file path, notes:<id>, or messages:<id>."],
-                        "url": ["type": "string", "description": "Opens the file, note or Messages conversation."],
+                        "url": ["type": "string", "description": "Opens the file, note or local Messages photo, or targets the matching message. Unavailable photos fall back to their message; missing message IDs fall back to the conversation or Messages app."],
                         "title": ["type": "string"],
                         "kind": ["type": "string", "enum": ["document", "pdf", "image", "note", "message"]],
                         "reason": ["type": "string", "description": "Why it matched, in one line."],

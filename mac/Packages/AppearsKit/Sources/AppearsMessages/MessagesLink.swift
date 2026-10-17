@@ -1,12 +1,19 @@
 import Foundation
 
-/// Links that open a conversation in Messages.
-///
-/// Apple doesn't document a link that opens Messages at a specific message, so these open
-/// the conversation and Appears shows the matching passage in its result. One-to-one
-/// chats open with `imessage:` or `sms:` and the other person's address. Group chats have
-/// no documented link, so for those this returns nil and the caller just opens Messages.
+/// Links that open a message or conversation in Messages.
 public enum MessagesLink {
+    /// The message-specific URL used by Apple's own links back from Calendar.
+    /// This is undocumented; retain conversation links as a fallback for missing GUIDs.
+    public static func url(messageGUID: String) -> URL? {
+        guard !messageGUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = "sms"
+        components.host = "open"
+        components.queryItems = [URLQueryItem(name: "message-guid", value: messageGUID)]
+        return components.url
+    }
+
+    /// One-to-one conversation fallback. Groups without a message GUID open Messages itself.
     public static func url(for chat: Chat) -> URL? {
         guard !chat.isGroup, let address = chat.participants.first?.address ?? nonEmpty(chat.identifier) else {
             return nil
