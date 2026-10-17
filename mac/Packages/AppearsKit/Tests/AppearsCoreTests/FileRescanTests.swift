@@ -27,6 +27,12 @@ import Testing
         }
         #expect(combined.fullScan)
         #expect(combined.directories == changes.directories)
+        for flag in [kFSEventStreamEventFlagItemChangeOwner, kFSEventStreamEventFlagItemInodeMetaMod] {
+            let permissionChange = FileChanges(paths: ["/fixture/Documents/Imported"],
+                                              flags: [FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir | flag)],
+                                              acceptsDirectory: scanner.shouldWatchFolder)
+            #expect(permissionChange.directories == ["/fixture/Documents/Imported"])
+        }
         for flag in [kFSEventStreamEventFlagUserDropped, kFSEventStreamEventFlagKernelDropped] {
             let recovery = FileChanges(paths: ["/fixture/Private"], flags: [FSEventStreamEventFlags(flag)], acceptsDirectory: scanner.shouldWatchFolder)
             #expect(recovery.fullScan, "Dropped events require recovery even when their reported path is excluded")
@@ -110,18 +116,96 @@ import Testing
         let original = try #require(try store.item(path: file.path))
         let unit = try #require(try store.units(itemID: original.id).first)
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
+        let sibling = home.appending(path: "Imported-other")
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        let readable = sibling.appending(path: "new.txt")
+        try "A new synthetic permit in a readable sibling.".write(to: readable, atomically: true, encoding: .utf8)
         for directories: [String]? in [nil, [blocked.path]] {
-            do {
-                _ = try await indexer.scanFiles(in: directories)
-                Issue.record("A failed directory read must abort reconciliation")
-            } catch let error as CocoaError {
-                #expect(error.code == .fileReadNoPermission)
-            }
+            _ = try await indexer.scanFiles(in: directories)
+            #expect(await indexer.fileScanIssues.map(\.path) == [blocked.path])
+            #expect(await indexer.fileScanIssues.first?.permissionDenied == true)
             #expect(try store.item(path: file.path) == original)
             #expect(try store.units(itemID: original.id).first?.unit == unit.unit)
             #expect(try store.units(itemID: original.id).first?.vector == unit.vector)
             #expect(vectors.count == 1)
+            #expect(try store.item(path: readable.path) != nil, "A denied subtree must not discard readable siblings")
         }
+        try await indexer.filesChanged([file.path])
+        #expect(try store.item(path: file.path) == original, "A denied file event is not a deletion")
+        #expect(try store.units(itemID: original.id).first?.vector == unit.vector)
+        try FileManager.default.removeItem(at: readable)
+        _ = try await indexer.scanFiles()
+        #expect(try store.item(path: readable.path) == nil, "Readable siblings still reconcile real deletions")
+        #expect(try store.item(path: file.path) == original)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path)
+        _ = try await indexer.scanFiles(in: [blocked.path])
+        #expect(await indexer.fileScanIssues.isEmpty, "A successful retry clears only the recovered subtree's warnings")
+        #expect(try store.item(path: file.path) == original)
+        try FileManager.default.removeItem(at: file)
+        _ = try await indexer.scanFiles(in: [blocked.path])
+        #expect(try store.item(path: file.path) == nil)
+        #expect(vectors.count == 0)
+    }
+
+    @Test func unreadableRootDoesNotPreventOtherRootsAndCallbackErrorsPropagate() throws {
+        let folder = URL(filePath: FileManager.default.currentDirectoryPath).appending(path: ".build/appears-roots-\(UUID().uuidString)")
+        let blocked = folder.appending(path: "Home")
+        let included = folder.appending(path: "Included")
+        for directory in [blocked, included] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
+        let file = included.appending(path: "permit.txt")
+        try "An invented permit.".write(to: file, atomically: true, encoding: .utf8)
+        let scanner = FileScanner(settings: SourceSettings(includes: [included.path], homeOverride: blocked.path))
+        var found: [String] = []
+        let issues = try scanner.scan { found.append($0.path) }
+        #expect(found == [file.path])
+        #expect(issues.map(\.path) == [blocked.path])
+        #expect(throws: CancellationError.self) { try scanner.scan { _ in throw CancellationError() } }
+    }
+
+    @Test func missingIncludedRootKeepsItsIndexUntilItReturnsOrIsRemovedFromSources() async throws {
+        let folder = URL(filePath: FileManager.default.currentDirectoryPath).appending(path: ".build/appears-offline-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let home = folder.appending(path: "Home")
+        let included = folder.appending(path: "Included")
+        for directory in [home, included] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        let file = included.appending(path: "permit.txt")
+        try "A synthetic permit on an included drive.".write(to: file, atomically: true, encoding: .utf8)
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let embedder = HashingEmbedder()
+        let vectors = VectorIndex(dimension: embedder.dimension)
+        var settings = SourceSettings(includes: [included.path], notes: false, messages: false, homeOverride: home.path)
+        let indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: settings)
+        await indexer.setPoliteness(false)
+        _ = try await indexer.scanFiles()
+        _ = try await indexer.indexPending()
+        let original = try #require(try store.item(path: file.path))
+        let offline = folder.appending(path: "Offline")
+        try FileManager.default.moveItem(at: included, to: offline)
+        try await indexer.filesChanged([file.path])
+        #expect(try store.item(path: file.path) == original, "A file event from an unavailable included root is not a confirmed deletion")
+        #expect(vectors.count == 1)
+        for directories: [String]? in [nil, [included.path]] {
+            _ = try await indexer.scanFiles(in: directories)
+            #expect(try store.item(path: file.path) == original)
+            #expect(vectors.count == 1)
+            #expect(await indexer.fileScanIssues.map(\.path) == [included.path])
+            #expect(await indexer.fileScanIssues.first?.permissionDenied == false)
+        }
+        try FileManager.default.moveItem(at: offline, to: included)
+        _ = try await indexer.scanFiles(in: [included.path])
+        #expect(await indexer.fileScanIssues.isEmpty)
+        #expect(try store.item(path: file.path) == original)
+        settings.includes = []
+        try await indexer.update(settings: settings)
+        _ = try await indexer.scanFiles()
+        #expect(try store.item(path: file.path) == nil)
+        #expect(vectors.count == 0)
     }
 
     @Test func unchangedScansDoNotUpdateItemsOrDiscardUsageAndEmbeddings() async throws {

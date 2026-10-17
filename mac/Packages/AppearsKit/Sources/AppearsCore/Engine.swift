@@ -17,6 +17,10 @@ public struct EngineStatus: Sendable, Codable, Equatable {
     public var sources: [SourceStatus] = []
     public var watchedFolders: [String] = []
     public var unreadableFolders: [String] = []
+    public var fileScanIssues: [FileScanIssue] = []
+    /// Covers all enabled sources, even when indexing is already active.
+    public var isScanning = false
+    public var lastScanCompletedAt: Date?
 
     public init() {}
 }
@@ -78,14 +82,15 @@ public final class Engine: Sendable {
     private let searches = SearchCoordinator()
     private let sources: Mutex<(settings: SourceSettings, revision: UInt64)>
 
-    public init(folder: URL, embedder: any Embedder, settings: SourceSettings) throws {
+    public init(folder: URL, embedder: any Embedder, settings: SourceSettings,
+                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil) throws {
         let embedder = ScheduledEmbedder(embedder)
         sources = Mutex((settings, 0))
         store = try IndexStore(url: folder.appending(path: "index.sqlite"))
         journal = try Journal(url: folder.appending(path: "journal.sqlite"))
         vectors = VectorIndex(dimension: embedder.dimension)
         self.embedder = embedder
-        indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: settings)
+        indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: settings, fileWalk: fileWalk)
         recall = Recall(store: store, vectors: vectors, embedder: embedder)
         // A new model can't share vectors with the old one: start over.
         if try store.meta("model_id") != embedder.modelID {
@@ -115,9 +120,9 @@ public final class Engine: Sendable {
                 // The watchdog: anything waiting and nothing running means a run ended early.
                 if (try? self.store.counts().waiting) ?? 0 > 0 { await self.indexPending() }
                 // New messages each minute; a full pass also catches deletions and local photos.
-                if (try? await self.indexer.scanMessages(full: tick % 10 == 0)) ?? 0 > 0 { await self.indexPending() }
+                if await self.scanSource(.messages, { try await self.indexer.scanMessages(full: tick % 10 == 0) }) > 0 { await self.indexPending() }
                 // Notes have no file events we can watch from the sandbox: look every 10 minutes.
-                if tick % 10 == 0, (try? await self.indexer.scanNotes()) ?? 0 > 0 { await self.indexPending() }
+                if tick % 10 == 0, await self.scanSource(.notes, { try await self.indexer.scanNotes() }) > 0 { await self.indexPending() }
                 // A full rescan every 6 hours catches anything FSEvents missed.
                 if tick % 360 == 0 { await self.refresh() }
             }
@@ -126,16 +131,33 @@ public final class Engine: Sendable {
 
     /// One full pass: scan files, notes and Messages, then index what's new.
     public func refresh() async {
-        do {
-            try await indexer.scanFiles()
-            try await indexer.scanNotes()
-            try await indexer.scanMessages()
-            await state.setScanError(nil)
-        } catch {
-            indexLog.error("Scan failed: \(error.localizedDescription, privacy: .public)")
-            await state.setScanError("Scanning failed: \(error.localizedDescription)")
-        }
+        let scan = await requestRefresh()
+        await scan.value
         await indexPending()
+    }
+
+    private func requestRefresh() async -> Task<Void, Never> {
+        await state.requestScan { [self] in
+            // A source failure never prevents the remaining sources from being checked.
+            _ = await scanSource(.file) { try await self.indexer.scanFiles() }
+            _ = await scanSource(.notes) { try await self.indexer.scanNotes() }
+            _ = await scanSource(.messages) { try await self.indexer.scanMessages() }
+        }
+    }
+
+    private func scanSource(_ source: ItemSource, _ scan: () async throws -> Int) async -> Int {
+        do {
+            let found = try await scan()
+            await state.setScanError(nil, source: source)
+            if source == .file { await state.setWatcherError(nil) }
+            return found
+        } catch is CancellationError { return 0 }
+        catch {
+            indexLog.error("Scan failed for \(source.rawValue, privacy: .public): \(error.localizedDescription, privacy: .private)")
+            let name = source == .file ? "files" : source == .notes ? "Apple Notes" : "Messages"
+            await state.setScanError("Couldn’t scan \(name). Other sources remain available. Use Scan now in Sources to retry.", source: source)
+            return 0
+        }
     }
 
     /// Indexes what's waiting, unless a run is already going.
@@ -150,7 +172,7 @@ public final class Engine: Sendable {
             }.value
             await state.setError(nil)
         } catch is CancellationError {} catch {
-            indexLog.error("Indexing run stopped: \(error.localizedDescription, privacy: .public)")
+            indexLog.error("Indexing run stopped: \(error.localizedDescription, privacy: .private)")
             await state.setError("Indexing stopped: \(error.localizedDescription)")
         }
     }
@@ -161,20 +183,29 @@ public final class Engine: Sendable {
         let roots = scanner.roots
         let watcher = FileWatcher(paths: roots, acceptsDirectory: scanner.shouldWatchFolder) { [weak self] changes in
             guard let self else { return }
-            Task {
-                do {
-                    if changes.fullScan { try await self.indexer.scanFiles() }
-                    else {
-                        if !changes.directories.isEmpty { try await self.indexer.scanFiles(in: Array(changes.directories)) }
-                        try await self.indexer.filesChanged(Array(changes.files))
-                    }
-                    await self.indexPending()
-                } catch {
-                    await self.state.setScanError("Couldn’t check changed files. Use Scan now in Sources to retry.")
-                }
-            }
+            Task { await self.processFileChanges(changes) }
         }
         await state.keep(watcher, roots: roots, revision: revision)
+    }
+
+    func processFileChanges(_ changes: FileChanges) async {
+        do {
+            if changes.fullScan {
+                try await indexer.scanFiles()
+                await state.setScanError(nil, source: .file)
+            } else {
+                if !changes.directories.isEmpty { try await indexer.scanFiles(in: Array(changes.directories)) }
+                try await indexer.filesChanged(Array(changes.files))
+            }
+            // A successful scoped update proves only that update recovered, not the
+            // rest of the source. Only a full scan can clear its full-scan error.
+            await state.setWatcherError(nil)
+        } catch {
+            let message = "Couldn’t check changed files. Use Scan now in Sources to retry."
+            if changes.fullScan { await state.setScanError(message, source: .file) }
+            else { await state.setWatcherError(message) }
+        }
+        await indexPending()
     }
 
     // MARK: - Calls
@@ -184,6 +215,8 @@ public final class Engine: Sendable {
         status.ready = await state.ready
         status.counts = (try? store.counts()) ?? IndexCounts()
         status.progress = await indexer.progress
+        status.fileScanIssues = await indexer.fileScanIssues
+        (status.isScanning, status.lastScanCompletedAt) = await state.scanStatus
         status.notesReadable = NotesReader.isReadable
         let sources = self.sources.withLock { $0.settings }
         status.messagesReadable = sources.messages && sources.homeOverride == nil && MessagesReader().isReadable
@@ -267,7 +300,10 @@ public final class Engine: Sendable {
             try store.touch(path: path)
             return Data("{}".utf8)
         case .rescan:
-            Task.detached(priority: .medium) { await self.refresh() }
+            try store.retryFailed()
+            // Mark the scan active before acknowledging it, so the UI can't miss the start.
+            let scan = await requestRefresh()
+            Task.detached(priority: .medium) { await scan.value; await self.indexPending() }
             return Data("{}".utf8)
         case .deleteIndex:
             try store.removeAll()
@@ -286,15 +322,30 @@ private actor EngineState {
     var ready = false
     var indexing = false
     private var indexingError: String?
-    private var scanError: String?
-    var error: String? { scanError ?? indexingError }
+    private var scanErrors: [ItemSource: String] = [:]
+    private var watcherError: String?
+    var error: String? { [.file, .notes, .messages].compactMap { scanErrors[$0] }.first ?? watcherError ?? indexingError }
+    private var scan: Task<Void, Never>?
+    private var lastScanCompletedAt: Date?
+    var scanStatus: (Bool, Date?) { (scan != nil, lastScanCompletedAt) }
     private var watcher: FileWatcher?
     var watchedFolders: [String] = []
     private var watcherRevision = -1
 
     func setReady(_ value: Bool) { ready = value }
     func setError(_ value: String?) { indexingError = value }
-    func setScanError(_ value: String?) { scanError = value }
+    func setScanError(_ value: String?, source: ItemSource) { scanErrors[source] = value }
+    func setWatcherError(_ value: String?) { watcherError = value }
+    func requestScan(_ operation: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
+        if let scan { return scan }
+        let task = Task(priority: .medium) {
+            await operation()
+            scan = nil
+            lastScanCompletedAt = Date()
+        }
+        scan = task
+        return task
+    }
     func beginIndexing() -> Bool {
         if indexing { return false }
         indexing = true
@@ -324,7 +375,8 @@ struct FileChanges: Sendable {
             else if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0,
                acceptsDirectory(path) { fullScan = true }
             if flag & kFSEventStreamEventFlagItemIsDir != 0,
-               flag & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0,
+               flag & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed
+                       | kFSEventStreamEventFlagItemChangeOwner | kFSEventStreamEventFlagItemInodeMetaMod) != 0,
                acceptsDirectory(path) { directories.insert(path) }
             if flag & kFSEventStreamEventFlagItemIsFile != 0,
                FileScanner.kind(forExtension: (path as NSString).pathExtension) != nil,

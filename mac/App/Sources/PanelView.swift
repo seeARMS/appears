@@ -119,7 +119,7 @@ struct PanelView: View {
                               back: { model.sourcePreview = nil }) {
                 model.act(.opened, on: preview); close()
             }
-        } else if model.status?.ready != true || model.status?.error != nil || model.engineStatusError != nil {
+        } else if model.status?.ready != true || model.engineStatusError != nil || (model.status?.error != nil && !hasRows) {
             ReadinessView(model: model, openSources: openSources).padding(16)
         } else if let shown = model.shown {
             if shown.suggestions.isEmpty, !model.isPulling {
@@ -157,6 +157,7 @@ struct PanelView: View {
 
     /// The footer carries indexing status or the keys for a list; with neither, it goes.
     private var showsFooter: Bool {
+        if model.status?.isScanning == true { return true }
         if let progress = model.status?.progress,
            progress.phase == .indexing || progress.phase == .scanning || (progress.phase == .paused && progress.pausedReason != nil) { return true }
         return model.settings.isPaused || hasRows
@@ -172,6 +173,8 @@ struct PanelView: View {
                 hint("esc", "back")
                 Spacer(minLength: 0)
                 hint("↩", "open")
+            } else if model.status?.isScanning == true {
+                Text("Checking enabled sources…")
             } else if let status = model.status, status.progress.phase == .indexing || status.progress.phase == .scanning {
                 Text(status.progress.phase == .scanning ? "Looking through your files…" : "Indexing \(status.progress.done.formatted()) of \(status.progress.total.formatted())…")
             } else if let status = model.status, status.progress.phase == .paused, let reason = status.progress.pausedReason {
