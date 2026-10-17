@@ -14,6 +14,10 @@ import {
   FAQ_HEADING,
   GET_HEADING,
   GET_TEXT,
+  GUIDES,
+  GUIDES_HEADING,
+  GUIDES_INTRO,
+  guidePath,
   GLYPHS,
   HEADLINE,
   HOW,
@@ -32,6 +36,7 @@ import {
   SITE,
   SOURCE_LABEL,
   SOURCE_URL,
+  SEARCH,
   TITLE,
 } from "../site";
 
@@ -48,6 +53,9 @@ const MARKDOWN = `${[
   ...MOCK_SCENARIOS.map(
     (s) => `**${s.label}.** ${s.caption} The panel shows:\n\n${s.results.map((r) => `- **${r.title}:** ${r.reason}`).join("\n")}`,
   ),
+  `## ${SEARCH.heading}`,
+  SEARCH.text,
+  SEARCH.caption,
   `## ${HOW_HEADING}`,
   ...HOW.map((item) => `### ${item.title}\n\n${item.text}`),
   `## ${QUIET_HEADING}`,
@@ -56,6 +64,9 @@ const MARKDOWN = `${[
   `## ${PRIVACY_HEADING}`,
   PRIVACY_TEXT,
   PRIVACY.map((row) => `- **${row.label}:** ${row.text}`).join("\n"),
+  `## ${GUIDES_HEADING}`,
+  GUIDES_INTRO,
+  GUIDES.map((guide) => `- [${guide.title.split(" | ")[0]}](${new URL(guidePath(guide.slug), SITE).href}): ${guide.summary}`).join("\n"),
   `## ${FAQ_HEADING}`,
   ...FAQ.map((item) => `### ${item.q}\n\n${item.a.join("\n\n")}`),
   `## ${GET_HEADING}`,

@@ -1,7 +1,8 @@
 ---
-// The one page. Its copy is in src/site.ts, which the Markdown version
+// The home page. Its copy is in src/site.ts, which the Markdown version
 // (index.md.ts) and llms.txt read too.
 import Base from "../layouts/Base.astro";
+import AppScreenshot from "../components/AppScreenshot.astro";
 import Found from "../components/Found.astro";
 import Glyph from "../components/Glyph.astro";
 import Icon from "../components/Icon.astro";
@@ -9,6 +10,8 @@ import Mark from "../components/Mark.astro";
 import Mock from "../components/Mock.astro";
 import PrivacyArt from "../components/PrivacyArt.astro";
 import Scene from "../components/Scene.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
 import { inline } from "../lib/inline";
 import {
   AUTHOR,
@@ -19,12 +22,16 @@ import {
   FAQ_HEADING,
   GET_HEADING,
   GET_TEXT,
+  GUIDES,
+  GUIDES_HEADING,
+  GUIDES_INTRO,
+  GUIDE_TEXT,
+  guidePath,
   GLYPHS,
   HEADLINE,
   HOW,
   HOW_HEADING,
   LEDE,
-  LICENSE,
   LICENSE_URL,
   NAME,
   NOTE,
@@ -35,8 +42,7 @@ import {
   QUIET,
   QUIET_HEADING,
   SITE,
-  SOURCE_LABEL,
-  SOURCE_URL,
+  SEARCH,
   SUMMARY,
   TITLE,
 } from "../site";
@@ -80,19 +86,7 @@ const schema = [
 ---
 
 <Base title={TITLE} path="/" markdown="/index.md" schema={schema}>
-  <header class="top">
-    <div class="wrap top-inner">
-      <a class="brand" href="/" aria-label="Appears, home">
-        <Mark size={24} />
-        <span class="wordmark">appears</span>
-      </a>
-      <nav class="top-nav" aria-label="On this page">
-        <a href="#how">How it works</a>
-        <a href="#privacy">Privacy</a>
-        <a class="top-get" href={DOWNLOAD_URL}>Download</a>
-      </nav>
-    </div>
-  </header>
+  <SiteHeader home />
 
   <main>
     <section class="hero wrap">
@@ -111,6 +105,15 @@ const schema = [
     <div class="wrap rise" style="--d: 5">
       <Mock />
     </div>
+
+    <section id="search" class="part wrap search-section" aria-labelledby="search-heading">
+      <div class="search-intro reveal">
+        <p class="eyebrow">{SEARCH.eyebrow}</p>
+        <h2 id="search-heading">{SEARCH.heading}</h2>
+        <p class="part-text">{SEARCH.text}</p>
+      </div>
+      <AppScreenshot />
+    </section>
 
     <section class="part wrap" aria-labelledby="how">
       <div class="part-head reveal">
@@ -174,6 +177,25 @@ const schema = [
       </dl>
     </section>
 
+    <section class="part wrap" aria-labelledby="guides">
+      <div class="part-head reveal">
+        <p class="eyebrow">{GUIDE_TEXT.label}</p>
+        <h2 id="guides">{GUIDES_HEADING}</h2>
+        <p class="part-text">{GUIDES_INTRO}</p>
+      </div>
+      <div class="guide-links">
+        {GUIDES.map((guide) => (
+          <a class="guide-link" href={guidePath(guide.slug)}>
+            <div>
+              <h3>{guide.title.split(" | ")[0]}</h3>
+              <p>{guide.summary}</p>
+            </div>
+            <Icon name="arrow-down" size={18} />
+          </a>
+        ))}
+      </div>
+    </section>
+
     <section class="part wrap" aria-labelledby="questions">
       <div class="faq">
         <div class="part-head reveal">
@@ -213,17 +235,7 @@ const schema = [
     </section>
   </main>
 
-  <footer class="foot">
-    <div class="wrap foot-inner">
-      <a class="brand" href="/" aria-label="Appears, home">
-        <Mark size={20} />
-        <span class="wordmark">appears</span>
-      </a>
-      <p>
-        {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>. <a href={SOURCE_URL}>{SOURCE_LABEL}</a>.
-      </p>
-    </div>
-  </footer>
+  <SiteFooter />
 
   <script>
     // Fades each section in as it scrolls into view. Without JavaScript, or

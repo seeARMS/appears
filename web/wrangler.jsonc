@@ -12,7 +12,7 @@
 		"binding": "ASSETS",
 		// Pages negotiate Markdown; downloads stream from R2. Site assets
 		// The signed update feed is promoted in R2 with each verified release.
-		"run_worker_first": ["/", "/index.md", "/app.dmg", "/appcast.xml", "/downloads/*", "/models/*"]
+		"run_worker_first": ["/", "/index.md", "/guides/*", "/app.dmg", "/appcast.xml", "/downloads/*", "/models/*"]
 	},
 	"r2_buckets": [{ "binding": "DOWNLOADS", "bucket_name": "appears-downloads" }],
 	"routes": [{ "pattern": "appea.rs", "custom_domain": true }],

@@ -2,7 +2,7 @@
 
 The landing site for Appears, the open-source Mac menu bar app that notices what you're working on and quietly shows related files you already have. It lives at [appea.rs](https://appea.rs). Made by [Colin Armstrong](https://armstr.ng).
 
-Astro 7, built to plain static files, behind a small hand-written Cloudflare Worker. One page with its CSS inlined, a Markdown version for agents, `llms.txt`, and the app's signed update feed served from R2. No analytics or third-party scripts of any kind, and no client JavaScript.
+Astro 7, built to plain static files, behind a small hand-written Cloudflare Worker. The home page and three search guides have inlined CSS and Markdown versions for agents, alongside `llms.txt` and the app's signed update feed served from R2. No analytics or third-party scripts are included in the source. Small first-party scripts run the home page's demo and scroll reveals; the guides need no client JavaScript.
 
 Follows the site conventions in the repo's [AGENTS.md](../AGENTS.md#site-conventions) (Markdown versions, `llms.txt`, one source for copy).
 
@@ -12,6 +12,8 @@ Follows the site conventions in the repo's [AGENTS.md](../AGENTS.md#site-convent
 | --- | --- |
 | All the copy: headline, sections, privacy rows, the mock's results, the share card's text | `src/site.ts` (the page, its Markdown, `llms.txt` and the share card all read it) |
 | The page and its JSON-LD | `src/pages/index.astro`, `src/layouts/Base.astro` |
+| Source setup and search guides | `src/pages/guides/[slug].astro`, with copy and route names in `src/site.ts`; `[slug].md.ts` builds matching Markdown |
+| The actual app's light/dark demo screenshot | `src/components/AppScreenshot.astro`; Astro generates responsive WebP images from `../docs/screenshots/` |
 | Palette, type and layout | `src/styles/global.css` (shadcn zinc tokens from `../brand/README.md`); fonts are set in `astro.config.mjs` |
 | The hero mock (Mail reply + Appears panel), in HTML and CSS | `src/components/Mock.astro`. Everything in it is made up. |
 | Orbit mark and five menu bar states | `src/lib/orbit.ts`, `src/components/Mark.astro`, `src/components/Glyph.astro`; `scripts/brand.ts` generates the SVGs, favicon and Mac icon sizes |
@@ -20,10 +22,10 @@ Follows the site conventions in the repo's [AGENTS.md](../AGENTS.md#site-convent
 | Sparkle update feed | `/appcast.xml` serves the signed R2 object unchanged, with a 5-minute cache; release notes come from the matching GitHub release |
 | Latest app, versioned downloads and model files | `src/lib/download.ts`, `src/worker.ts`, private `DOWNLOADS` R2 binding in `wrangler.jsonc`; `/app.dmg` redirects to the latest immutable version |
 | Share card | `public/og.png`, drawn by `scripts/og.ts` and `src/lib/og/` |
-| Headers, robots, sitemap | `public/_headers`, `public/robots.txt`, `public/sitemap.xml` (just `/`) |
+| Headers, robots, sitemap | `public/_headers`, `public/robots.txt`, `src/pages/sitemap.xml.ts` (home page and guides, generated from shared routes) |
 | www.appea.rs → appea.rs | `redirect/` |
 
-The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. `/`, `/index.md`, `/app.dmg`, `/appcast.xml`, `/downloads/*` and `/models/*` go through the Worker (`assets.run_worker_first`); other assets are served straight from the files. For `/`, the Worker fetches the built file with the original request, so redirects and conditional requests keep working, and adds `Accept` to `Vary`.
+The config says `output: "static"`, with no Cloudflare adapter. `wrangler.jsonc` points `main` at `src/worker.ts` and serves `dist/` as static assets. `/`, `/index.md`, `/guides/*`, `/app.dmg`, `/appcast.xml`, `/downloads/*` and `/models/*` go through the Worker (`assets.run_worker_first`); other assets are served straight from the files. HTML and Markdown requests preserve methods, conditional headers and status codes. Page responses vary by `Accept`; every Markdown response points to its own HTML canonical. The sitemap lists HTML pages only.
 
 The R2 bucket stays private. `/app.dmg` reads `latest.json` and returns a `no-store` redirect to a versioned DMG. Versioned downloads support GET, HEAD, ETags and single byte ranges for resuming. The Worker caches small versioned app downloads (up to 64 MB) through the Cache API; model files stream without buffering into the cache. The release workflow uploads and verifies the separately hosted model before making the new app the latest. See the root README for setup and credentials. Don't deploy the download CTA before the first signed app and model files are ready.
 

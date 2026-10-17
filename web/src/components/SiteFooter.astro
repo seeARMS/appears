@@ -1,0 +1,16 @@
+---
+import Mark from "./Mark.astro";
+import { AUTHOR, LICENSE, LICENSE_URL, NAME, SOURCE_LABEL, SOURCE_URL } from "../site";
+---
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <a class="brand" href="/" aria-label="Appears, home">
+      <Mark size={20} />
+      <span class="wordmark">appears</span>
+    </a>
+    <p>
+      {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>. <a href={SOURCE_URL}>{SOURCE_LABEL}</a>.
+    </p>
+  </div>
+</footer>

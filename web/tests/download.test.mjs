@@ -12,6 +12,65 @@ const mf = new Miniflare(convertV4MiniflareOptions({
 after(() => mf.dispose());
 const fetch = (path, init) => mf.dispatchFetch(`https://appea.rs${path}`, init);
 
+test("guide pages negotiate their own Markdown without losing HTTP semantics", async (t) => {
+  const path = "/guides/search-imessage-on-mac/";
+  const markdownPath = "/guides/search-imessage-on-mac.md";
+  const assets = new Map([[path, "<h1>Messages guide</h1>"], [markdownPath, "# Messages guide\n"]]);
+  const guideWorker = new Miniflare(convertV4MiniflareOptions({
+    modules: true,
+    scriptPath: ".data/worker-test.mjs",
+    compatibilityDate: "2026-10-13",
+    r2Buckets: ["DOWNLOADS"],
+    serviceBindings: { ASSETS: (request) => {
+      const body = assets.get(new URL(request.url).pathname);
+      if (!body) return new Response("Missing", { status: 404 });
+      const headers = { "content-type": new URL(request.url).pathname.endsWith(".md") ? "text/plain" : "text/html", etag: '"guide-v1"', vary: "Accept-Encoding" };
+      if (request.headers.get("if-none-match") === '"guide-v1"') return new Response(null, { status: 304, headers });
+      if (request.headers.has("range")) return new Response(body.slice(0, 4), { status: 206, headers: { ...headers, "content-range": `bytes 0-3/${body.length}` } });
+      return new Response(request.method === "HEAD" ? null : body, { headers });
+    } },
+  }));
+  try {
+    const get = (url, init) => guideWorker.dispatchFetch(`https://appea.rs${url}`, init);
+    await t.test("browser requests keep the HTML page", async () => {
+      const response = await get(path, { headers: { Accept: "text/html" } });
+      assert.equal(await response.text(), assets.get(path));
+      assert.match(response.headers.get("vary"), /Accept-Encoding, Accept/);
+    });
+    await t.test("explicit and negotiated Markdown have the guide's canonical", async () => {
+      for (const url of [path, markdownPath]) {
+        const response = await get(url, { headers: { Accept: "text/markdown, text/html" } });
+        assert.equal(await response.text(), assets.get(markdownPath));
+        assert.equal(response.headers.get("content-type"), "text/markdown; charset=utf-8");
+        assert.equal(response.headers.get("link"), `<https://appea.rs${path}>; rel="canonical"`);
+        assert.match(response.headers.get("vary"), /Accept-Encoding, Accept/);
+      }
+    });
+    await t.test("HEAD has no body and a matching validator stays 304", async () => {
+      const head = await get(path, { method: "HEAD", headers: { Accept: "text/markdown" } });
+      assert.equal(head.status, 200);
+      assert.equal(await head.text(), "");
+      const cached = await get(path, { headers: { Accept: "text/markdown", "If-None-Match": '"guide-v1"' } });
+      assert.equal(cached.status, 304);
+      assert.equal(await cached.text(), "");
+      assert.equal(cached.headers.get("etag"), '"guide-v1"');
+    });
+    await t.test("partial responses retain their status and range", async () => {
+      const response = await get(markdownPath, { headers: { Range: "bytes=0-3" } });
+      assert.equal(response.status, 206);
+      assert.equal(response.headers.get("content-range"), `bytes 0-3/${assets.get(markdownPath).length}`);
+      assert.equal(await response.text(), "# Me");
+    });
+    await t.test("unknown guide paths remain 404", async () => {
+      for (const url of ["/guides/missing/", "/guides/missing.md"]) {
+        assert.equal((await get(url, { headers: { Accept: "text/markdown" } })).status, 404);
+      }
+    });
+  } finally {
+    await guideWorker.dispose();
+  }
+});
+
 test("R2 downloads, redirects and resumable transfers", async (t) => {
   const bucket = await mf.getR2Bucket("DOWNLOADS");
   await t.test("first release is unavailable without caching the error", async () => {
