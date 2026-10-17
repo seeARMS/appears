@@ -164,18 +164,21 @@ struct PassageTestEmbedder: Embedder {
         let folder = FileManager.default.temporaryDirectory.appending(path: "passage-budget-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
-        var candidates = try (0..<47).map { number in
+        let candidates = try (0..<47).map { number in
             try candidate((0..<12).map { "Note \(number) sentence \($0) describes ordinary household repairs." }.joined(separator: " "),
                           number: number, store: store)
         }
-        let lateText = (0..<11).map { "Note 47 sentence \($0) describes ordinary household repairs." }.joined(separator: " ") + " " + Self.answer
-        let answer = try candidate(lateText, number: 47, store: store)
-        candidates.append(answer)
-        let results = try await PassageSelector().select(candidates, query: [1, 0, 0], embedder: PassageTestEmbedder(),
-                                                        store: store, messages: nil, excluded: [], question: nil, terms: [])
-        #expect(results.count == candidates.count)
-        #expect(results.first?.id == answer.id)
-        #expect(results.first?.evidence?.text == Self.answer)
+        for offset in [6, 11] {
+            var sentences = (0..<12).map { "Note 47 sentence \($0) describes ordinary household repairs." }
+            sentences[offset] = Self.answer
+            let answer = try candidate(sentences.joined(separator: " "), number: 47, store: store)
+            let pool = candidates + [answer]
+            let results = try await PassageSelector().select(pool, query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                            store: store, messages: nil, excluded: [], question: nil, terms: [])
+            #expect(results.count == pool.count)
+            #expect(results.first?.id == answer.id)
+            #expect(results.first?.evidence?.text.contains(Self.answer) == true)
+        }
     }
 
     @Test func valueQuestionsSelectAndScoreTheAnsweringSourceRange() async throws {
@@ -203,12 +206,17 @@ struct PassageTestEmbedder: Embedder {
         let item = Item(id: 1, source: .notes, path: "notes:bounded", kind: .note, title: "Long note", size: 1,
                         created: date, modified: date, lastUsed: nil)
         for text in [(0..<200).map { "Paragraph \($0) contains a sentence." }.joined(separator: "\n"),
-                     String(repeating: "word ", count: 10_000)] {
+                     String(repeating: "word ", count: 10_000),
+                     (0..<200).map { "🧑🏽‍🌾 Paragraph \($0) contains a sentence." }.joined(separator: " ")] {
             let unit = AppearsCore.Unit(id: 1, itemID: 1, kind: .text, locator: .whole, text: text)
             let passages = PassageSelector.passages(text, item: item, unit: unit, message: nil, modified: date)
             #expect(!passages.isEmpty)
             #expect(passages.count <= 47, "At most 24 source ranges plus their adjacent pairs")
             #expect(passages.allSatisfy { $0.text.count <= 480 })
+            for passage in passages {
+                let source = try #require(passage.sources.first)
+                #expect((text as NSString).substring(with: NSRange(location: source.utf16Location, length: source.utf16Length)) == passage.text)
+            }
             #expect(passages.contains { passage in
                 passage.sources.contains { $0.utf16Location + $0.utf16Length > (text as NSString).length - 480 }
             }, "The range cap must retain the source's tail, including long single sentences")
@@ -290,5 +298,53 @@ struct PassageTestEmbedder: Embedder {
         #expect(results.first?.item.kind == .message)
         #expect(results.first?.item.message?.rowID == 102)
         #expect(results.first?.evidence?.text == Self.answer)
+    }
+
+    @Test(arguments: ["unsend", "attachment", "hidden"])
+    func promotedPhotoContextRetainsDiscoveryValidation(_ change: String) async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let (store, _, _) = try prepare(fixture)
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE message_attachment_join SET message_id = 100 WHERE attachment_id = 1")
+            try db.execute(sql: "UPDATE message SET cache_has_attachments = 1 WHERE ROWID = 100")
+        }
+        let original = try photo(fixture, store: store, locator: .chunk(0), text: "Was this at your gate? " + Self.answer, rowID: 100)
+        let embedder = PassageTestEmbedder(onEmbed: { [database = fixture.database] in
+            if change == "hidden" { try store.setNeverShow(itemID: original.id) }
+            else {
+                try database.write { db in
+                    if change == "unsend" { try db.execute(sql: "UPDATE message SET date_retracted = 1 WHERE ROWID = 100") }
+                    else { try db.execute(sql: "DELETE FROM message_attachment_join WHERE message_id = 100") }
+                }
+            }
+        })
+        let results = try await PassageSelector().select([original], query: [1, 0, 0], embedder: embedder,
+                                                        store: store, messages: MessagesReader(url: fixture.url), excluded: [], question: nil, terms: [])
+        #expect(results.isEmpty)
+    }
+
+    @Test(arguments: [true, false])
+    func identicalQuotesFromDifferentMessagesRemainDistinct(_ live: Bool) async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let store = try IndexStore(url: fixture.folder.appending(path: "evidence/index.sqlite"))
+        let vectors = VectorIndex(dimension: 3)
+        let reader = MessagesReader(url: fixture.url)
+        for (number, rowID) in [Int64(100), 200].enumerated() {
+            try fixture.add(rowID, text: Self.answer, date: fixture.old.addingTimeInterval(Double(number + 1) * 86_400))
+            let message = try #require(try reader.database.message(rowID: rowID))
+            let entry = try #require(reader.entries(for: message, chat: nil, settings: SourceSettings()).first)
+            let (id, _) = try store.record(entry.item, signature: entry.signature)
+            let text = live ? Self.answer : "An earlier discussion \(number).\n" + Self.answer
+            let added = try store.replaceUnits(itemID: id, title: entry.item.title, units: [
+                (AppearsCore.Unit(kind: .text, locator: .whole, text: text), [Float(0.95), 0.31225, 0]),
+            ])
+            for unit in added.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: [0.95, 0.31225, 0]) }
+        }
+        let recall = Recall(store: store, vectors: vectors, embedder: PassageTestEmbedder(), messages: live ? reader : nil)
+        let response = try await recall.run(RecallRequest(context: .text("Which winery did the delivery person recommend?"), trigger: .pull))
+        #expect(Set(response.suggestions.compactMap { $0.item.message?.rowID }) == [100, 200])
+        #expect(response.suggestions.allSatisfy { $0.evidence?.text == Self.answer })
     }
 }

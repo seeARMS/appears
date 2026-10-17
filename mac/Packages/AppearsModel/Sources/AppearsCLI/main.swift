@@ -222,6 +222,7 @@ struct Eval: AsyncParsableCommand {
         var limit: Int
         var messages: [DemoMessage]
         var expectedConversations: [Int64]
+        var expectedPaths: [String]?
     }
 
     struct Manifest: Decodable { var ages: [String: Double] }
@@ -407,8 +408,10 @@ struct Eval: AsyncParsableCommand {
             let response = try await Search(recall: recall).run(SearchRequest(text: scenario.text, limit: scenario.limit), sources: SourceSettings(notes: false))
             let chats = response.suggestions.filter { $0.item.kind == .message }.compactMap { $0.item.message?.chatID }
             let unique = Set(chats)
-            let passed = chats.count == unique.count
-                && scenario.expectedConversations.allSatisfy(unique.contains)
+            let paths = Set(response.suggestions.map { $0.item.path })
+            let passed = scenario.expectedConversations.allSatisfy(unique.contains)
+                && (scenario.expectedPaths ?? []).allSatisfy(paths.contains)
+                && Set(response.suggestions.map(\.id)).count == response.suggestions.count
                 && response.suggestions.count == scenario.limit
             if !passed { searchFailures += 1 }
             print("\(passed ? "✓" : "✗") \(scenario.name): \(chats.count) passages, \(unique.count) conversations, \(response.suggestions.count) results")

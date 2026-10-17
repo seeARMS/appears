@@ -282,7 +282,7 @@
       "expect": [
         "Documents/Travel/Lisbon 2023/itinerary.md"
       ],
-      "line": "Airbnb in Alfama"
+      "line": "Rua dos Remédios 41"
     },
     {
       "name": "A label-only username question keeps its source answer",
@@ -297,23 +297,28 @@
   ],
   "search": [
     {
-      "name": "Search: repeated rent messages, distinct conversations with the same name",
+      "name": "Search: separate rent discussions and conversations with the same name",
       "text": "Juniper Court rent payment confirmed",
       "limit": 3,
       "expectedConversations": [9101, 9102],
+      "expectedPaths": [
+        "messages:search-rent-paid",
+        "messages:search-rent-thanks",
+        "messages:search-rent-receipt"
+      ],
       "messages": [
         {
           "path": "messages:search-rent-paid",
           "title": "Household",
           "chatID": 9101,
-          "text": "Me: Did you pay the Juniper Court rent?\nAlex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.",
+          "text": "Alex: Yes, the July Juniper Court rent payment is confirmed. I paid $750 this morning.",
           "age": 2
         },
         {
           "path": "messages:search-rent-thanks",
           "title": "Household",
           "chatID": 9101,
-          "text": "Alex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.\nMe: Thanks for confirming the rent payment!",
+          "text": "Me: Thanks for confirming the October Juniper Court rent payment! The October payment was $780.",
           "age": 2
         },
         {

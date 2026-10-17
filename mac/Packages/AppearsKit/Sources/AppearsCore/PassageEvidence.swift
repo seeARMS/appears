@@ -38,8 +38,11 @@ public struct PassageEvidence: Sendable, Codable, Hashable {
 /// the same encoder. Existing index vectors remain valid. This cache holds source text
 /// and document vectors only, in memory, with a fixed bound; never queries or screens.
 final class PassageSelector: Sendable {
+    static let maximumCandidates = 48
     private let cache = Mutex<[EmbeddingDocument: [Float]]>([:])
-    private let maximumDocuments = 128
+    // Reserve beginning, end and middle for every coarse candidate before adding
+    // finer subdivisions. Keep this bound tied to Recall's candidate limit.
+    private let maximumDocuments = PassageSelector.maximumCandidates * 3
 
     func vectors(for suggestions: [Suggestion]) -> [Int64: [Float]] {
         cache.withLock { values in
@@ -171,6 +174,7 @@ final class PassageSelector: Sendable {
         }
 
         var results: [Suggestion] = []
+        var photoOrigins: [Int: Item] = [:]
         for (candidate, passages) in zip(candidates, choices) {
             guard !forbidden.contains(candidate.id) else { continue }
             if candidate.unit.kind == .image || usesImageEvidence(candidate)
@@ -201,6 +205,9 @@ final class PassageSelector: Sendable {
                                         MatchedLine.find(in: evidence.text, for: $0, terms: terms)
                                     },
                                     evidence: evidence, ambientEligible: candidate.ambientEligible)
+            if candidate.item.source == .messages, candidate.item.kind == .image {
+                photoOrigins[results.count] = candidate.item
+            }
             results.append(result)
         }
 
@@ -209,14 +216,21 @@ final class PassageSelector: Sendable {
         if let messages, contexts != nil {
             let references = results.compactMap { $0.item.source == .messages ? $0.item.message : nil }
                 + results.flatMap { $0.evidence?.sources.compactMap(\.message) ?? [] }
+                + photoOrigins.values.compactMap(\.message)
             let current = (try? messages.database.messagesWithThreads(rowIDs: Array(Set(references.map(\.rowID))), before: 0, after: 0)) ?? [:]
-            results = results.filter { result in
-                if result.item.source == .messages, result.item.kind == .image {
-                    guard let reference = result.item.message, let message = current[reference.rowID]?.message,
-                          message.isSearchable, message.guid == reference.guid, message.chatID == reference.chatID,
-                          max(message.date, message.editedAt ?? .distantPast) == result.item.modified,
-                          let path = reference.attachmentPath, messages.containsLocalPhoto(in: message, path: path) else { return false }
-                }
+            let hiddenPhotos = try store.neverShown().union(excluded)
+            func validPhoto(_ item: Item) -> Bool {
+                guard !hiddenPhotos.contains(item.id), let reference = item.message, let message = current[reference.rowID]?.message,
+                      message.isSearchable, message.guid == reference.guid, message.chatID == reference.chatID,
+                      max(message.date, message.editedAt ?? .distantPast) == item.modified,
+                      let path = reference.attachmentPath, messages.containsLocalPhoto(in: message, path: path) else { return false }
+                return true
+            }
+            results = results.enumerated().filter { index, result in
+                if result.item.source == .messages, result.item.kind == .image, !validPhoto(result.item) { return false }
+                // Promoting inherited context changes the displayed item, but must not
+                // erase the discovery photo's identity or bypass its invalidation.
+                if let origin = photoOrigins[index], !validPhoto(origin) { return false }
                 var verified: [String] = []
                 let valid = (result.evidence?.sources ?? []).allSatisfy { source in
                     guard let reference = source.message else { return true }
@@ -229,7 +243,7 @@ final class PassageSelector: Sendable {
                     return true
                 }
                 return valid && (verified.isEmpty || verified.joined(separator: "\n") == result.evidence?.text)
-            }
+            }.map(\.element)
         }
         let hidden = try store.neverShown().union(excluded)
         let currentUnits = try store.units(ids: Array(Set(results.flatMap { result in
@@ -255,11 +269,6 @@ final class PassageSelector: Sendable {
             let duplicate = unique.contains { previous in
                 if previous.id == result.id { return true }
                 guard let a = previous.evidence, let b = result.evidence else { return false }
-                // Read-only indexes without the source database can still collapse an
-                // identical quoted passage from the same chat, without hiding distinct
-                // discussions or treating a shared conversation name as identity.
-                if let chat = result.item.message?.chatID, chat == previous.item.message?.chatID,
-                   a.text == b.text { return true }
                 return a.overlaps(b)
             }
             if !duplicate { unique.append(result) }
@@ -274,12 +283,17 @@ final class PassageSelector: Sendable {
         let length = (text as NSString).length
         guard length > 0 else { return [] }
         var rangeCount = 0
+        var previousSourceEnd = text.startIndex
+        var previousUTF16End = 0
         var sampled = Array<(range: Range<String.Index>, distance: Int)?>(repeating: nil, count: 24)
         func admit(_ range: Range<String.Index>) {
             rangeCount += 1
             if ranges.count < 24 { ranges.append(range) }
-            let source = NSRange(range, in: text)
-            let middle = source.location + source.length / 2
+            let location = previousUTF16End + text[previousSourceEnd..<range.lowerBound].utf16.count
+            let size = text[range].utf16.count
+            previousSourceEnd = range.upperBound
+            previousUTF16End = location + size
+            let middle = location + size / 2
             let slot = min(23, (middle * 23 + length / 2) / length)
             let distance = abs(middle * 23 - slot * length)
             if sampled[slot] == nil || distance < sampled[slot]!.distance {
@@ -293,9 +307,13 @@ final class PassageSelector: Sendable {
         text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, _ in
             let body = String(text[paragraph])
             tokenizer.string = body
+            var localCursor = body.startIndex
+            var sourceCursor = paragraph.lowerBound
             tokenizer.enumerateTokens(in: body.startIndex..<body.endIndex) { local, _ in
-                let lower = text.index(paragraph.lowerBound, offsetBy: body.distance(from: body.startIndex, to: local.lowerBound))
+                let lower = text.index(sourceCursor, offsetBy: body.distance(from: localCursor, to: local.lowerBound))
                 let upper = text.index(lower, offsetBy: body.distance(from: local.lowerBound, to: local.upperBound))
+                localCursor = local.upperBound
+                sourceCursor = upper
                 var start = lower
                 while start < upper {
                     var end = text.index(start, offsetBy: 480, limitedBy: upper) ?? upper

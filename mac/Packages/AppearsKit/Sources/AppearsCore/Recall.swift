@@ -397,14 +397,16 @@ public struct Recall: Sendable {
                        line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) },
                        ambientEligible: request.trigger == .ambient ? position < 3 : nil)
         }
+        // Index-only lookups can collapse identical whole windows. With live source
+        // provenance, equal text from distinct messages must reach identity dedup.
         var windows: Set<String> = []
         let distinct = broad.filter { result in
-            guard result.unit.kind == .text, let chat = result.item.message?.chatID else { return true }
+            guard messages == nil, result.unit.kind == .text, let chat = result.item.message?.chatID else { return true }
             return windows.insert("\(chat)\u{0}\(result.unit.text)").inserted
         }
         // Bound source reads/inference, then collapse identical evidence before applying
         // the result limit. Both related results and typed search use the same passages.
-        let refined = try await passages.select(Array(distinct.prefix(48)), query: passageQueryVector, embedder: embedder,
+        let refined = try await passages.select(Array(distinct.prefix(PassageSelector.maximumCandidates)), query: passageQueryVector, embedder: embedder,
                                                 store: store, messages: messages, excluded: excluded,
                                                 question: question, terms: terms)
 
