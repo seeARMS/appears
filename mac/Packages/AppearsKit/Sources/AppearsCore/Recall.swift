@@ -406,9 +406,25 @@ public struct Recall: Sendable {
         }
         // Bound source reads/inference, then collapse identical evidence before applying
         // the result limit. Both related results and typed search use the same passages.
-        let refined = try await passages.select(Array(distinct.prefix(PassageSelector.maximumCandidates)), query: passageQueryVector, embedder: embedder,
-                                                store: store, messages: messages, excluded: excluded,
-                                                question: question, terms: terms)
+        let refined: [Suggestion]
+        if embedder.supportsPassageRefinement {
+            refined = try await passages.select(Array(distinct.prefix(PassageSelector.maximumCandidates)), query: passageQueryVector, embedder: embedder,
+                                                 store: store, messages: messages, excluded: excluded,
+                                                 question: question, terms: terms)
+        } else {
+            // For file-to-file similarity, the indexed unit itself is the exact text
+            // scored by the stored vector. Preserve that evidence without new inference.
+            refined = distinct.map { result in
+                guard result.unit.kind == .text, result.item.kind != .image, !result.unit.text.isEmpty else { return result }
+                let evidence = PassageEvidence(text: result.unit.text, sources: [
+                    .init(itemID: result.id, unitID: result.unit.id, message: nil, modified: result.item.modified,
+                          utf16Location: 0, utf16Length: (result.unit.text as NSString).length),
+                ], cosine: result.features.cosine)
+                return Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
+                                  score: result.score, confidence: result.confidence, features: result.features,
+                                  line: result.line, evidence: evidence, ambientEligible: result.ambientEligible)
+            }
+        }
 
         // Variety: maximal marginal relevance over the top few, with a nudge away from a
         // second item from the same folder.

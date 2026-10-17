@@ -65,6 +65,7 @@ actor EmbeddingScheduler {
 /// The engine uses the same scheduler for recall and indexing, with one safe model
 /// operation at a time. Images yield individually, even when a PDF contains many pages.
 final class ScheduledEmbedder: Embedder, UnloadsVision {
+    var supportsPassageRefinement: Bool { base.supportsPassageRefinement }
     let base: any Embedder
     let scheduler = EmbeddingScheduler()
     var modelID: String { base.modelID }

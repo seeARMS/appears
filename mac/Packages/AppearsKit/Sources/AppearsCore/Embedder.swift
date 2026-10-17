@@ -30,6 +30,9 @@ public struct PreparedImageEmbedding: Sendable {
 /// cosine similarity. The real one is EmbeddingGemma 2 on MLX; `HashingEmbedder` stands in
 /// for tests and for trying the pipeline without the model.
 public protocol Embedder: Sendable {
+    /// Stored-document-vector lookups keep their already-scored indexed units; they
+    /// cannot refine passages as though the vector represented a free-text question.
+    var supportsPassageRefinement: Bool { get }
     /// Names the model and its settings. Changing it makes the index re-embed everything.
     var modelID: String { get }
     var dimension: Int { get }
@@ -45,6 +48,7 @@ public protocol Embedder: Sendable {
 }
 
 extension Embedder {
+    public var supportsPassageRefinement: Bool { true }
     public func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
         try await embed(documents: passages)
     }
