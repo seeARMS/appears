@@ -14,17 +14,24 @@ final class SearchModel {
     var selectedIndex = 0
     var sourcePreview: Suggestion?
     @ObservationIgnored private let search: (SearchRequest) async throws -> RecallResponse
+    @ObservationIgnored private let openItem: (Item) async -> Bool
     @ObservationIgnored private var worker: Task<Void, Never>?
     @ObservationIgnored private var revision: UInt64 = 0
     @ObservationIgnored private let session = UUID()
     @ObservationIgnored private var isOpen = false
 
-    init(app: AppModel, search: ((SearchRequest) async throws -> RecallResponse)? = nil) {
+    init(app: AppModel, search: ((SearchRequest) async throws -> RecallResponse)? = nil,
+         openItem: ((Item) async -> Bool)? = nil) {
         self.app = app
         self.search = search ?? {
             await app.sourcesUpdate?.value
             try Task.checkCancellation()
             return try await app.engine.search($0)
+        }
+        self.openItem = openItem ?? { item in
+            guard await ResultOpener.open(item) else { return false }
+            Task { await app.engine.send(.touch, item.path) }
+            return true
         }
     }
 
@@ -98,15 +105,15 @@ final class SearchModel {
 
     @discardableResult
     func open(_ suggestion: Suggestion, reveal: Bool = false) async -> Bool {
-        guard !isSearching else { return false }
+        guard isOpen, !isSearching else { return false }
+        let version = revision
         if reveal {
             guard let url = suggestion.item.fileURL else { return false }
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } else {
-            guard await ResultOpener.open(suggestion.item) else { return false }
-            Task { await app.engine.send(.touch, suggestion.item.path) }
+            guard await openItem(suggestion.item) else { return false }
         }
-        return true
+        return isOpen && version == revision
     }
 
     func toggleSourcePreview() {
