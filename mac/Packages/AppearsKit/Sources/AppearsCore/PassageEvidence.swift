@@ -130,7 +130,7 @@ final class PassageSelector: Sendable {
                                          message: nil, modified: candidate.item.modified)
             }
             let answering = possible.filter(answersValue)
-            possibleChoices.append(answering.isEmpty ? possible : answering)
+            possibleChoices.append(Self.spread(answering.isEmpty ? possible : answering))
         }
         // Share the fixed inference budget round-robin. A verbose early result must
         // not spend every slot before later candidates receive any source evidence.
@@ -258,38 +258,78 @@ final class PassageSelector: Sendable {
     /// no topic words, acronym lists or generated answers are involved in segmentation.
     static func passages(_ text: String, item: Item, unit: Unit, message: MessageReference?, modified: Date) -> [Passage] {
         var ranges: [Range<String.Index>] = []
+        let length = (text as NSString).length
+        guard length > 0 else { return [] }
+        var rangeCount = 0
+        var sampled = Array<(range: Range<String.Index>, distance: Int)?>(repeating: nil, count: 24)
+        func admit(_ range: Range<String.Index>) {
+            rangeCount += 1
+            if ranges.count < 24 { ranges.append(range) }
+            let source = NSRange(range, in: text)
+            let middle = source.location + source.length / 2
+            let slot = min(23, (middle * 23 + length / 2) / length)
+            let distance = abs(middle * 23 - slot * length)
+            if sampled[slot] == nil || distance < sampled[slot]!.distance {
+                sampled[slot] = (range, distance)
+            }
+        }
         let tokenizer = NLTokenizer(unit: .sentence)
-        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, stop in
-            guard ranges.count < 24 else { stop = true; return }
+        // Walk the source once while retaining at most 24 ranges. If it contains more,
+        // keep representatives across its full length, including both ends. Stopping
+        // tokenization at range 24 would permanently make later answers unreachable.
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, _ in
             let body = String(text[paragraph])
             tokenizer.string = body
             tokenizer.enumerateTokens(in: body.startIndex..<body.endIndex) { local, _ in
                 let lower = text.index(paragraph.lowerBound, offsetBy: body.distance(from: body.startIndex, to: local.lowerBound))
                 let upper = text.index(lower, offsetBy: body.distance(from: local.lowerBound, to: local.upperBound))
                 var start = lower
-                while start < upper, ranges.count < 24 {
+                while start < upper {
                     var end = text.index(start, offsetBy: 480, limitedBy: upper) ?? upper
                     if end < upper, let space = text[start..<end].lastIndex(where: \.isWhitespace), space > start { end = space }
                     var trimmed = start..<end
                     while !trimmed.isEmpty, text[trimmed.lowerBound].isWhitespace { trimmed = text.index(after: trimmed.lowerBound)..<trimmed.upperBound }
                     while !trimmed.isEmpty, text[text.index(before: trimmed.upperBound)].isWhitespace { trimmed = trimmed.lowerBound..<text.index(before: trimmed.upperBound) }
-                    if !trimmed.isEmpty { ranges.append(trimmed) }
+                    if !trimmed.isEmpty { admit(trimmed) }
                     start = end
                 }
-                return ranges.count < 24
+                return true
             }
         }
+        if rangeCount > 24 { ranges = sampled.compactMap { $0?.range } }
         var combined = ranges
         for pair in zip(ranges, ranges.dropFirst()) {
             let range = pair.0.lowerBound..<pair.1.upperBound
             if text[range].count <= 480 { combined.append(range) }
         }
-        return combined.map { range in
+        return combined.sorted { a, b in
+            a.lowerBound == b.lowerBound ? a.upperBound < b.upperBound : a.lowerBound < b.lowerBound
+        }.map { range in
             let location = NSRange(range, in: text)
             return Passage(item: item, unit: unit, text: String(text[range]), sources: [
                 PassageEvidence.Source(itemID: item.id, unitID: unit.id, message: message, modified: modified,
                                        utf16Location: location.location, utf16Length: location.length),
             ])
         }
+    }
+
+    /// Breadth-first subdivisions sample the beginning, end, middle, then quarters.
+    /// A shared inference cap can reduce resolution, but cannot turn every candidate
+    /// into a prefix-only search. Each quotation retains its exact source ranges.
+    private static func spread(_ passages: [Passage]) -> [Passage] {
+        guard passages.count > 2 else { return passages }
+        var result = [passages[0], passages[passages.count - 1]]
+        var intervals = [1..<(passages.count - 1)]
+        var next = 0
+        while next < intervals.count {
+            let interval = intervals[next]
+            next += 1
+            guard !interval.isEmpty else { continue }
+            let middle = interval.lowerBound + interval.count / 2
+            result.append(passages[middle])
+            intervals.append(interval.lowerBound..<middle)
+            intervals.append((middle + 1)..<interval.upperBound)
+        }
+        return result
     }
 }

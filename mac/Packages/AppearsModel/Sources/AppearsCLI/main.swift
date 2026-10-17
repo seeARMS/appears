@@ -1,4 +1,5 @@
 import AppearsCore
+import AppearsMessages
 import ArgumentParser
 import Foundation
 import GemmaEmbedder
@@ -15,12 +16,19 @@ struct Appears: AsyncParsableCommand {
 }
 
 struct Common: ParsableArguments {
+    static let defaultData = FileScanner.realHome + "/Library/Application Support/rs.appea.appears.cli"
     @Option(help: "Where the index lives.")
-    var data: String = FileScanner.realHome + "/Library/Application Support/rs.appea.appears.cli"
+    var data: String = Self.defaultData
     @Option(help: "The model folder (default: mac/Models/appears-model in this checkout).")
     var model: String?
     @Option(help: "gemma (the real model) or hash (a fast stand-in that only matches words).")
     var embedder: String = "gemma"
+
+    /// Alternate/demo indexes cannot resolve their synthetic IDs against personal data.
+    var messagesURL: URL? {
+        URL(filePath: data).standardizedFileURL == URL(filePath: Self.defaultData).standardizedFileURL
+            ? ChatDatabase.defaultURL : nil
+    }
 
     func makeEmbedder() async throws -> any Embedder {
         if embedder == "hash" { return HashingEmbedder() }
@@ -123,7 +131,8 @@ struct Related: AsyncParsableCommand {
         let body = try file.map { try String(contentsOfFile: $0, encoding: .utf8) } ?? text ?? ""
         guard !body.isEmpty else { throw ValidationError("Give some text or --file.") }
         let embedder = try await common.makeEmbedder()
-        let engine = try Engine(folder: URL(filePath: common.data), embedder: embedder, settings: SourceSettings())
+        let engine = try Engine(folder: URL(filePath: common.data), embedder: embedder, settings: SourceSettings(),
+                                messagesURL: common.messagesURL)
         var context = ContextSnapshot.text(body, title: title)
         context.documentPath = file.map { URL(filePath: $0).standardizedFileURL.path }
         let response = try await engine.recall.run(RecallRequest(context: context, trigger: .pull, limit: limit))

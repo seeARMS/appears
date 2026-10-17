@@ -164,11 +164,12 @@ struct PassageTestEmbedder: Embedder {
         let folder = FileManager.default.temporaryDirectory.appending(path: "passage-budget-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
-        var candidates = try (0..<40).map { number in
+        var candidates = try (0..<47).map { number in
             try candidate((0..<12).map { "Note \(number) sentence \($0) describes ordinary household repairs." }.joined(separator: " "),
                           number: number, store: store)
         }
-        let answer = try candidate(Self.answer, number: 40, store: store)
+        let lateText = (0..<11).map { "Note 47 sentence \($0) describes ordinary household repairs." }.joined(separator: " ") + " " + Self.answer
+        let answer = try candidate(lateText, number: 47, store: store)
         candidates.append(answer)
         let results = try await PassageSelector().select(candidates, query: [1, 0, 0], embedder: PassageTestEmbedder(),
                                                         store: store, messages: nil, excluded: [], question: nil, terms: [])
@@ -205,6 +206,9 @@ struct PassageTestEmbedder: Embedder {
             #expect(!passages.isEmpty)
             #expect(passages.count <= 47, "At most 24 source ranges plus their adjacent pairs")
             #expect(passages.allSatisfy { $0.text.count <= 480 })
+            #expect(passages.contains { passage in
+                passage.sources.contains { $0.utf16Location + $0.utf16Length > (text as NSString).length - 480 }
+            }, "The range cap must retain the source's tail, including long single sentences")
         }
     }
 }
