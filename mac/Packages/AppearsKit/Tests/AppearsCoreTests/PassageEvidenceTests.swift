@@ -160,6 +160,38 @@ struct PassageTestEmbedder: Embedder {
                                              daysSinceTouched: 100, fused: 0.05, forgotten: 1, novelty: 1))
     }
 
+    @Test(arguments: ["replaced", "hidden", "modified", "removed"])
+    func storedEvidenceRevalidatesAgainstTheWritersCurrentSnapshot(_ change: String) throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "stored-evidence-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appending(path: "index.sqlite")
+        let writer = try IndexStore(url: url)
+        let original = try candidate(Self.answer, number: 1, store: writer)
+        let reader = try IndexStore(url: url, readOnly: true)
+        let versions = [(item: original.item, unit: original.unit)]
+        #expect(try reader.unchangedVisibleUnits(versions) == [original.unit.id])
+        try writer.touch(path: original.item.path)
+        #expect(try reader.unchangedVisibleUnits(versions) == [original.unit.id],
+                "Usage dates can move without changing source evidence")
+
+        switch change {
+        case "replaced":
+            _ = try writer.replaceUnits(itemID: original.item.id, title: original.item.title, units: [
+                (AppearsCore.Unit(kind: .text, locator: .whole, text: "The recommendation was withdrawn."), [Float(1), 0, 0]),
+            ])
+        case "hidden":
+            try writer.setNeverShow(itemID: original.item.id)
+        case "modified":
+            var modified = original.item
+            modified.modified = modified.modified.addingTimeInterval(1)
+            _ = try writer.record(modified, signature: "updated")
+        default:
+            _ = try writer.remove(itemIDs: [original.item.id])
+        }
+        #expect(try reader.unchangedVisibleUnits(versions).isEmpty,
+                "A read-only MCP client must discard evidence changed or hidden by the indexer")
+    }
+
     @Test func verboseCandidatesCannotStarveLaterEvidence() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "passage-budget-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }

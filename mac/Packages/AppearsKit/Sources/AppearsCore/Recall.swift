@@ -414,7 +414,9 @@ public struct Recall: Sendable {
         } else {
             // For file-to-file similarity, the indexed unit itself is the exact text
             // scored by the stored vector. Preserve that evidence without new inference.
-            refined = distinct.map { result in
+            let unchanged = try store.unchangedVisibleUnits(distinct.map { ($0.item, $0.unit) })
+            refined = distinct.compactMap { result in
+                guard unchanged.contains(result.unit.id) else { return nil }
                 guard result.unit.kind == .text, result.item.kind != .image, !result.unit.text.isEmpty else { return result }
                 let evidence = PassageEvidence(text: result.unit.text, sources: [
                     .init(itemID: result.id, unitID: result.unit.id, message: nil, modified: result.item.modified,

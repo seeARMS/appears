@@ -478,6 +478,29 @@ public final class IndexStore: Sendable {
         }
     }
 
+    /// Validate previously retrieved units and their item versions/visibility in one
+    /// WAL snapshot, including when a read-only client shares the engine's live index.
+    func unchangedVisibleUnits(_ versions: [(item: Item, unit: Unit)]) throws -> Set<Int64> {
+        guard !versions.isEmpty else { return [] }
+        return try pool.read { db in
+            let unitIDs = versions.map { String($0.unit.id) }.joined(separator: ",")
+            let itemIDs = versions.map { String($0.item.id) }.joined(separator: ",")
+            let unitRows = try Row.fetchAll(db, sql: "SELECT id, item_id, kind, locator, text FROM unit WHERE id IN (\(unitIDs))")
+            let itemRows = try Row.fetchAll(db, sql: "SELECT * FROM item WHERE id IN (\(itemIDs)) AND never_show = 0 AND state = 1")
+            let units = Dictionary(uniqueKeysWithValues: unitRows.map { (($0["id"] as Int64), Self.unit($0)) })
+            let items = Dictionary(uniqueKeysWithValues: itemRows.map { (($0["id"] as Int64), Self.item($0)) })
+            return Set(versions.compactMap { expected in
+                guard units[expected.unit.id] == expected.unit, let current = items[expected.item.id],
+                      current.path == expected.item.path, current.source == expected.item.source,
+                      current.kind == expected.item.kind, current.title == expected.item.title,
+                      current.created == expected.item.created, current.modified == expected.item.modified,
+                      current.size == expected.item.size, current.message == expected.item.message,
+                      current.metadataOnly == expected.item.metadataOnly else { return nil }
+                return expected.unit.id
+            })
+        }
+    }
+
     /// Loads every stored vector into `index`.
     public func loadVectors(into index: VectorIndex) throws {
         try pool.read { db in
