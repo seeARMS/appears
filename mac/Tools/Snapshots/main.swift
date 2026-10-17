@@ -211,8 +211,9 @@ let weaker = [
         let item = Item(id: Int64(101 + index), source: .messages, path: "messages:\(index)", kind: .message,
                         title: address, size: 30, created: Date(), modified: Date(), lastUsed: nil,
                         message: .init(rowID: Int64(index), guid: "fixture-\(index)", chatID: Int64(index), conversationURL: nil))
-        return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: "Me: The kitchen quote includes moving the outlet."),
-                          reason: "Related · from October 2026", snippet: "Me: The kitchen quote includes moving the outlet.",
+        let text = "Me: Does the kitchen quote cover the outlet?\n\(address): Moving the outlet is included."
+        return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: text),
+                          reason: "Related · from October 2026", snippet: text.replacingOccurrences(of: "\n", with: " "),
                           score: 1, confidence: 0.8, features: features)
     }
     var contactStatus = EngineStatus()
