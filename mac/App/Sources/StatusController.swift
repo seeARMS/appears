@@ -210,6 +210,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
 
     /// "7,803 of 10,612 indexed · indexing…" while anything is waiting, else the total.
     static func indexLine(_ status: EngineStatus) -> String {
+        if status.isScanning { return "Checking enabled sources…" }
         if status.error != nil { return "Index needs attention" }
         if !status.ready { return "Starting the search engine…" }
         let counts = status.counts

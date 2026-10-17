@@ -61,7 +61,7 @@ so it does not compare the first full pass with subsequent warm passes.
 
 ## Validation
 
-- AppearsKit: 141 tests passed (126 Core, 10 Context, 5 MCP).
+- AppearsKit: 145 tests passed (130 Core, 10 Context, 5 MCP).
 - Script tests: all 8 passed.
 - `mac/scripts/test-model.sh`: 5 model/MCP tests passed, none skipped. Eval:
   recall@3 0.99, MRR 1.00, ambient hits 23/23, false surfaces 0/22,

@@ -403,6 +403,11 @@ public final class IndexStore: Sendable {
         }
     }
 
+    /// An explicit retry also retries extraction failures whose file signature hasn't changed.
+    public func retryFailed() throws {
+        try pool.write { db in try db.execute(sql: "UPDATE item SET state = 0 WHERE state = 2") }
+    }
+
     /// Records that a file was open on screen just now, which makes it "recently used".
     public func touch(path: String, at date: Date = Date()) throws {
         try pool.write { db in

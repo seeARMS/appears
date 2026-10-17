@@ -31,6 +31,7 @@ public actor Indexer {
     public let embedder: any Embedder
     public private(set) var settings: SourceSettings
     public private(set) var progress = IndexProgress()
+    public private(set) var fileScanIssues: [FileScanIssue] = []
     /// Respect Low Power Mode and heat. The CLI turns this off.
     public var politeness = true
     private var noteCache: [String: NotesReader.Note] = [:]
@@ -46,7 +47,7 @@ public actor Indexer {
     private var fileScan: Task<Int, any Error>?
     private var fullScanPending = false
     private var pendingDirectories = Set<String>()
-    private let fileWalk: @Sendable (FileScanner, [String]?, @Sendable (Int) -> Void) throws -> [Item]
+    private let fileWalk: @Sendable (FileScanner, [String]?, @Sendable (Int) -> Void) throws -> FileScanResult
     private var activeWalk: UUID?
     private let photoExtraction: (@Sendable (Item) async -> Extraction?)?
     private var photoPreparation: PhotoPreparation?
@@ -60,16 +61,16 @@ public actor Indexer {
         self.settings = settings
         self.messagesReader = MessagesReader(url: messagesURL ?? ChatDatabase.defaultURL)
         self.photoExtraction = photoExtraction
-        if let fileWalk { self.fileWalk = { scanner, _, _ in try fileWalk(scanner) } }
+        if let fileWalk { self.fileWalk = { scanner, _, _ in FileScanResult(items: try fileWalk(scanner)) } }
         else {
             self.fileWalk = { scanner, directories, progress in
                 var items: [Item] = []
-                try scanner.scan(in: directories) { item in
+                let issues = try scanner.scan(in: directories) { item in
                     try Task.checkCancellation()
                     items.append(item)
                     if items.count % 500 == 0 { progress(items.count) }
                 }
-                return items
+                return FileScanResult(items: items, issues: issues)
             }
         }
     }
@@ -91,6 +92,7 @@ public actor Indexer {
     public func update(settings: SourceSettings) throws {
         let old = self.settings
         self.settings = settings
+        fileScanIssues.removeAll()
         settingsRevision += 1
         photoPreparation?.task.cancel()
         if fileScan != nil { fullScanPending = true; pendingDirectories.removeAll() }
@@ -173,11 +175,12 @@ public actor Indexer {
                 Task { await self.reportFileWalk(count, id: walkID) }
             })
         }
-        let (snapshot, items) = try await withTaskCancellationHandler {
+        let (snapshot, result) = try await withTaskCancellationHandler {
             try await traversal.value
         } onCancel: { traversal.cancel() }
         activeWalk = nil
         guard revision == settingsRevision else { fullScanPending = true; return 0 }
+        let items = result.items
         if showsScanProgress, progress.phase == .scanning { report { $0.scanned = items.count } }
         var known = snapshot
         var found = 0
@@ -202,10 +205,20 @@ public actor Indexer {
             await Task.yield()
         }
         guard revision == settingsRevision else { fullScanPending = true; return found }
-        let removed = try store.remove(itemIDs: known.values.map { $0.item.id })
+        // An inaccessible subtree is unknown, not deleted. Keep its existing items and
+        // vectors while still reconciling removals everywhere the walk succeeded.
+        let gone = known.values.filter { record in !result.issues.contains { $0.contains(record.item.path) } }
+        let removed = try store.remove(itemIDs: gone.map { $0.item.id })
         vectors.remove(ids: removed)
         try store.didCheck(.file)
-        indexLog.info("\(directories == nil ? "Full" : "Folder", privacy: .public) scan found \(found, privacy: .public) files (\(known.count, privacy: .public) gone) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
+        if let directories {
+            fileScanIssues.removeAll { issue in directories.contains { issue.path == $0 || issue.path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") } }
+        } else { fileScanIssues.removeAll() }
+        for issue in result.issues {
+            fileScanIssues.removeAll { $0.path == issue.path }
+            fileScanIssues.append(issue)
+        }
+        indexLog.info("\(directories == nil ? "Full" : "Folder", privacy: .public) scan found \(found, privacy: .public) files (\(gone.count, privacy: .public) gone, \(result.issues.count, privacy: .public) paths skipped) in \(Int(Date().timeIntervalSince(scanStarted)), privacy: .public)s")
         if showsScanProgress, progress.phase == .scanning { report { $0.scanned = found } }
         return found
     }
@@ -332,9 +345,17 @@ public actor Indexer {
         }
         var removed: [Int64] = []
         for path in Set(paths) {
-            if let item = scanner.item(at: URL(filePath: path)) {
-                try store.record(item, signature: FileScanner.signature(item))
-            } else if let existing = try store.item(path: path) {
+            let item: Item?
+            do { item = try scanner.readItem(at: URL(filePath: path)) }
+            catch {
+                let issue = (error as? FileScanIssue) ?? FileScanIssue(path: path, error: error)
+                fileScanIssues.removeAll { $0.path == issue.path }
+                fileScanIssues.append(issue)
+                continue
+            }
+            fileScanIssues.removeAll { $0.path == path }
+            if let item { try store.record(item, signature: FileScanner.signature(item)) }
+            else if let existing = try store.item(path: path) {
                 removed.append(existing.id)
             }
         }
@@ -399,7 +420,7 @@ public actor Indexer {
                     throw CancellationError()
                 } catch {
                     // One bad file never stops the run: mark it and move on. It's retried when it changes.
-                    indexLog.error("Couldn't index a \(item.kind.rawValue, privacy: .public) (\(item.size, privacy: .public) bytes): \(error.localizedDescription, privacy: .public) \(item.path, privacy: .private)")
+                    indexLog.error("Couldn't index a \(item.kind.rawValue, privacy: .public) (\(item.size, privacy: .public) bytes): \(error.localizedDescription, privacy: .private) \(item.path, privacy: .private)")
                     for (failed, signature) in zip(group, signatures) {
                         if let signature { try? store.markFailed(itemID: failed.id, signature: signature) }
                     }

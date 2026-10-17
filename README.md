@@ -241,6 +241,8 @@ Photo indexing prepares at most one following photo while the current photo runs
 
 Filesystem walks run separately from the indexing actor. Folder events are combined over a short window and reconcile only the affected subtrees; overlapping requests share one active walk and merge their pending directories. Full scans still run at startup, on request, after source-setting changes, for filesystem recovery, and every six hours. Unchanged files keep their metadata and embeddings without an item update. Status totals are maintained in the same database transactions as index changes, so polling does not recount the history. The count migration preserves existing embeddings. Source-setting changes invalidate older scans and searches.
 
+An unreadable file or folder is skipped without stopping the rest of a scan. Existing entries under inaccessible paths or missing included folders are kept until Appears can check them again or you remove the folder from Sources; readable folders still reconcile changes and deletions. Sources lists skipped paths and whether access was denied. Folder permission changes trigger another check, and **Scan now** retries all enabled sources plus items that previously couldn’t be read, even if their contents haven’t changed. The scan status shows when that check starts and finishes. A failure in one source doesn’t prevent the others from being checked.
+
 </details>
 
 ### Try it on made-up data
