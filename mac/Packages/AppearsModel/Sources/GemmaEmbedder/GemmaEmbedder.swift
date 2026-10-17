@@ -81,15 +81,21 @@ public final class GemmaEmbedder: Embedder {
     }
 
     public func embed(images: [CGImage]) async throws -> [[Float]] {
-        if await visionState.markLoaded() {
-            try await encoder.enableVision(directory: folder)
-        }
         var vectors: [[Float]] = []
         for image in images {
-            let prepared = try ImageProcessor.prepare(try Self.opaqueRGB(image), maxSoftTokens: imageTokens)
-            vectors.append(try await encoder.encodeImage(prepared, dimensions: dimension))
+            vectors.append(try await prepare(image: image).vector())
         }
         return vectors
+    }
+
+    public func prepare(image: CGImage) throws -> PreparedImageEmbedding {
+        let pixels = try ImageProcessor.prepare(Self.opaqueRGB(image), maxSoftTokens: imageTokens)
+        return PreparedImageEmbedding {
+            if await self.visionState.markLoaded() {
+                try await self.encoder.enableVision(directory: self.folder)
+            }
+            return try await self.encoder.encodeImage(pixels, dimensions: self.dimension)
+        }
     }
 
     /// Token IDs for documents, as `embed(documents:)` would feed them to the model. For

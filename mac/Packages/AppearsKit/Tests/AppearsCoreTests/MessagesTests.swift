@@ -355,6 +355,36 @@ private actor MessageEmbedder: Embedder {
         #expect(try store.counts().units == 0)
     }
 
+    @Test func photoContextEditsCannotCommitOlderPreparedText() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let embedder = MessageEmbedder(blocked: true)
+        let indexer = try fixture.makeIndexer(embedder: embedder, settings: SourceSettings(excludedKinds: [.message]))
+        let store = await indexer.store
+        await indexer.setPoliteness(false)
+        try await indexer.scanMessages()
+        let photo = try #require(try store.pending(limit: 2).first)
+        let signature = try store.pendingSignature(itemID: photo.id)
+        let run = Task { try await indexer.indexPending() }
+        for _ in 0..<1_000 {
+            if await embedder.entered { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await embedder.entered)
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE message SET text = 'Updated permit note K-2291.', date_edited = ? WHERE ROWID = 1",
+                           arguments: [AppleDate.chatDBValue(from: Date())])
+        }
+        try await indexer.scanMessages(full: false)
+        #expect(try store.pendingSignature(itemID: photo.id) == signature)
+        await embedder.release()
+        _ = try await run.value
+        let text = try store.units(itemID: photo.id).map(\.unit.text).joined(separator: "\n")
+        #expect(text.contains("Updated permit note K-2291"))
+        #expect(!text.contains("contractor's kitchen remodel quote"))
+        #expect(await embedder.documentBatches.count == 2)
+    }
+
     @Test func keepsALongAnchorAndSkipsReactionsInContext() throws {
         let fixture = try MessageFixture()
         defer { try? FileManager.default.removeItem(at: fixture.folder) }

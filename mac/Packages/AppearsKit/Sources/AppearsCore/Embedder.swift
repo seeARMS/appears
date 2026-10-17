@@ -12,6 +12,18 @@ public struct EmbeddingDocument: Sendable, Hashable {
     }
 }
 
+/// CPU-prepared pixels bound to their embedder. Calling `vector()` performs the model
+/// work; preparation itself must neither load model weights nor run a model forward.
+public struct PreparedImageEmbedding: Sendable {
+    private let operation: @Sendable () async throws -> [Float]
+
+    public init(_ operation: @escaping @Sendable () async throws -> [Float]) {
+        self.operation = operation
+    }
+
+    public func vector() async throws -> [Float] { try await operation() }
+}
+
 /// Turns queries, documents and images into vectors in one shared space.
 ///
 /// Implementations return L2-normalized vectors of `dimension` floats, so a dot product is
@@ -27,6 +39,13 @@ public protocol Embedder: Sendable {
     func embed(queries: [String]) async throws -> [[Float]]
     func embed(documents: [EmbeddingDocument]) async throws -> [[Float]]
     func embed(images: [CGImage]) async throws -> [[Float]]
+    func prepare(image: CGImage) throws -> PreparedImageEmbedding
+}
+
+extension Embedder {
+    public func prepare(image: CGImage) throws -> PreparedImageEmbedding {
+        PreparedImageEmbedding { try await self.embed(images: [image])[0] }
+    }
 }
 
 /// EmbeddingGemma 2's task prompts, from its model card. Images take no prefix.

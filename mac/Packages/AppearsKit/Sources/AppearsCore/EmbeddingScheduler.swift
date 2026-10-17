@@ -94,6 +94,13 @@ final class ScheduledEmbedder: Embedder, UnloadsVision {
         return result
     }
 
+    func prepare(image: CGImage) throws -> PreparedImageEmbedding {
+        let prepared = try base.prepare(image: image)
+        return PreparedImageEmbedding {
+            try await self.scheduler.run(priority: .indexing) { try await prepared.vector() }
+        }
+    }
+
     func unloadVision() async {
         guard let base = base as? any UnloadsVision else { return }
         _ = try? await scheduler.run(priority: .indexing) { await base.unloadVision() }
