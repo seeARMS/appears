@@ -74,7 +74,7 @@ struct SearchView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(model.results.enumerated()), id: \.element.id) { index, suggestion in
-                            SearchResultRow(suggestion: suggestion, contacts: model.app.contacts, selected: model.selectedIndex == index) {
+                            SearchResultRow(suggestion: suggestion, query: model.query, contacts: model.app.contacts, selected: model.selectedIndex == index) {
                                 if model.open(suggestion) { finish() }
                             } reveal: {
                                 if model.open(suggestion, reveal: true) { finish() }
@@ -181,19 +181,25 @@ private struct SearchResultRow: View {
     let open: () -> Void
     let reveal: () -> Void
     let preview: () -> Void
+    private let queryTerms: [String]
     @State private var thumbnail: NSImage?
 
-    init(suggestion: Suggestion, contacts: ContactDirectory, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void, preview: @escaping () -> Void) {
+    init(suggestion: Suggestion, query: String, contacts: ContactDirectory, selected: Bool, open: @escaping () -> Void, reveal: @escaping () -> Void, preview: @escaping () -> Void) {
         self.suggestion = suggestion
         self.contacts = contacts
         self.selected = selected
         self.open = open
         self.reveal = reveal
         self.preview = preview
+        let words = query.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        queryTerms = [query] + words
         _thumbnail = State(initialValue: Thumbnails.cache[suggestion.item.id])
     }
 
     var body: some View {
+        let source = suggestion.unit.text.isEmpty ? suggestion.snippet : suggestion.unit.text
+        let evidence = SuggestionEvidence(suggestion, terms: queryTerms, style: .search,
+                                          sourceText: contacts.displayText(source, for: suggestion.item))
         Button(action: open) {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
@@ -208,23 +214,24 @@ private struct SearchResultRow: View {
                 }
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius))
+                .overlay(alignment: .bottomTrailing) {
+                    ResultSourceIcon(item: suggestion.item).offset(x: 6, y: 6)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(contacts.presentation(for: suggestion.item)?.title ?? suggestion.item.title).font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Theme.foreground).lineLimit(1).truncationMode(.middle)
-                    Text(location).font(.system(size: 11.5)).foregroundStyle(Theme.mutedForeground)
-                        .lineLimit(1).truncationMode(.middle)
-                    if selected, let line = suggestion.line {
-                        QuotedLine(line: contacts.displayLine(line, for: suggestion.item)).padding(.top, 4)
-                    } else if selected, suggestion.item.kind != .image, !suggestion.snippet.isEmpty {
-                        Text(contacts.displaySnippet(for: suggestion)).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
-                            .lineLimit(2).padding(.top, 3)
+                    if !evidence.segments.isEmpty {
+                        Text(excerpt(evidence)).font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                            .lineSpacing(2).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let location {
+                        Text(location).font(.system(size: 11)).foregroundStyle(Theme.mutedForeground)
+                            .lineLimit(1).truncationMode(.middle)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-                if selected {
-                    Image(systemName: "return").font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
-                        .frame(height: 40)
-                }
+                Image(systemName: "return").font(.system(size: 12)).foregroundStyle(Theme.mutedForeground)
+                    .frame(width: 16, height: 40).opacity(selected ? 1 : 0).accessibilityHidden(true)
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: Theme.controlRadius).fill(selected ? Theme.muted : .clear))
@@ -244,15 +251,23 @@ private struct SearchResultRow: View {
         }
     }
 
-    private var location: String {
-        var label: String
-        switch suggestion.item.source {
-        case .file: label = (suggestion.item.folder as NSString).abbreviatingWithTildeInPath
-        case .notes: label = "Apple Notes"
-        case .messages: label = "Messages"
+    private func excerpt(_ evidence: SuggestionEvidence) -> AttributedString {
+        let segments = suggestion.line.map { contacts.displayLine($0, for: suggestion.item).segments } ?? evidence.segments
+        return segments.reduce(into: AttributedString()) { text, segment in
+            var run = AttributedString(segment.text)
+            if segment.emphasized {
+                run.font = .system(size: 12, weight: .semibold)
+                run.foregroundColor = Theme.foreground
+            }
+            text += run
         }
-        if let page = suggestion.unit.locator.page { label += " · page \(page)" }
-        return label
+    }
+
+    private var location: String? {
+        guard suggestion.item.source == .file else { return nil }
+        var location = (suggestion.item.folder as NSString).abbreviatingWithTildeInPath
+        if let page = suggestion.unit.locator.page { location += " · page \(page)" }
+        return location
     }
 
     private var icon: String {
