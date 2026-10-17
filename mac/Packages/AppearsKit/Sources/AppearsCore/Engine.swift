@@ -149,6 +149,7 @@ public final class Engine: Sendable {
         do {
             let found = try await scan()
             await state.setScanError(nil, source: source)
+            if source == .file { await state.setWatcherError(nil) }
             return found
         } catch is CancellationError { return 0 }
         catch {
@@ -182,21 +183,29 @@ public final class Engine: Sendable {
         let roots = scanner.roots
         let watcher = FileWatcher(paths: roots, acceptsDirectory: scanner.shouldWatchFolder) { [weak self] changes in
             guard let self else { return }
-            Task {
-                do {
-                    if changes.fullScan { try await self.indexer.scanFiles() }
-                    else {
-                        if !changes.directories.isEmpty { try await self.indexer.scanFiles(in: Array(changes.directories)) }
-                        try await self.indexer.filesChanged(Array(changes.files))
-                    }
-                    await self.state.setScanError(nil, source: .file)
-                } catch {
-                    await self.state.setScanError("Couldn’t check changed files. Use Scan now in Sources to retry.", source: .file)
-                }
-                await self.indexPending()
-            }
+            Task { await self.processFileChanges(changes) }
         }
         await state.keep(watcher, roots: roots, revision: revision)
+    }
+
+    func processFileChanges(_ changes: FileChanges) async {
+        do {
+            if changes.fullScan {
+                try await indexer.scanFiles()
+                await state.setScanError(nil, source: .file)
+            } else {
+                if !changes.directories.isEmpty { try await indexer.scanFiles(in: Array(changes.directories)) }
+                try await indexer.filesChanged(Array(changes.files))
+            }
+            // A successful scoped update proves only that update recovered, not the
+            // rest of the source. Only a full scan can clear its full-scan error.
+            await state.setWatcherError(nil)
+        } catch {
+            let message = "Couldn’t check changed files. Use Scan now in Sources to retry."
+            if changes.fullScan { await state.setScanError(message, source: .file) }
+            else { await state.setWatcherError(message) }
+        }
+        await indexPending()
     }
 
     // MARK: - Calls
@@ -314,7 +323,8 @@ private actor EngineState {
     var indexing = false
     private var indexingError: String?
     private var scanErrors: [ItemSource: String] = [:]
-    var error: String? { [.file, .notes, .messages].compactMap { scanErrors[$0] }.first ?? indexingError }
+    private var watcherError: String?
+    var error: String? { [.file, .notes, .messages].compactMap { scanErrors[$0] }.first ?? watcherError ?? indexingError }
     private var scan: Task<Void, Never>?
     private var lastScanCompletedAt: Date?
     var scanStatus: (Bool, Date?) { (scan != nil, lastScanCompletedAt) }
@@ -325,9 +335,9 @@ private actor EngineState {
     func setReady(_ value: Bool) { ready = value }
     func setError(_ value: String?) { indexingError = value }
     func setScanError(_ value: String?, source: ItemSource) { scanErrors[source] = value }
+    func setWatcherError(_ value: String?) { watcherError = value }
     func requestScan(_ operation: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
         if let scan { return scan }
-        scanErrors.removeAll()
         let task = Task(priority: .medium) {
             await operation()
             scan = nil

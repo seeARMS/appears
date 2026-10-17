@@ -78,6 +78,7 @@ final class AppModel {
     @ObservationIgnored private var dwellTask: Task<Void, Never>?
     @ObservationIgnored private var signalTask: Task<Void, Never>?
     @ObservationIgnored private var statusTask: Task<Void, Never>?
+    @ObservationIgnored private var scanStatusTask: Task<Void, Never>?
     @ObservationIgnored private(set) var sourcesUpdate: Task<Void, Never>?
     @ObservationIgnored private var meetingExpiry: Task<Void, Never>?
     private struct PendingAmbient {
@@ -590,6 +591,7 @@ final class AppModel {
     func scanNow() async {
         guard !isRequestingScan else { return }
         isRequestingScan = true
+        scanStatusTask?.cancel()
         scanRequestMessage = nil
         scanRequestError = nil
         scanRequestedAfter = status?.lastScanCompletedAt
@@ -601,6 +603,18 @@ final class AppModel {
             awaitingScanCompletion = true
             scanRequestMessage = "Scanning enabled sources… Existing results remain searchable."
             await refreshStatus()
+            if awaitingScanCompletion {
+                // The regular status loop may already be sleeping for its idle interval.
+                // Poll this explicit request promptly until it finishes or loses the engine.
+                scanStatusTask = Task { [weak self] in
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(for: .seconds(3)) }
+                        catch { return }
+                        guard let self, self.awaitingScanCompletion else { return }
+                        await self.refreshStatus()
+                    }
+                }
+            }
         } catch {
             scanRequestError = "Couldn’t request a scan. Try again, or reopen Appears."
         }

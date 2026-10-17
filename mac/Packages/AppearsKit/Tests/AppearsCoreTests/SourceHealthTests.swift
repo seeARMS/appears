@@ -1,9 +1,45 @@
+import CoreServices
 import Foundation
 import Synchronization
 import Testing
 @testable import AppearsCore
 
 @Suite struct SourceHealthTests {
+    @Test func scopedFileUpdatesCannotClearAnUnresolvedFullScanFailure() async throws {
+        let folder = URL(filePath: FileManager.default.currentDirectoryPath).appending(path: ".build/appears-scan-errors-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let home = folder.appending(path: "Home")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let path = home.appending(path: "permit.txt")
+        try "An invented kitchen permit.".write(to: path, atomically: true, encoding: .utf8)
+        let fail = Mutex(true)
+        let engine = try Engine(folder: folder.appending(path: "Engine"), embedder: HashingEmbedder(),
+                                settings: SourceSettings(notes: false, messages: false, homeOverride: home.path), fileWalk: { scanner in
+            if fail.withLock({ $0 }) { throw CocoaError(.fileReadNoPermission) }
+            var items: [Item] = []
+            try scanner.scan { items.append($0) }
+            return items
+        })
+        await engine.indexer.setPoliteness(false)
+        await engine.refresh()
+        let failure = try #require(await engine.status().error)
+        #expect(failure.contains("Couldn’t scan files"))
+        var scopedFailure = FileChanges()
+        scopedFailure.directories = [home.path]
+        await engine.processFileChanges(scopedFailure)
+        #expect(await engine.status().error == failure, "A watcher failure must not overwrite a full-scan failure")
+        let changed = FileChanges(paths: [path.path], flags: [FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemModified)],
+                                  acceptsDirectory: { _ in true })
+        await engine.processFileChanges(changed)
+        #expect(try engine.store.item(path: path.path) != nil)
+        #expect(await engine.status().error == failure, "A successful file event must not clear a full-scan failure")
+        fail.withLock { $0 = false }
+        var recovery = FileChanges()
+        recovery.fullScan = true
+        await engine.processFileChanges(recovery)
+        #expect(await engine.status().error == nil, "A full recovery scan clears both full-scan and watcher errors")
+    }
+
     @Test(.timeLimit(.minutes(1))) func retryReportsRunningCompletionAndFailureAndCoalescesRequests() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "appears-retry-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
