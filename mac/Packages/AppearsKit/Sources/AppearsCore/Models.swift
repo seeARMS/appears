@@ -1,3 +1,4 @@
+import AppearsMessages
 import Foundation
 
 /// What a unit's vector was made from. Text and image vectors share one space but score on
@@ -100,12 +101,15 @@ public struct Item: Sendable, Codable, Hashable, Identifiable {
         return message?.attachmentPath.map { URL(filePath: $0) }
     }
 
-    /// Opens the file, note or Messages conversation (Messages itself for groups).
+    /// Opens the original file (including Messages photos), note or specific message.
+    /// Derive message links from the stored GUID so existing indexes need no rescan.
     public var openURL: URL? {
         switch source {
         case .file: URL(filePath: path)
         case .notes: URL(string: "notes://showNote?identifier=\(path.dropFirst("notes:".count))")
-        case .messages: message?.conversationURL ?? URL(filePath: "/System/Applications/Messages.app")
+        case .messages:
+            fileURL ?? message.flatMap { MessagesLink.url(messageGUID: $0.guid) }
+                ?? message?.conversationURL ?? URL(filePath: "/System/Applications/Messages.app")
         }
     }
 }
