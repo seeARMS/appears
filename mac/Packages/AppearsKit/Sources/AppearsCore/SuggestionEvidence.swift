@@ -76,8 +76,10 @@ public struct SuggestionEvidence: Sendable {
             tokenizer.enumerateTokens(in: paragraph.startIndex..<paragraph.endIndex) { range, _ in
                 let sentence = clean(String(paragraph[range]))
                 let visible = sentence.filter { !$0.isWhitespace }
+                // Emoji-only replies are source text too, unlike punctuation/layout noise.
+                let hasEmoji = visible.unicodeScalars.contains { $0.properties.isEmojiPresentation || $0.value == 0xFE0F }
                 // Discard OCR fragments and mostly numeric/layout noise.
-                if allowShort && !sentence.isEmpty {
+                if allowShort && (visible.contains { $0.isLetter || $0.isNumber } || hasEmoji) {
                     result.append(sentence)
                 } else if sentence.count >= 18, sentence.split(separator: " ").count >= 3,
                    Double(visible.filter(\.isLetter).count) / Double(max(visible.count, 1)) >= 0.5 {

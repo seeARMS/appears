@@ -3,6 +3,7 @@ import AppearsCore
 import SwiftUI
 
 /// Local app icons identify a result's source without taking the excerpt's line.
+@MainActor
 struct ResultSourceIcon: View {
     private let icon: NSImage?
     private let name: String
@@ -27,9 +28,9 @@ struct ResultSourceIcon: View {
     var body: some View {
         Group {
             if let icon {
-                Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
+                Image(nsImage: icon).resizable().scaledToFit()
             } else {
-                Image(systemName: "app").resizable().aspectRatio(contentMode: .fit)
+                Image(systemName: "app").resizable().scaledToFit()
             }
         }
         .frame(width: 18, height: 18)

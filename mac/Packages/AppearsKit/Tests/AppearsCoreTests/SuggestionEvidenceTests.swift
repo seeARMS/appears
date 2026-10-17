@@ -97,4 +97,14 @@ import Testing
         #expect(SuggestionEvidence(suggestion(text, image: true), terms: ["plumbing"], style: .search).segments.isEmpty)
         #expect(SuggestionEvidence(suggestion("01 020 300 450 678 900 outlets", image: true), terms: ["outlets"], style: .search).segments.isEmpty)
     }
+
+    @Test func searchSkipsPunctuationNoiseButKeepsShortRepliesAndValues() {
+        let result = SuggestionEvidence(suggestion("—\n...\nPaid yesterday."), style: .search)
+        #expect(result.segments.map(\.text).joined() == "Paid yesterday.")
+        #expect(SuggestionEvidence(suggestion("—\n..."), style: .search).segments.isEmpty)
+        for text in ["1200", "👍", "❤️"] {
+            let reply = SuggestionEvidence(suggestion(text), style: .search)
+            #expect(reply.segments.map(\.text).joined() == text)
+        }
+    }
 }
