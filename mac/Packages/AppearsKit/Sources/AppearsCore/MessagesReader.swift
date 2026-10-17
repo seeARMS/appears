@@ -76,6 +76,10 @@ public struct MessagesReader: Sendable {
         return result
     }
 
+    func containsLocalPhoto(in message: Message, path: String) -> Bool {
+        message.attachments.contains { $0.isIndexableImage && localPhoto($0)?.path == path }
+    }
+
     func extraction(for item: Item, handles: [Int64: Handle]) async -> Extraction? {
         guard let reference = item.message,
               let message = try? database.message(rowID: reference.rowID), message.guid == reference.guid,
@@ -84,7 +88,7 @@ public struct MessagesReader: Sendable {
         let document = Self.context(for: message, thread: thread, handles: handles)
         if item.kind == .image {
             guard let path = reference.attachmentPath,
-                  message.attachments.contains(where: { $0.isIndexableImage && localPhoto($0)?.path == path }) else { return nil }
+                  containsLocalPhoto(in: message, path: path) else { return nil }
             var file = item
             file.source = .file
             file.path = path

@@ -546,6 +546,14 @@ for i in range(14):
                ["# " + " ".join(random.sample(words, 3)).title()] + [" ".join(random.sample(words, 7)) for _ in range(6)],
                age=random.uniform(40, 1000), dark=i % 3 == 0)
 
+write("Documents/Work/Workshop account.md", """
+# Saturday woodworking workshop
+
+The workshop account lets members reserve a bench for Saturday projects.
+Username: robin.grove
+Role: workshop member
+""", age=120)
+
 write("Documents/Outings/Courier recommendation.md", """
     Was this at your gate?
     Yes, this morning.

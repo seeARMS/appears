@@ -283,6 +283,16 @@
         "Documents/Travel/Lisbon 2023/itinerary.md"
       ],
       "line": "Airbnb in Alfama"
+    },
+    {
+      "name": "A label-only username question keeps its source answer",
+      "app": "Mail",
+      "title": "Saturday woodworking workshop",
+      "focused": "What's the username for my woodworking workshop account?",
+      "expect": [
+        "Documents/Work/Workshop account.md"
+      ],
+      "line": "Username: robin.grove"
     }
   ],
   "search": [

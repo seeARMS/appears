@@ -183,16 +183,19 @@ struct PassageTestEmbedder: Embedder {
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
         let quote = "We agreed that membership starts in spring."
-        let result = try candidate(quote + "\nAn unrelated sentence about membership administration.\nInvoice total: $120.", number: 0, store: store)
-        let question = try #require(Question(.text("How much was the invoice?")))
-        #expect(MatchedLine.find(in: result.unit.text, for: question) != nil)
-        let results = try await PassageSelector().select([result], query: [1, 0, 0], embedder: PassageTestEmbedder(preferred: quote),
-                                                        store: store, messages: nil, excluded: [], question: question, terms: ["invoice"])
-        let selected = try #require(results.first)
-        #expect(selected.evidence?.text.contains("Invoice total: $120.") == true)
-        #expect(selected.line?.text == "Invoice total: $120.")
-        #expect(selected.evidence?.text.contains(selected.line?.text ?? "missing") == true)
-        #expect(selected.confidence == 0, "A value constraint cannot bypass weak semantic support")
+        for (number, example) in [("How much was the invoice?", "Invoice total: $120."),
+                                  ("What's the username?", "Username: robin.grove")].enumerated() {
+            let result = try candidate(quote + "\nAn unrelated sentence about membership administration.\n" + example.1, number: number, store: store)
+            let question = try #require(Question(.text(example.0)))
+            #expect(MatchedLine.find(in: result.unit.text, for: question) != nil)
+            let results = try await PassageSelector().select([result], query: [1, 0, 0], embedder: PassageTestEmbedder(preferred: quote),
+                                                            store: store, messages: nil, excluded: [], question: question, terms: [])
+            let selected = try #require(results.first)
+            #expect(selected.evidence?.text.contains(example.1) == true)
+            #expect(selected.line?.text == example.1)
+            #expect(selected.evidence?.text.contains(selected.line?.text ?? "missing") == true)
+            #expect(selected.confidence == 0, "A value constraint cannot bypass weak semantic support")
+        }
     }
 
     @Test func sourceRangeBudgetBoundsBothParagraphsAndLongSentences() throws {
@@ -228,5 +231,64 @@ struct PassageTestEmbedder: Embedder {
         let selected = try #require(response.suggestions.first)
         #expect(selected.evidence?.text == design)
         #expect(selected.line == nil)
+    }
+
+    private func photo(_ fixture: MessageFixture, store: IndexStore, kind: UnitKind = .text,
+                       locator: Locator = .whole, text: String = "Silverbrook Cellars tasting invitation", rowID: Int64 = 3) throws -> Suggestion {
+        let reader = MessagesReader(url: fixture.url)
+        let message = try #require(try reader.database.message(rowID: rowID))
+        let entry = try #require(reader.entries(for: message, chat: nil, settings: SourceSettings()).first { $0.item.kind == .image })
+        let (id, _) = try store.record(entry.item, signature: entry.signature)
+        _ = try store.replaceUnits(itemID: id, title: entry.item.title, units: [
+            (AppearsCore.Unit(kind: kind, locator: locator, text: text), [Float(0.95), 0.31225, 0]),
+        ])
+        return Suggestion(item: try #require(try store.item(path: entry.item.path)),
+                          unit: try #require(try store.units(itemID: id).first?.unit),
+                          reason: "Related", snippet: text, score: 1, confidence: 0.9,
+                          features: Features(cosine: 0.95, zScore: 5, agreement: true, entityHit: true,
+                                             daysSinceTouched: 100, fused: 0.05, forgotten: 1, novelty: 1))
+    }
+
+    @Test func photoOnlyMessageRetainsItsOwnOCRAndAttachment() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let store = try IndexStore(url: fixture.folder.appending(path: "evidence/index.sqlite"))
+        let original = try photo(fixture, store: store)
+        let results = try await PassageSelector().select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                        store: store, messages: MessagesReader(url: fixture.url), excluded: [], question: nil, terms: [])
+        #expect(results == [original])
+        #expect(results.first?.item.message?.attachmentPath == fixture.photo.path)
+        #expect(results.first?.item.message?.rowID == 3)
+    }
+
+    @Test(arguments: [UnitKind.text, .image])
+    func unsentPhotoParentIsDiscardedAfterInference(_ kind: UnitKind) async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let store = try IndexStore(url: fixture.folder.appending(path: "evidence/index.sqlite"))
+        let original = try photo(fixture, store: store, kind: kind)
+        let note = try candidate(Self.answer, number: 0, store: store)
+        let embedder = PassageTestEmbedder(onEmbed: { [database = fixture.database] in
+            try database.write { db in try db.execute(sql: "UPDATE message SET date_retracted = 1 WHERE ROWID = 3") }
+        })
+        let results = try await PassageSelector().select([original, note], query: [1, 0, 0], embedder: embedder,
+                                                        store: store, messages: MessagesReader(url: fixture.url), excluded: [], question: nil, terms: [])
+        #expect(results.map(\.id) == [note.id])
+    }
+
+    @Test func inheritedPhotoContextStillResolvesToTheActualTextMessage() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let (store, _, _) = try prepare(fixture)
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE message_attachment_join SET message_id = 100 WHERE attachment_id = 1")
+            try db.execute(sql: "UPDATE message SET cache_has_attachments = 1 WHERE ROWID = 100")
+        }
+        let original = try photo(fixture, store: store, locator: .chunk(0), text: "Was this at your gate? " + Self.answer, rowID: 100)
+        let results = try await PassageSelector().select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                        store: store, messages: MessagesReader(url: fixture.url), excluded: [], question: nil, terms: [])
+        #expect(results.first?.item.kind == .message)
+        #expect(results.first?.item.message?.rowID == 102)
+        #expect(results.first?.evidence?.text == Self.answer)
     }
 }

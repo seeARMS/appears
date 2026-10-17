@@ -63,12 +63,18 @@ final class PassageSelector: Sendable {
                 store: IndexStore, messages: MessagesReader?, excluded: Set<Int64>,
                 question: Question?, terms: [String]) async throws -> [Suggestion] {
         let forbidden = try store.neverShown().union(excluded)
-        let anchors = candidates.filter { $0.item.source == .messages && $0.unit.kind == .text }
+        func usesImageEvidence(_ result: Suggestion) -> Bool {
+            // Messages photos have their own OCR at .whole; only .chunk(0) is the
+            // inherited conversation context appended by MessagesReader.extraction.
+            result.item.kind == .image && !(result.item.source == .messages
+                && result.unit.kind == .text && result.unit.locator == .chunk(0))
+        }
+        let anchors = candidates.filter { $0.item.source == .messages && $0.unit.kind == .text && !usesImageEvidence($0) }
         // A caller must explicitly provide the source reader. Demo/eval/unit tests never
         // fall through to the person's real Messages database.
         let contexts = messages.map { reader in
             (try? reader.database.messagesWithThreads(
-                rowIDs: Array(Set(anchors.compactMap { $0.item.message?.rowID })), before: 5, after: 2
+                rowIDs: Array(Set(candidates.filter { $0.item.source == .messages }.compactMap { $0.item.message?.rowID })), before: 5, after: 2
             )) ?? [:]
         }
         var live: [Int64: [Passage]] = [:]
@@ -111,13 +117,13 @@ final class PassageSelector: Sendable {
         // constrain candidate passages before semantic scoring, rather than extract
         // an unrelated value from the whole unit after choosing the displayed quote.
         func answersValue(_ passage: Passage) -> Bool {
-            guard let question, !question.kinds.isEmpty else { return false }
+            guard let question else { return false }
             return MatchedLine.find(in: passage.text, for: question, terms: terms) != nil
         }
         for candidate in candidates {
             try Task.checkCancellation()
             // Visual evidence and OCR keep their existing readability/overlap policy.
-            guard candidate.unit.kind == .text, candidate.item.kind != .image || candidate.item.source == .messages else {
+            guard candidate.unit.kind == .text, !usesImageEvidence(candidate) else {
                 possibleChoices.append([])
                 continue
             }
@@ -167,7 +173,7 @@ final class PassageSelector: Sendable {
         var results: [Suggestion] = []
         for (candidate, passages) in zip(candidates, choices) {
             guard !forbidden.contains(candidate.id) else { continue }
-            if candidate.unit.kind == .image || (candidate.item.kind == .image && candidate.item.source != .messages)
+            if candidate.unit.kind == .image || usesImageEvidence(candidate)
                 || candidate.unit.text.isEmpty {
                 results.append(candidate)
                 continue
@@ -201,9 +207,16 @@ final class PassageSelector: Sendable {
         // Revalidate source versions after inference: deletion, unsend or an edit while
         // the encoder worked cannot leave a stale quote in the response.
         if let messages, contexts != nil {
-            let references = results.flatMap { $0.evidence?.sources.compactMap(\.message) ?? [] }
+            let references = results.compactMap { $0.item.source == .messages ? $0.item.message : nil }
+                + results.flatMap { $0.evidence?.sources.compactMap(\.message) ?? [] }
             let current = (try? messages.database.messagesWithThreads(rowIDs: Array(Set(references.map(\.rowID))), before: 0, after: 0)) ?? [:]
             results = results.filter { result in
+                if result.item.source == .messages, result.item.kind == .image {
+                    guard let reference = result.item.message, let message = current[reference.rowID]?.message,
+                          message.isSearchable, message.guid == reference.guid, message.chatID == reference.chatID,
+                          max(message.date, message.editedAt ?? .distantPast) == result.item.modified,
+                          let path = reference.attachmentPath, messages.containsLocalPhoto(in: message, path: path) else { return false }
+                }
                 var verified: [String] = []
                 let valid = (result.evidence?.sources ?? []).allSatisfy { source in
                     guard let reference = source.message else { return true }
