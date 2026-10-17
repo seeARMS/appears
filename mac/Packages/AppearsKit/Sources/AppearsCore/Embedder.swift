@@ -38,11 +38,17 @@ public protocol Embedder: Sendable {
 
     func embed(queries: [String]) async throws -> [[Float]]
     func embed(documents: [EmbeddingDocument]) async throws -> [[Float]]
+    /// Source passages being scored for an active lookup, ahead of background indexing.
+    func embed(passages: [EmbeddingDocument]) async throws -> [[Float]]
     func embed(images: [CGImage]) async throws -> [[Float]]
     func prepare(image: CGImage) throws -> PreparedImageEmbedding
 }
 
 extension Embedder {
+    public func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
+        try await embed(documents: passages)
+    }
+
     public func prepare(image: CGImage) throws -> PreparedImageEmbedding {
         PreparedImageEmbedding { try await self.embed(images: [image])[0] }
     }

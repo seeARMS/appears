@@ -197,6 +197,8 @@ struct Eval: AsyncParsableCommand {
             var never: [String]?
             /// Text the top result's matched line must contain (the context asks for a value).
             var line: String?
+            /// The exact semantically selected source passage, as displayed by the UI.
+            var quote: String?
         }
         var scenarios: [Scenario]
         var negative: [Scenario]
@@ -319,6 +321,7 @@ struct Eval: AsyncParsableCommand {
 
         var recallSum = 0.0, reciprocal = 0.0, ambientHits = 0, violations = 0
         var linesRight = 0, linesExpected = 0, linesUnexpected = 0
+        var passagesRight = 0, passagesExpected = 0
         var times: [Double] = []
         for scenario in scenarios.scenarios where only.map({ scenario.name.localizedCaseInsensitiveContains($0) }) ?? true {
             let response = try await related(scenario, trigger: .pull, limit: max(limit, 3))
@@ -329,7 +332,8 @@ struct Eval: AsyncParsableCommand {
             recallSum += expected.isEmpty ? 1 : Double(found.count) / Double(min(expected.count, 3))
             if let rank = paths.firstIndex(where: expected.contains) { reciprocal += 1 / Double(rank + 1) }
             let ambient = try await related(scenario, trigger: .ambient, limit: 3)
-            if let top = ambient.suggestions.first, expected.contains(short(top.item.path)), top.confidence >= threshold {
+            if let top = ambient.suggestions.first, top.ambientEligible != false,
+               expected.contains(short(top.item.path)), top.confidence >= threshold {
                 ambientHits += 1
             } else {
                 print("    ambient: top confidence \(String(format: "%.2f", ambient.confidence)), expected result not surfaced")
@@ -338,6 +342,13 @@ struct Eval: AsyncParsableCommand {
             let mark = found.count == min(expected.count, 3) ? "✓" : (found.isEmpty ? "✗" : "~")
             print("\(mark) \(scenario.name): \(found.count)/\(min(expected.count, 3)) found, top confidence \(String(format: "%.2f", response.confidence))")
             let topLine = response.suggestions.first?.line?.text
+            if let quote = scenario.quote {
+                passagesExpected += 1
+                let evidence = response.suggestions.first?.evidence?.text
+                let right = evidence?.contains(quote) == true
+                if right { passagesRight += 1 }
+                print("    \(right ? "✓" : "✗") source passage: \(evidence ?? "none")")
+            }
             if let line = scenario.line {
                 linesExpected += 1
                 let right = topLine?.contains(line) == true
@@ -357,7 +368,9 @@ struct Eval: AsyncParsableCommand {
         print("")
         for scenario in scenarios.negative {
             let response = try await related(scenario, trigger: .ambient, limit: 3)
-            let surfaced = response.confidence >= threshold
+            let surfaced = response.suggestions.prefix(3).contains {
+                $0.ambientEligible != false && $0.confidence >= threshold
+            }
             if surfaced { falseSurfaces += 1 }
             let skipped = event(scenario).map { !$0.isWorthLooking } ?? false
             print("\(surfaced ? "✗" : "✓") (negative) \(scenario.name): \(skipped ? "not looked at (nobody else, no notes)" : "top confidence \(String(format: "%.2f", response.confidence))")\(surfaced ? " — would interrupt" : "")")
@@ -374,6 +387,7 @@ struct Eval: AsyncParsableCommand {
             false surfaces    \(falseSurfaces)/\(scenarios.negative.count)
             open file shown   \(violations) (must be 0)
             matched lines     \(linesRight)/\(linesExpected) right, \(linesUnexpected) where none was expected
+            source passages   \(passagesRight)/\(passagesExpected) right
             median latency    \(Int(times.sorted()[times.count / 2])) ms
             """)
 
@@ -392,6 +406,9 @@ struct Eval: AsyncParsableCommand {
                 for result in response.suggestions { print("    \(short(result.item.path))  \(String(format: "%.2f", result.confidence))") }
             }
         }
-        if searchFailures > 0 { throw ValidationError("\(searchFailures) typed-search regression scenarios failed.") }
+        if searchFailures > 0 || passagesRight != passagesExpected || falseSurfaces > 0 || violations > 0
+            || linesRight != linesExpected || linesUnexpected > 0 {
+            throw ValidationError("Evaluation failed: \(searchFailures) search scenarios, \(passagesExpected - passagesRight) source passages, \(falseSurfaces) false surfaces, \(violations) excluded items, \(linesExpected - linesRight + linesUnexpected) answer lines.")
+        }
     }
 }

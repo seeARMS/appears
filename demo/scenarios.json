@@ -252,6 +252,27 @@
       "expect": [
         "messages:demo-rent-payment"
       ]
+    },
+    {
+      "name": "A courier recommended a winery: exact source evidence",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "what was the winery the delivery guy mentioned?",
+      "visible": "We were talking about a small vegetation fire nearby.",
+      "expect": [
+        "Documents/Outings/Courier recommendation.md"
+      ],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "The same recommendation asked with different words",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "Which tasting room did the parcel carrier tell us about?",
+      "expect": [
+        "Documents/Outings/Courier recommendation.md"
+      ],
+      "quote": "Silverbrook Cellars in Oak Hollow"
     }
   ],
   "search": [
@@ -439,6 +460,20 @@
       "app": "Messages",
       "title": "Jordan Vale",
       "focused": "want to watch a movie?"
+    },
+    {
+      "name": "Same discussion, unrelated amplifier question",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "Have you repaired the amplifier yet?",
+      "visible": "The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow."
+    },
+    {
+      "name": "Same discussion, unsupported booking confirmation",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "focused": "What was the confirmation number for our hotel reservation?",
+      "visible": "The parcel courier said his relatives own Silverbrook Cellars in Oak Hollow."
     }
   ]
 }

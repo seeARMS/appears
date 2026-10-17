@@ -19,6 +19,12 @@ public struct SuggestionEvidence: Sendable {
         if suggestion.item.source == .messages { metadata.insert("Messages", at: 0) }
         self.metadata = metadata.joined(separator: " · ")
 
+        if let evidence = suggestion.evidence {
+            segments = Self.segments(evidence.text, terms: terms.map(Self.clean))
+            isQuotation = true
+            return
+        }
+
         // Search rows always show their answer, regardless of keyboard selection.
         // Keep the original segments and concealed clipboard flag on suggestion.line.
         if style == .search, let line = suggestion.line {

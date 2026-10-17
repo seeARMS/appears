@@ -34,6 +34,9 @@ struct SourcePreviewView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let line = suggestion.line { QuotedLine(line: contacts?.displayLine(line, for: suggestion.item) ?? line) }
+                    else if let evidence = suggestion.evidence {
+                        QuotedLine(line: MatchedLine(segments: [.init(evidence.text)]))
+                    }
                     Text(passage.isEmpty ? "No readable passage is available. Open the original to view it." : passage)
                         .font(.system(size: 13)).lineSpacing(4).foregroundStyle(Theme.foreground)
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)

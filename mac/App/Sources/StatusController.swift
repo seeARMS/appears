@@ -6,22 +6,26 @@ import SwiftUI
 /// The menu bar item and the panel that hangs from it.
 ///
 /// - Click: pull (what do I already have about this?), or show what's waiting.
-/// - Hover while the glyph has something: peek, without taking focus.
 /// - Right-click: pause, settings, quit.
 @MainActor
 final class StatusController: NSObject, NSMenuItemValidation {
     private let model: AppModel
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel: ResultsPanel
-    private var hoverCloseTask: Task<Void, Never>?
+    private var pullTask: Task<Void, Never>?
+    private var pullRevision = 0
     private var clickMonitor: Any?
+    private var localClickMonitor: Any?
+    private let performPull: @MainActor () async -> Void
+    var isVisible: Bool { panel.isVisible }
     var openSettings: (() -> Void)?
     var openSources: (() -> Void)?
     var openSearch: (() -> Void)?
     var willShow: (() -> Void)?
 
-    init(model: AppModel) {
+    init(model: AppModel, pull: (@MainActor () async -> Void)? = nil) {
         self.model = model
+        performPull = pull ?? { await model.pull() }
         panel = ResultsPanel()
         super.init()
         panel.contentView = NSHostingView(rootView: PanelView(model: model, close: { [weak self] in self?.close() }, openSettings: { [weak self] in
@@ -38,7 +42,6 @@ final class StatusController: NSObject, NSMenuItemValidation {
             button.target = self
             button.action = #selector(clicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
         }
         model.onShow = { [weak self] makeKey in self?.show(makeKey: makeKey) }
         observeGlyph()
@@ -59,36 +62,28 @@ final class StatusController: NSObject, NSMenuItemValidation {
             showMenu()
             return
         }
-        if panel.isVisible, panel.isKeyWindow {
-            close()
-        } else {
-            Task { await model.pull() }
-        }
+        togglePull()
     }
 
     func togglePull() {
-        if panel.isVisible { close() } else { Task { await model.pull() } }
+        if panel.isVisible || pullTask != nil { close() } else { requestPull() }
     }
 
-    // MARK: - Hover
-
-    @objc(mouseEntered:) func mouseEntered(with event: NSEvent) {
-        hoverCloseTask?.cancel()
-        if model.glyph == .found, !panel.isVisible { model.peek() }
-    }
-
-    @objc(mouseExited:) func mouseExited(with event: NSEvent) {
-        guard panel.isVisible, !panel.isKeyWindow else { return }
-        hoverCloseTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(0.8))
+    private func requestPull() {
+        pullTask?.cancel()
+        pullRevision += 1
+        let revision = pullRevision
+        pullTask = Task { [weak self] in
             guard let self, !Task.isCancelled else { return }
-            if !self.panel.frame.contains(NSEvent.mouseLocation), !self.panel.isKeyWindow { self.close() }
+            await self.performPull()
+            if self.pullRevision == revision { self.pullTask = nil }
         }
     }
 
     // MARK: - The panel
 
     private func show(makeKey: Bool) {
+        guard !Task.isCancelled else { return }
         willShow?()
         position()
         if makeKey {
@@ -99,19 +94,35 @@ final class StatusController: NSObject, NSMenuItemValidation {
         if clickMonitor == nil {
             clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, self.panel.isVisible, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
-                    self.close()
+                    self?.dismissIfOutside()
                 }
+            }
+            localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                self?.dismissIfOutside()
+                return event
             }
         }
     }
 
+    private func dismissIfOutside() {
+        guard panel.isVisible, !panel.frame.contains(NSEvent.mouseLocation) else { return }
+        // The status button owns the click's toggle. Treating its mouse-down as an
+        // outside dismissal would close and then reopen on the same mouse-up.
+        if let button = item.button, let window = button.window,
+           window.convertToScreen(button.convert(button.bounds, to: nil)).contains(NSEvent.mouseLocation) { return }
+        close()
+    }
+
     func close() {
-        guard panel.isVisible else { return }
+        pullRevision += 1
+        pullTask?.cancel()
+        pullTask = nil
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { QLPreviewPanel.shared().orderOut(nil) }
         panel.orderOut(nil)
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
         clickMonitor = nil
+        localClickMonitor = nil
         model.panelClosed()
     }
 
@@ -225,7 +236,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
         return "\(counts.indexedTotal.formatted()) of \(total.formatted()) indexed · \(state)"
     }
 
-    @objc private func pullFromMenu() { Task { await model.pull() } }
+    @objc private func pullFromMenu() { requestPull() }
     @objc private func searchFromMenu() { openSearch?() }
     @objc private func pauseHour() { model.pause(for: 3_600) }
     @objc private func pauseDay() { model.pauseUntilTomorrow() }

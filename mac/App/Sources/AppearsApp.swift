@@ -70,6 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A launch-service activation must not replace a scripted Related check with
+        // Search while the real engine request is still completing.
+        if AppModel.scriptedAsk != nil { return false }
         // Opening the app again from Finder, Spotlight or the Dock starts an explicit search.
         search?.show()
         return false

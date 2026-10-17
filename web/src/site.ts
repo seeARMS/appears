@@ -157,7 +157,7 @@ export const HOW = [
 
 export const QUIET_HEADING = "Proactive help, without interruptions.";
 export const QUIET =
-  "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot. Glance at it when you're ready, or press a shortcut to ask any time.";
+  "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot. Click it when you're ready, or press a shortcut to ask any time.";
 /** The menu bar glyph's states (drawn in mac/App/Sources/Glyph.swift; src/components/Glyph.astro on the site). */
 export const GLYPHS = [
   { state: "idle", label: "Nothing to show" },

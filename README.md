@@ -154,7 +154,7 @@ Settings has Include and Exclude lists. Added folders are watched immediately, i
 
 #### The panel
 
-Asking shows up to ten results in a scrolling list, with about five rows visible and the header and keyboard hints fixed. Every row shows a short source excerpt with matching terms emphasized, or a specific name match, with the date and PDF page below. A small Orbit outline fills with the result's confidence; hover or VoiceOver gives the exact value. Images show text only when a clean OCR phrase matches; otherwise the thumbnail is the evidence. <kbd>Space</kbd> previews Notes and Messages inline; files and photos use Quick Look.
+Clicking the ring or pressing the shortcut shows up to ten results in a scrolling list, with about five rows visible and the header and keyboard hints fixed. Hovering over the ring never opens the panel. Text results quote the exact source passage scored by the semantic model, with matching terms emphasized and the date and PDF page below. Overlapping Messages windows show that evidence once, and opening it goes to the message containing the quote. A small Orbit outline fills with the result's confidence; hover or VoiceOver gives the exact value. Images show text only when a clean OCR phrase matches; otherwise the thumbnail is the evidence. <kbd>Space</kbd> previews Notes and Messages inline; files and photos use Quick Look.
 
 #### Ambient timing
 
@@ -166,7 +166,7 @@ With Calendar access, Appears looks once before each meeting, 10 minutes ahead b
 
 #### Search
 
-<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Messages show the strongest text match per conversation; photos stay separate, and distinct conversations are kept even when they have the same name. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
+<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Text results use the same semantic passage selection as the Related panel. Messages show each matching passage once; distinct discussions in the same conversation remain available, and conversation names never define duplicates. Photos with their own visual or OCR match stay separate. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
 
 #### Measuring
 

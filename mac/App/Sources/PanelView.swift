@@ -298,7 +298,7 @@ struct ResultRow: View {
                         .lineSpacing(1.5)
                         .lineLimit(3)
                 }
-                if selected, let line = suggestion.line {
+                if selected, let line = suggestion.line, suggestion.evidence == nil {
                     QuotedLine(line: line).padding(.top, 5)
                 }
                 HStack(spacing: 4) {

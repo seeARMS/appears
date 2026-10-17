@@ -1,4 +1,5 @@
 import AppearsCore
+import AppearsMessages
 import Foundation
 import GemmaEmbedder
 
@@ -30,7 +31,8 @@ actor EngineHost {
             let embedder = try await GemmaEmbedder.load(from: folder)
             // Demo mode keeps its own index, apart from your real one.
             let data = settings.homeOverride == nil ? Self.dataFolder : Self.dataFolder.deletingLastPathComponent().appending(path: "Appears-Demo")
-            let engine = try Engine(folder: data, embedder: embedder, settings: settings)
+            let engine = try Engine(folder: data, embedder: embedder, settings: settings,
+                                    messagesURL: settings.homeOverride == nil ? ChatDatabase.defaultURL : nil)
             engine.start()
             return engine
         }
