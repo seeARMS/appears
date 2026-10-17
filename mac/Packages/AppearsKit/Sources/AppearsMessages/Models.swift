@@ -134,11 +134,13 @@ public struct Message: Sendable, Hashable, Identifiable {
     public let isRetracted: Bool
     public let kind: Kind
     public var attachments: [Attachment]
+    /// Explicit reply relationship, when Messages supplies one.
+    public let replyToGUID: String?
 
     public init(
         rowID: Int64, guid: String, chatID: Int64, handleID: Int64, isFromMe: Bool, date: Date,
         text: String?, service: String?, editedAt: Date?, isRetracted: Bool, kind: Kind,
-        attachments: [Attachment]
+        attachments: [Attachment], replyToGUID: String? = nil
     ) {
         self.rowID = rowID
         self.guid = guid
@@ -152,6 +154,7 @@ public struct Message: Sendable, Hashable, Identifiable {
         self.isRetracted = isRetracted
         self.kind = kind
         self.attachments = attachments
+        self.replyToGUID = replyToGUID
     }
 
     /// Worth indexing: a normal message that wasn't unsent.

@@ -464,4 +464,21 @@ private actor MessageEmbedder: Embedder {
         #expect(try engine.store.counts().items == 0)
         #expect(engine.vectors.count == 0)
     }
+
+    @Test func searchExpansionDoesNotRestoreAnUnsentMessageFromTheStaleIndex() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let embedder = HashingEmbedder()
+        let indexer = try fixture.makeIndexer(embedder: embedder)
+        try await indexer.scanMessages()
+        _ = try await indexer.indexPending()
+        try await fixture.database.write { db in
+            try db.execute(sql: "UPDATE message SET date_retracted = 1 WHERE ROWID = 1")
+        }
+        let search = await Search(recall: Recall(store: indexer.store, vectors: indexer.vectors, embedder: embedder),
+                                  messages: MessagesReader(url: fixture.url))
+        let response = try await search.run(SearchRequest(text: "contractor kitchen quote"), sources: SourceSettings(excludedKinds: [.image]))
+        #expect(!response.suggestions.contains { $0.item.message?.rowID == 1 })
+        #expect(response.suggestions.allSatisfy { !$0.unit.text.contains("contractor's kitchen remodel quote") })
+    }
 }

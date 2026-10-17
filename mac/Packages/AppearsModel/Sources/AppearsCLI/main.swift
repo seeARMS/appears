@@ -10,7 +10,7 @@ struct Appears: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "appears",
         abstract: "Appears from the terminal: build an index, find what relates to some text, run the eval, serve agents.",
-        subcommands: [Index.self, Related.self, Eval.self, Stats.self, MCP.self]
+        subcommands: [Index.self, Related.self, SearchCommand.self, Eval.self, Stats.self, MCP.self]
     )
 }
 
@@ -211,6 +211,9 @@ struct Eval: AsyncParsableCommand {
         var limit: Int
         var messages: [DemoMessage]
         var expectedConversations: [Int64]
+        var allowMultiplePassages: Bool?
+        var expectedPaths: [String]?
+        var expectedText: [String]?
     }
 
     struct Manifest: Decodable { var ages: [String: Double] }
@@ -383,9 +386,11 @@ struct Eval: AsyncParsableCommand {
             let response = try await Search(recall: recall).run(SearchRequest(text: scenario.text, limit: scenario.limit), sources: SourceSettings(notes: false))
             let chats = response.suggestions.filter { $0.item.kind == .message }.compactMap { $0.item.message?.chatID }
             let unique = Set(chats)
-            let passed = chats.count == unique.count
+            let passed = (scenario.allowMultiplePassages == true || chats.count == unique.count)
                 && scenario.expectedConversations.allSatisfy(unique.contains)
                 && response.suggestions.count == scenario.limit
+                && (scenario.expectedPaths ?? []).allSatisfy { path in response.suggestions.contains { $0.item.path == path } }
+                && (scenario.expectedText ?? []).allSatisfy { text in response.suggestions.contains { $0.unit.text.contains(text) } }
             if !passed { searchFailures += 1 }
             print("\(passed ? "✓" : "✗") \(scenario.name): \(chats.count) passages, \(unique.count) conversations, \(response.suggestions.count) results")
             if verbose || !passed {

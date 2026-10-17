@@ -547,5 +547,10 @@ for i in range(14):
                age=random.uniform(40, 1000), dark=i % 3 == 0)
 
 (ROOT / "manifest.json").write_text(json.dumps({"about": "Days since each demo file was last touched. The eval sets modification dates from this.", "ages": dict(sorted(ages.items()))}, indent=2) + "\n")
+# Explicit-search scenarios carry their own synthetic conversations so they can be
+# added after ambient evaluation without changing the ambient candidate distribution.
+search_scenarios = json.loads((ROOT / "scenarios.json").read_text()).get("search", [])
+(ROOT / "search-messages.json").write_text(json.dumps(
+    [message for scenario in search_scenarios for message in scenario["messages"]], indent=2) + "\n")
 (ROOT / "messages.json").write_text(json.dumps(MESSAGES, indent=2) + "\n")
 print(f"wrote {len(ages)} files")

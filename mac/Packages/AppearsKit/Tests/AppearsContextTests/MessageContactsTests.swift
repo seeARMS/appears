@@ -5,6 +5,23 @@ import Testing
 @testable import AppearsContext
 
 struct MessageContactsTests {
+    @Test func searchResolvesNamesOnlyWhenUnambiguousAndNeverSubstrings() {
+        let maya = MessageContacts.Person(id: "maya", name: "Maya Chen", addresses: ["+14155550142"])
+        let directory = MessageContacts(people: [maya], chats: [chat(["+14155550142"])])
+        #expect(directory.searchContacts(in: "did maya book the delivery?") == [SearchContact(name: "Maya", chatIDs: [12])])
+        #expect(directory.searchContacts(in: "Maya Chen delivery").first?.name == "Maya Chen")
+        #expect(directory.searchContacts(in: "mayapple delivery").isEmpty)
+        let other = MessageContacts.Person(id: "other", name: "Maya Ortiz", addresses: ["+14155550144"])
+        let ambiguous = MessageContacts(people: [maya, other], chats: [chat(["+14155550142"])])
+        #expect(ambiguous.searchContacts(in: "maya delivery").isEmpty)
+        #expect(ambiguous.searchContacts(in: "Maya Chen delivery").count == 1)
+    }
+
+    @Test func resolvesSpeakersAfterDatedDiscussionPrefixesWithoutChangingDates() {
+        let directory = MessageContacts(people: [dana], chats: [chat(["+14155550142"])])
+        let result = directory.displayText("[Oct 1, 2026 at 2:30 PM] +14155550142: Delivery is Friday.", for: item())
+        #expect(result == "[Oct 1, 2026 at 2:30 PM] Dana Ruiz: Delivery is Friday.")
+    }
     private let dana = MessageContacts.Person(id: "dana", name: "Dana Ruiz",
         addresses: ["(415) 555-0142", "dana@example.test"], photo: Data([1, 2, 3]))
     private let joan = MessageContacts.Person(id: "joan", name: "Joan Lee", addresses: ["+14155550143"])
