@@ -97,13 +97,13 @@ final class SearchModel {
     }
 
     @discardableResult
-    func open(_ suggestion: Suggestion, reveal: Bool = false) -> Bool {
+    func open(_ suggestion: Suggestion, reveal: Bool = false) async -> Bool {
         guard !isSearching else { return false }
         if reveal {
             guard let url = suggestion.item.fileURL else { return false }
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } else {
-            guard let url = suggestion.item.openURL, NSWorkspace.shared.open(url) else { return false }
+            guard await ResultOpener.open(suggestion.item) else { return false }
             Task { await app.engine.send(.touch, suggestion.item.path) }
         }
         return true

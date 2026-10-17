@@ -181,8 +181,10 @@ private actor MessageEmbedder: Embedder {
     @Test func opensOldGroupMessagesAtTheirGUID() async throws {
         let fixture = try MessageFixture()
         defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let guid = "583F1690-5F4F-4861-BC8B-7245BAA69743"
         try await fixture.database.write { db in
             try db.execute(sql: "UPDATE chat SET style = 43, chat_identifier = 'chat-kitchen', guid = 'iMessage;+;chat-kitchen'")
+            try db.execute(sql: "UPDATE message SET guid = ? WHERE ROWID = 1", arguments: [guid])
         }
         let indexer = try fixture.makeIndexer()
         try await indexer.scanMessages()
@@ -190,7 +192,20 @@ private actor MessageEmbedder: Embedder {
         let item = try #require(try store.item(path: "messages:1"))
         #expect(item.created == fixture.old)
         #expect(item.message?.conversationURL == nil)
-        #expect(item.openURL?.absoluteString == "sms://open?message-guid=message-1")
+        #expect(item.openURL?.absoluteString == "sms://open?message-guid=\(guid)")
+    }
+
+    @Test func removedMessagePhotoFallsBackToItsSourceMessage() async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let indexer = try fixture.makeIndexer()
+        try await indexer.scanMessages()
+        let store = await indexer.store
+        let photo = try #require(try store.item(path: "messages:3:photo:photo-1"))
+        #expect(photo.openURL == fixture.photo)
+        try FileManager.default.removeItem(at: fixture.photo)
+        #expect(photo.openURL == photo.messageURL)
+        #expect(photo.openURL?.absoluteString == "sms://open?message-guid=message-3")
     }
 
     @Test func messageLinksEncodeTheGUIDAsOneQueryValue() throws {

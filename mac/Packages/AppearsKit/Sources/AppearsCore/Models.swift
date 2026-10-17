@@ -105,12 +105,25 @@ public struct Item: Sendable, Codable, Hashable, Identifiable {
     /// Derive message links from the stored GUID so existing indexes need no rescan.
     public var openURL: URL? {
         switch source {
-        case .file: URL(filePath: path)
-        case .notes: URL(string: "notes://showNote?identifier=\(path.dropFirst("notes:".count))")
+        case .file: return URL(filePath: path)
+        case .notes: return URL(string: "notes://showNote?identifier=\(path.dropFirst("notes:".count))")
         case .messages:
-            fileURL ?? message.flatMap { MessagesLink.url(messageGUID: $0.guid) }
-                ?? message?.conversationURL ?? URL(filePath: "/System/Applications/Messages.app")
+            if let url = fileURL, FileManager.default.isReadableFile(atPath: url.path),
+               let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
+               values.isRegularFile == true,
+               values.isUbiquitousItem != true || values.ubiquitousItemDownloadingStatus == .current
+                    || values.ubiquitousItemDownloadingStatus == .downloaded {
+                return url
+            }
+            return messageURL
         }
+    }
+
+    /// The message's source, even when its photo is no longer available locally.
+    public var messageURL: URL? {
+        guard source == .messages else { return nil }
+        return message.flatMap { MessagesLink.url(messageGUID: $0.guid) }
+            ?? message?.conversationURL ?? URL(filePath: "/System/Applications/Messages.app")
     }
 }
 

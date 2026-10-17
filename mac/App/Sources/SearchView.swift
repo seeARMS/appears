@@ -62,7 +62,7 @@ struct SearchView: View {
             SourcePreviewView(suggestion: preview, title: model.app.contacts.presentation(for: preview.item)?.title,
                               contacts: model.app.contacts,
                               back: { model.sourcePreview = nil }) {
-                if model.open(preview) { finish() }
+                open(preview)
             }
         } else if !model.hasQuery {
             message("Find it by meaning", text: "Search your files, photos, notes and messages. Describe what you remember.") {
@@ -75,9 +75,9 @@ struct SearchView: View {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(model.results.enumerated()), id: \.element.id) { index, suggestion in
                             SearchResultRow(suggestion: suggestion, query: model.query, contacts: model.app.contacts, selected: model.selectedIndex == index) {
-                                if model.open(suggestion) { finish() }
+                                open(suggestion)
                             } reveal: {
-                                if model.open(suggestion, reveal: true) { finish() }
+                                open(suggestion, reveal: true)
                             } preview: {
                                 model.selectedIndex = model.results.firstIndex { $0.id == suggestion.id } ?? model.selectedIndex
                                 model.sourcePreview = suggestion
@@ -158,6 +158,12 @@ struct SearchView: View {
         HStack(spacing: 5) { Kbd(key: key); Text(text) }
     }
 
+    private func open(_ suggestion: Suggestion, reveal: Bool = false) {
+        Task {
+            if await model.open(suggestion, reveal: reveal) { finish() }
+        }
+    }
+
     /// Called by the native field editor, so navigation never moves the insertion point
     /// out of the query, and normal text editing (including spaces and Delete) stays native.
     private func command(_ selector: Selector) -> Bool {
@@ -165,7 +171,7 @@ struct SearchView: View {
         case #selector(NSResponder.moveDown(_:)): model.moveSelection(1)
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(-1)
         case #selector(NSResponder.insertNewline(_:)):
-            if let selected = model.selected, model.open(selected, reveal: NSApp.currentEvent?.modifierFlags.contains(.command) == true) { finish() }
+            if let selected = model.selected { open(selected, reveal: NSApp.currentEvent?.modifierFlags.contains(.command) == true) }
         case #selector(NSResponder.cancelOperation(_:)):
             if model.sourcePreview != nil { model.sourcePreview = nil } else { close() }
         default: return false
