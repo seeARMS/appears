@@ -110,6 +110,8 @@ Apple doesn't allow the Accessibility API inside the App Sandbox, even after you
 
 ## Install
 
+For source setup, examples and missing-result checks, see the guides to [searching iMessage](https://appea.rs/guides/search-imessage-on-mac/), [searching Apple Notes and documents together](https://appea.rs/guides/search-apple-notes-and-documents/), and [finding photos and screenshots](https://appea.rs/guides/find-photos-and-screenshots-on-mac/).
+
 [Download the DMG](https://appea.rs/app.dmg) and drag Appears to Applications. It needs a Mac with Apple silicon running macOS 26 or later.
 
 Setup asks for:

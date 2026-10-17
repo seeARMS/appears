@@ -2,13 +2,13 @@
 // wrangler.jsonc's assets.run_worker_first (pages and app downloads); every
 // other file is served straight from dist/.
 //
-// The page has a Markdown version built beside it (/index.md). It's served at
-// that address, and at / when the request's Accept header prefers
+// Each page has a Markdown version built beside it. It's served at its own
+// address, and at the HTML page's URL when the request's Accept header prefers
 // text/markdown (src/lib/negotiate.ts). Browsers never ask for Markdown, so
 // they always get the HTML.
 
 import { prefersMarkdown } from "./lib/negotiate";
-import { SITE } from "./site";
+import { GUIDES, SITE, guideMarkdownPath, guidePath } from "./site";
 import { download } from "./lib/download";
 import type { R2Bucket } from "@cloudflare/workers-types";
 
@@ -21,6 +21,11 @@ interface WorkerCache {
   put(request: Request, response: Response): Promise<void>;
 }
 declare const caches: { default: WorkerCache };
+
+const pages = [
+  { path: "/", markdown: "/index.md" },
+  ...GUIDES.map((guide) => ({ path: guidePath(guide.slug), markdown: guideMarkdownPath(guide.slug) })),
+];
 
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil(task: Promise<unknown>): void }): Promise<Response> {
@@ -41,17 +46,21 @@ export default {
       return response;
     }
     const reading = request.method === "GET" || request.method === "HEAD";
-    const markdown = url.pathname === "/index.md" || (url.pathname === "/" && prefersMarkdown(request.headers.get("accept")));
+    const page = pages.find((page) => url.pathname === page.path || url.pathname === page.markdown);
+    const markdown = page && (url.pathname === page.markdown || prefersMarkdown(request.headers.get("accept")));
     if (reading && markdown) {
-      const file = await env.ASSETS.fetch(new URL("/index.md", url));
-      if (file.ok) {
+      const fileURL = new URL(url);
+      fileURL.pathname = page.markdown;
+      const file = await env.ASSETS.fetch(new Request(fileURL, request));
+      if (file.ok || file.status === 304) {
         const headers = new Headers(file.headers);
         headers.set("content-type", "text/markdown; charset=utf-8");
-        headers.set("vary", "Accept");
+        headers.append("vary", "Accept");
         // Canonical is always appea.rs, also when the workers.dev URL served it.
-        headers.set("link", `<${SITE}/>; rel="canonical"`);
-        return new Response(request.method === "HEAD" ? null : file.body, { headers });
+        headers.set("link", `<${new URL(page.path, SITE).href}>; rel="canonical"`);
+        return new Response(request.method === "HEAD" ? null : file.body, { status: file.status, statusText: file.statusText, headers });
       }
+      return file;
     }
     // The built file, fetched with the request as it came in (redirect mode
     // "manual"), so redirects, Range and conditional requests keep working.

@@ -1,0 +1,98 @@
+---
+import type { GetStaticPaths } from "astro";
+import Base from "../../layouts/Base.astro";
+import SiteHeader from "../../components/SiteHeader.astro";
+import SiteFooter from "../../components/SiteFooter.astro";
+import Icon from "../../components/Icon.astro";
+import { inline } from "../../lib/inline";
+import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDE_TEXT, NAME, NOTE, SITE, guideMarkdownPath, guidePath, type SearchGuide } from "../../site";
+
+export const getStaticPaths = (() => GUIDES.map((guide) => ({ params: { slug: guide.slug }, props: { guide } }))) satisfies GetStaticPaths;
+
+interface Props { guide: SearchGuide }
+const { guide } = Astro.props;
+const path = guidePath(guide.slug);
+const url = new URL(path, SITE).href;
+const schema = [
+  {
+    "@type": "WebPage",
+    "@id": `${url}#page`,
+    url,
+    name: guide.title,
+    description: guide.description,
+    inLanguage: "en",
+    isPartOf: { "@id": `${SITE}/#website` },
+    about: { "@id": `${SITE}/#app` },
+    author: { "@id": AUTHOR.id },
+  },
+  {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: NAME, item: `${SITE}/` },
+      { "@type": "ListItem", position: 2, name: guide.title.split(" | ")[0], item: url },
+    ],
+  },
+];
+---
+
+<Base title={guide.title} description={guide.description} path={path} markdown={guideMarkdownPath(guide.slug)} schema={schema}>
+  <SiteHeader />
+  <main class="guide wrap">
+    <article>
+      <header class="guide-head">
+        <a class="guide-back" href="/#guides">← {GUIDE_TEXT.label}</a>
+        <h1>{guide.heading}</h1>
+        <div class="guide-intro">
+          {guide.intro.map((text) => <p>{text}</p>)}
+        </div>
+      </header>
+
+      <figure class="guide-example">
+        <p class="eyebrow">{GUIDE_TEXT.example}</p>
+        <p class="example-query"><Icon name="search" size={20} /><span>{guide.example.query}</span></p>
+        <blockquote>
+          <p class="example-source">{guide.example.source}</p>
+          <p>“{guide.example.excerpt}”</p>
+        </blockquote>
+        <p>{guide.example.explanation}</p>
+        <figcaption>{GUIDE_TEXT.exampleNote}</figcaption>
+      </figure>
+
+      <section class="guide-section" aria-labelledby="steps">
+        <h2 id="steps">{GUIDE_TEXT.steps}</h2>
+        <ol class="guide-steps">
+          {guide.steps.map((step) => (
+            <li><h3>{step.title}</h3><p>{step.text}</p></li>
+          ))}
+        </ol>
+      </section>
+
+      {guide.sections.map((section) => (
+        <section class="guide-section">
+          <h2>{section.heading}</h2>
+          {section.paragraphs.map((text) => <p>{text}</p>)}
+        </section>
+      ))}
+    </article>
+
+    <section class="guide-download" aria-labelledby="download">
+      <h2 id="download">{GUIDE_TEXT.downloadHeading}</h2>
+      <p>{GUIDE_TEXT.downloadText}</p>
+      <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={16} />{DOWNLOAD_LABEL}</a>
+      <p class="note" set:html={inline(NOTE)} />
+    </section>
+
+    <nav class="guide-related" aria-labelledby="related">
+      <h2 id="related">{GUIDE_TEXT.related}</h2>
+      <div class="guide-links">
+        {GUIDES.filter((other) => other.slug !== guide.slug).map((other) => (
+          <a class="guide-link" href={guidePath(other.slug)}>
+            <div><h3>{other.title.split(" | ")[0]}</h3><p>{other.summary}</p></div>
+            <Icon name="arrow-down" size={18} />
+          </a>
+        ))}
+      </div>
+    </nav>
+  </main>
+  <SiteFooter />
+</Base>
