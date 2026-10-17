@@ -259,7 +259,10 @@
       "name": "Search: repeated rent messages, distinct conversations with the same name",
       "text": "Juniper Court rent payment confirmed",
       "limit": 3,
-      "expectedConversations": [9101, 9102],
+      "expectedConversations": [
+        9101,
+        9102
+      ],
       "messages": [
         {
           "path": "messages:search-rent-paid",
@@ -281,6 +284,107 @@
           "chatID": 9102,
           "text": "Morgan: Your Juniper Court rent payment has been received and confirmed. The rent receipt is ready.",
           "age": 2
+        }
+      ]
+    },
+    {
+      "name": "Search: literal qualifier and short reference across distinct discussions",
+      "text": "revised delivery 82",
+      "limit": 3,
+      "expectedConversations": [
+        9201,
+        9202
+      ],
+      "allowMultiplePassages": true,
+      "expectedPaths": [
+        "messages:search-delivery-revised"
+      ],
+      "messages": [
+        {
+          "path": "messages:search-delivery-old",
+          "title": "Maya Chen",
+          "chatID": 9201,
+          "text": "Maya: The original cabinet delivery for reference 36 arrives on Tuesday.",
+          "age": 600
+        },
+        {
+          "path": "messages:search-delivery-revised",
+          "title": "Maya Chen",
+          "chatID": 9201,
+          "text": "Maya: The revised cabinet delivery is reference 82. It arrives on Friday.",
+          "age": 2
+        },
+        {
+          "path": "messages:search-delivery-shop",
+          "title": "Cabinet workshop",
+          "chatID": 9202,
+          "text": "Workshop: Revised delivery 82 has been booked for Friday.",
+          "age": 2
+        }
+      ]
+    },
+    {
+      "name": "Search: related context across a gap, without collapsing years of history",
+      "text": "permit reference 739",
+      "limit": 3,
+      "expectedConversations": [
+        9301
+      ],
+      "allowMultiplePassages": true,
+      "expectedText": [
+        "I will handle reference 739.",
+        "Reference 739 is the revised garden permit."
+      ],
+      "messages": [
+        {
+          "path": "messages:search-permit-subject",
+          "title": "Joan Lee",
+          "chatID": 9301,
+          "text": "Me: Reference 739 is the revised garden permit.",
+          "age": 2.1
+        },
+        {
+          "path": "messages:search-permit-ack",
+          "title": "Joan Lee",
+          "chatID": 9301,
+          "text": "Joan: I will handle reference 739.",
+          "age": 2
+        },
+        {
+          "path": "messages:search-permit-old",
+          "title": "Joan Lee",
+          "chatID": 9301,
+          "text": "Joan: The garage permit reference 215 was approved last summer.",
+          "age": 730
+        }
+      ]
+    },
+    {
+      "name": "Search: separate discussions with the same contact both survive",
+      "text": "studio reservation confirmation",
+      "limit": 3,
+      "expectedConversations": [
+        9401
+      ],
+      "allowMultiplePassages": true,
+      "expectedPaths": [
+        "messages:search-studio-old",
+        "messages:search-studio-new"
+      ],
+      "messages": [
+        {
+          "path": "messages:search-studio-old",
+          "title": "Sam Okoro",
+          "chatID": 9401,
+          "text": "Sam: Your pottery studio reservation confirmation is attached. The class is Saturday.",
+          "age": 700
+        },
+        {
+          "path": "messages:search-studio-new",
+          "title": "Sam Okoro",
+          "chatID": 9401,
+          "text": "Sam: Your recording studio reservation confirmation is ready for the session on Thursday.",
+          "age": 1
         }
       ]
     }
@@ -439,6 +543,18 @@
       "app": "Messages",
       "title": "Jordan Vale",
       "focused": "want to watch a movie?"
+    },
+    {
+      "name": "Reading a public parcel-tracking example without a matching shipment",
+      "app": "Safari",
+      "title": "Parcel tracking API documentation",
+      "visible": "This tutorial demonstrates a fictional parcel tracking endpoint. Example identifiers and responses are illustrative. No order has been placed."
+    },
+    {
+      "name": "A general question about how permits work",
+      "app": "Safari",
+      "title": "How building permits work",
+      "visible": "An introduction to the purpose of building permits and the usual review process in a city. This page does not discuss any particular project or application."
     }
   ]
 }

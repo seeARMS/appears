@@ -41,7 +41,7 @@ struct SourcePreviewView: View {
                 .padding(.vertical, 14)
             }
             .frame(maxHeight: .infinity)
-            Text(suggestion.item.source == .messages ? "Indexed conversation around the match" : "Indexed passage from this note")
+            Text(suggestion.item.source == .messages ? "Conversation around the match" : "Indexed passage from this note")
                 .font(.system(size: 11)).foregroundStyle(Theme.mutedForeground).padding(.bottom, 10)
             HStack {
                 Button("Copy passage") { copyPassage() }.buttonStyle(OutlineButtonStyle()).disabled(passage.isEmpty)

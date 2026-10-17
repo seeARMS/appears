@@ -242,6 +242,16 @@ let weaker = [
     contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults)
     contactSearch.sourcePreview = contactResults[0]
     render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-contact-preview", width: 640)
+    var discussionItem = contactResults[0].item
+    discussionItem.created = Calendar.current.date(from: DateComponents(year: 2025, month: 6, day: 4, hour: 9))!
+    discussionItem.modified = discussionItem.created
+    let discussionText = "[Jun 4, 2025 at 9:00 AM] +14155550142: The revised cabinet delivery is reference 482.\n[Jun 4, 2025 at 11:00 AM] Me: I will coordinate reference 482.\n[Jun 4, 2025 at 11:05 AM] +14155550142: The workshop confirmed Friday for that delivery."
+    let discussion = Suggestion(item: discussionItem, unit: Unit(kind: .text, locator: .whole, text: discussionText),
+                                reason: "Related · from June 2025", snippet: discussionText,
+                                score: 0.9, confidence: 0.8, features: features)
+    contactSearch.showForSnapshot(query: "revised cabinet delivery", results: [discussion])
+    contactSearch.sourcePreview = discussion
+    render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-discussion-preview", width: 640)
     var status = EngineStatus()
     status.ready = true
     status.protectedFoldersReadable = true

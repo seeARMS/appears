@@ -64,7 +64,7 @@ final class SearchModel {
         if clearResults || !isSearching { results = []; selectedIndex = 0 }
         guard isSearching else { return }
         let version = revision
-        let request = SearchRequest(text: query, token: SearchToken(session: session, revision: version))
+        let draft = SearchRequest(text: query, token: SearchToken(session: session, revision: version))
         // Debounce the latest draft independently of a superseded XPC reply. The engine
         // cancels obsolete work too, so replacing the task doesn't build a model queue.
         worker = Task(priority: .userInitiated) { [weak self] in
@@ -73,6 +73,10 @@ final class SearchModel {
             do {
                 try await Task.sleep(for: .milliseconds(180))
                 try Task.checkCancellation()
+                await self.app.contacts.refresh()
+                try Task.checkCancellation()
+                var request = draft
+                request.contacts = self.app.contacts.snapshot.searchContacts(in: draft.text)
                 let response = try await self.search(request)
                 guard !Task.isCancelled, self.isOpen, version == self.revision else { return }
                 let selectedID = self.selected?.id

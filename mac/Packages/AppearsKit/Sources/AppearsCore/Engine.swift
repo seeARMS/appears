@@ -80,10 +80,13 @@ public final class Engine: Sendable {
     public let recall: Recall
     private let state = EngineState()
     private let searches = SearchCoordinator()
+    private let searchMessages: MessagesReader?
     private let sources: Mutex<(settings: SourceSettings, revision: UInt64)>
 
     public init(folder: URL, embedder: any Embedder, settings: SourceSettings,
+                searchMessages: MessagesReader? = nil,
                 fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil) throws {
+        self.searchMessages = searchMessages
         let embedder = ScheduledEmbedder(embedder)
         sources = Mutex((settings, 0))
         store = try IndexStore(url: folder.appending(path: "index.sqlite"))
@@ -249,7 +252,7 @@ public final class Engine: Sendable {
                 let operation: @Sendable () async throws -> RecallResponse = { [self] in
                     try await SearchTrace.$current.withValue(trace) {
                         let configuration = sources.withLock { $0 }
-                        let response = try await Search(recall: recall).run(request, sources: configuration.settings)
+                        let response = try await Search(recall: recall, messages: searchMessages).run(request, sources: configuration.settings)
                         try Task.checkCancellation()
                         // A settings update can remove a source while embedding is in flight.
                         guard sources.withLock({ $0.revision }) == configuration.revision else { throw CancellationError() }

@@ -168,7 +168,7 @@ public struct ChatDatabase: Sendable {
     /// A batch of anchors and their context, from one short read-only transaction. Reusing
     /// the connection and schema avoids opening two connections for each indexed message.
     public func messagesWithThreads(
-        rowIDs: [Int64], before: Int, after: Int
+        rowIDs: [Int64], before: Int, after: Int, includeReplies: Bool = false
     ) throws -> [Int64: (message: Message, thread: [Message])] {
         guard !rowIDs.isEmpty else { return [:] }
         return try read { db in
@@ -181,7 +181,15 @@ public struct ChatDatabase: Sendable {
                     order: "m.ROWID", limit: nil, schema: schema
                 )
                 for message in anchors {
-                    result[message.rowID] = (message, try Self.thread(db, around: message, before: before, after: after, schema: schema))
+                    try Task.checkCancellation()
+                    var thread = try Self.thread(db, around: message, before: before, after: after, schema: schema)
+                    if includeReplies, let guid = message.replyToGUID,
+                       let original = try Self.fetchMessages(db, where: "m.guid = ? AND cmj.chat_id = ?",
+                            arguments: [guid, message.chatID], order: "m.ROWID", limit: 1, schema: schema).first,
+                       !thread.contains(where: { $0.rowID == original.rowID }) {
+                        thread.append(original)
+                    }
+                    result[message.rowID] = (message, thread)
                 }
             }
             return result
@@ -263,7 +271,7 @@ public struct ChatDatabase: Sendable {
             SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.handle_id, m.is_from_me, m.date, m.service,
                    \(m("date_edited", "0")), \(m("date_retracted", "0")), \(m("item_type", "0")),
                    \(m("associated_message_type", "0")), \(m("cache_has_attachments", "0")),
-                   cmj.chat_id
+                   cmj.chat_id, \(m("thread_originator_guid", "NULL")), \(m("reply_to_guid", "NULL"))
             FROM message m
             JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
             WHERE \(condition)
@@ -301,7 +309,9 @@ public struct ChatDatabase: Sendable {
                 editedAt: AppleDate.date(fromChatDB: editedValue),
                 isRetracted: retractedValue > 0,
                 kind: kind,
-                attachments: []
+                attachments: [],
+                replyToGUID: (row["thread_originator_guid"] as String? ?? row["reply_to_guid"] as String?)
+                    .flatMap { value in value.split(separator: "/").last.map(String.init) }
             ))
             if (row["cache_has_attachments"] as Int? ?? 0) != 0 { withAttachments.append(rowID) }
         }

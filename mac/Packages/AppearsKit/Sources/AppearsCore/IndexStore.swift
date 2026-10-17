@@ -161,6 +161,13 @@ public final class IndexStore: Sendable {
                 END;
                 """)
         }
+        migrator.registerMigration("v6-message-context") { db in
+            try db.execute(sql: """
+                CREATE INDEX item_message_context ON item (
+                    json_extract(CAST(message AS TEXT), '$.chatID'), created
+                ) WHERE source = 'messages' AND kind = 'message';
+                """)
+        }
         return migrator
     }
 
@@ -504,6 +511,32 @@ public final class IndexStore: Sendable {
         }
     }
 
+    /// A bounded parent discussion from the existing index. Used when the original
+    /// Messages database is unavailable, including synthetic evaluations and MCP clients.
+    func searchMessageNeighbours(of item: Item) throws -> [(Item, Unit)] {
+        guard let reference = item.message else { return [] }
+        let ids: [Int64] = try pool.read { db in
+            try Int64.fetchAll(db, sql: """
+                SELECT id FROM item WHERE source = 'messages' AND kind = 'message'
+                    AND state = 1 AND never_show = 0
+                    AND json_extract(CAST(message AS TEXT), '$.chatID') = ?
+                    AND created BETWEEN ? AND ?
+                ORDER BY abs(created - ?), id LIMIT 48
+                """, arguments: [reference.chatID, item.created.addingTimeInterval(-3 * 86_400).timeIntervalSince1970,
+                                  item.created.addingTimeInterval(3 * 86_400).timeIntervalSince1970, item.created.timeIntervalSince1970])
+        }
+        let neighbours = try items(ids: ids)
+        guard !ids.isEmpty else { return [] }
+        return try pool.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM unit WHERE kind = 0 AND item_id IN (\(ids.map(String.init).joined(separator: ",")))")
+                .compactMap { row in
+                    guard let item = neighbours[row["item_id"]] else { return nil }
+                    return (item, Unit(id: row["id"], itemID: row["item_id"], kind: .text,
+                                       locator: Locator(encoded: row["locator"]), text: row["text"]))
+                }
+        }
+    }
+
     /// Changes whenever units are added or removed or an item is re-indexed, so a reader in
     /// another process (`appears mcp`) knows when its copy of the vectors is stale. Re-indexing
     /// can reuse the unit ids it deleted, so item dates and sizes count too.
@@ -556,6 +589,28 @@ public final class IndexStore: Sendable {
                 ORDER BY rank LIMIT ?
                 """, arguments: [query, limit])
                 .map { TextHit(unitID: $0["rowid"], score: -($0["rank"] as Double)) }
+        }
+    }
+
+    /// Complement relevance retrieval with later matching passages in conversations it
+    /// already identified. A later acknowledgement needn't repeat every original keyword.
+    func recentMessageHits(_ query: String, chatIDs: [Int64]) throws -> [TextHit] {
+        guard !query.isEmpty, !chatIDs.isEmpty else { return [] }
+        return try pool.read { db in
+            try Row.fetchAll(db, sql: """
+                WITH matches AS (
+                    SELECT u.id, i.created,
+                        row_number() OVER (
+                            PARTITION BY json_extract(CAST(i.message AS TEXT), '$.chatID')
+                            ORDER BY i.created DESC, u.id
+                        ) AS position
+                    FROM unit_fts JOIN unit u ON u.id = unit_fts.rowid JOIN item i ON i.id = u.item_id
+                    WHERE unit_fts MATCH ? AND i.source = 'messages' AND i.kind = 'message'
+                        AND i.state = 1 AND i.never_show = 0
+                        AND json_extract(CAST(i.message AS TEXT), '$.chatID') IN (\(chatIDs.map(String.init).joined(separator: ",")))
+                )
+                SELECT id FROM matches WHERE position <= 8 ORDER BY position, created DESC LIMIT 160
+                """, arguments: [query]).map { TextHit(unitID: $0["id"], score: 0) }
         }
     }
 

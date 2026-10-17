@@ -1,0 +1,79 @@
+[
+  {
+    "path": "messages:search-rent-paid",
+    "title": "Household",
+    "chatID": 9101,
+    "text": "Me: Did you pay the Juniper Court rent?\nAlex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.",
+    "age": 2
+  },
+  {
+    "path": "messages:search-rent-thanks",
+    "title": "Household",
+    "chatID": 9101,
+    "text": "Alex: Yes, the Juniper Court rent payment is confirmed. I paid $750 this morning.\nMe: Thanks for confirming the rent payment!",
+    "age": 2
+  },
+  {
+    "path": "messages:search-rent-receipt",
+    "title": "Household",
+    "chatID": 9102,
+    "text": "Morgan: Your Juniper Court rent payment has been received and confirmed. The rent receipt is ready.",
+    "age": 2
+  },
+  {
+    "path": "messages:search-delivery-old",
+    "title": "Maya Chen",
+    "chatID": 9201,
+    "text": "Maya: The original cabinet delivery for reference 36 arrives on Tuesday.",
+    "age": 600
+  },
+  {
+    "path": "messages:search-delivery-revised",
+    "title": "Maya Chen",
+    "chatID": 9201,
+    "text": "Maya: The revised cabinet delivery is reference 82. It arrives on Friday.",
+    "age": 2
+  },
+  {
+    "path": "messages:search-delivery-shop",
+    "title": "Cabinet workshop",
+    "chatID": 9202,
+    "text": "Workshop: Revised delivery 82 has been booked for Friday.",
+    "age": 2
+  },
+  {
+    "path": "messages:search-permit-subject",
+    "title": "Joan Lee",
+    "chatID": 9301,
+    "text": "Me: Reference 739 is the revised garden permit.",
+    "age": 2.1
+  },
+  {
+    "path": "messages:search-permit-ack",
+    "title": "Joan Lee",
+    "chatID": 9301,
+    "text": "Joan: I will handle reference 739.",
+    "age": 2
+  },
+  {
+    "path": "messages:search-permit-old",
+    "title": "Joan Lee",
+    "chatID": 9301,
+    "text": "Joan: The garage permit reference 215 was approved last summer.",
+    "age": 730
+  },
+  {
+    "path": "messages:search-studio-old",
+    "title": "Sam Okoro",
+    "chatID": 9401,
+    "text": "Sam: Your pottery studio reservation confirmation is attached. The class is Saturday.",
+    "age": 700
+  },
+  {
+    "path": "messages:search-studio-new",
+    "title": "Sam Okoro",
+    "chatID": 9401,
+    "text": "Sam: Your recording studio reservation confirmation is ready for the session on Thursday.",
+    "age": 1
+  }
+]

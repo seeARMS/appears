@@ -3,8 +3,8 @@ import AppearsMessages
 import Contacts
 import Foundation
 
-/// Presentation only, in the app. Contact names and photos never enter the engine,
-/// embeddings, journal or thumbnail cache on disk.
+/// Names and photos stay in the app. Typed searches may send only a name already in the
+/// query and its matching chat ids to the engine, in memory; no contact directory is indexed.
 public struct MessageContacts: Sendable {
     public struct Person: Sendable {
         public var id: String
@@ -112,6 +112,32 @@ public struct MessageContacts: Sendable {
                             initials: initials, photo: person?.photo, isGroup: group)
     }
 
+    /// Resolve full names and unambiguous first names using the existing permission. A
+    /// shared first name never silently selects one person. No new permission is requested.
+    public func searchContacts(in text: String) -> [SearchContact] {
+        let unique = Dictionary(people.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let names = unique.values.map { person -> (Person, String?) in
+            let full = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let first = full.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? full
+            func contains(_ name: String) -> Bool {
+                name.count >= 3 && text.range(of: "\\b" + NSRegularExpression.escapedPattern(for: name) + "\\b",
+                                              options: [.regularExpression, .caseInsensitive, .diacriticInsensitive]) != nil
+            }
+            return (person, contains(full) ? full : (contains(first) ? first : nil))
+        }
+        let counts = Dictionary(names.compactMap { $0.1?.lowercased() }.map { ($0, 1) }, uniquingKeysWith: +)
+        let fullMatches = names.compactMap { person, name in name == person.name ? name?.lowercased() : nil }
+        return names.compactMap { person, name in
+            guard let name, counts[name.lowercased()] == 1 else { return nil }
+            if name != person.name, fullMatches.contains(where: { $0.split(separator: " ").contains(Substring(name.lowercased())) }) { return nil }
+            let keys = Set(person.addresses.map(Self.key).filter { !ambiguous.contains($0) })
+            let ids = chats.values.filter { chat in
+                !keys.isDisjoint(with: Set((chat.participants.map(\.address) + [chat.identifier]).map(Self.key)))
+            }.map(\.rowID).sorted()
+            return ids.isEmpty ? nil : SearchContact(name: name, chatIDs: ids)
+        }.sorted { $0.name < $1.name }
+    }
+
     /// Resolve only the speaker at the start of each indexed conversation line.
     /// Numbers and email addresses in the message itself stay verbatim.
     public func displayText(_ text: String, for item: Item) -> String {
@@ -178,9 +204,13 @@ public struct MessageContacts: Sendable {
 
     private func speakers(in text: String) -> [(range: Range<String.Index>, name: String)] {
         text.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
-            guard let colon = line.firstIndex(of: ":"),
-                  let person = person(for: String(line[..<colon])) else { return nil }
-            return (line.startIndex..<colon, person.name)
+            var speaker = line[...]
+            if speaker.hasPrefix("["), let closing = speaker.firstIndex(of: "]") {
+                speaker = speaker[speaker.index(after: closing)...].drop(while: \.isWhitespace)
+            }
+            guard let colon = speaker.firstIndex(of: ":"),
+                  let person = person(for: String(speaker[..<colon])) else { return nil }
+            return (speaker.startIndex..<colon, person.name)
         }
     }
 

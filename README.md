@@ -116,7 +116,7 @@ Setup asks for:
 
 - **Accessibility** (required), to read the front window;
 - **Full Disk Access** (optional), for Notes, Messages and their photos, and to avoid prompts for Desktop, Documents and Downloads;
-- **Contacts** (optional), for names and photos in Messages results;
+- **Contacts** (optional), for names and photos in Messages results and matching people named in searches;
 - **Calendar** (optional), to look ahead to meetings;
 - **Screen Recording** (optional), to OCR a window that has no readable text, only when you ask.
 
@@ -166,7 +166,13 @@ With Calendar access, Appears looks once before each meeting, 10 minutes ahead b
 
 #### Search
 
-<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Messages show the strongest text match per conversation; photos stay separate, and distinct conversations are kept even when they have the same name. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
+<kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd>, "Search Appears…" from the ring's menu, or opening Appears from Finder or Spotlight opens a centered search window with up to 20 results. Messages merge overlapping excerpts while keeping separate dated discussions with the same person. Typed search keeps your words and amounts, combines keyword and meaning matches, and gives recent material a bounded ranking preference while keeping older discussions searchable. Previews expand related conversation context across gaps using shared references and reply links; source quotes remain verbatim and dated. Photos stay separate. Use <kbd>↑</kbd>/<kbd>↓</kbd> to select, <kbd>Return</kbd> to open, <kbd>⌘</kbd><kbd>Return</kbd> to reveal in Finder, <kbd>⌘</kbd><kbd>Y</kbd> to preview, and <kbd>Esc</kbd> to close. Search needs no Accessibility or Screen Recording permission. Queries and results live only in memory and never enter the journal.
+
+The CLI uses the same typed-search path, read-only, without starting an indexer or writing to the journal:
+
+```bash
+appears search "revised delivery 82"
+```
 
 #### Measuring
 
