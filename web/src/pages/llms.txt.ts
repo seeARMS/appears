@@ -3,7 +3,7 @@
 // file; public/_headers gives it its charset.
 
 import type { APIRoute } from "astro";
-import { AUTHOR, DOWNLOAD_URL, GUIDES, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, RELATED_SUMMARY, SITE, SOURCE_LABEL, SOURCE_URL, SUMMARY, guidePath } from "../site";
+import { AUTHOR, DOWNLOAD_URL, GUIDES, GUIDES_INDEX, HARDWARE, LEDE, LICENSE, LICENSE_URL, OPERATING_SYSTEM, PRIVACY, QUIET, RELATED_SUMMARY, SITE, SOURCE_LABEL, SOURCE_URL, SUMMARY, guidePath } from "../site";
 
 export const prerender = true;
 
@@ -21,6 +21,7 @@ const LLMS = `${[
   `This page has a Markdown version at ${SITE}/index.md, and ${SITE}/ returns Markdown when a request's Accept header prefers text/markdown.`,
   "## Docs",
   `- [Appears](${SITE}/index.md): what Appears does, how it decides what to show, and how it keeps everything on your Mac`,
+  `- [Search guides](${new URL(GUIDES_INDEX.markdown, SITE).href}): ${GUIDES_INDEX.description}`,
   ...GUIDES.map((guide) => `- [${guide.title.split(" | ")[0]}](${new URL(guidePath(guide.slug), SITE).href}): ${guide.summary}`),
   "## Optional",
   `- [${SOURCE_LABEL}](${SOURCE_URL}): source code for Appears`,

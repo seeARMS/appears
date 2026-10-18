@@ -1,6 +1,7 @@
 ---
 import Mark from "./Mark.astro";
-import { AUTHOR, LICENSE, LICENSE_URL, NAME, SOURCE_LABEL, SOURCE_URL } from "../site";
+import Icon from "./Icon.astro";
+import { AUTHOR, GUIDES_INDEX, GUIDE_TEXT, NAME, SOURCE_LABEL, SOURCE_URL } from "../site";
 ---
 
 <footer class="foot">
@@ -10,7 +11,11 @@ import { AUTHOR, LICENSE, LICENSE_URL, NAME, SOURCE_LABEL, SOURCE_URL } from "..
       <span class="wordmark">appears</span>
     </a>
     <p>
-      {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>. <a href={LICENSE_URL}>{LICENSE} license</a>. <a href={SOURCE_URL}>{SOURCE_LABEL}</a>.
+      {NAME} is made by <a href={AUTHOR.url}>{AUTHOR.name}</a>.
     </p>
+    <nav class="foot-links" aria-label="Footer navigation">
+      <a href={GUIDES_INDEX.path}>{GUIDE_TEXT.nav}</a>
+      <a class="foot-github" href={SOURCE_URL} aria-label={SOURCE_LABEL} title={SOURCE_LABEL}><Icon name="github" size={20} /></a>
+    </nav>
   </div>
 </footer>

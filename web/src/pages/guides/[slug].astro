@@ -5,7 +5,7 @@ import SiteHeader from "../../components/SiteHeader.astro";
 import SiteFooter from "../../components/SiteFooter.astro";
 import Icon from "../../components/Icon.astro";
 import { inline } from "../../lib/inline";
-import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDE_TEXT, NAME, NOTE, SITE, guideMarkdownPath, guidePath, type SearchGuide } from "../../site";
+import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDES_INDEX, GUIDE_TEXT, NAME, NOTE, SITE, guideMarkdownPath, guidePath, type SearchGuide } from "../../site";
 
 export const getStaticPaths = (() => GUIDES.map((guide) => ({ params: { slug: guide.slug }, props: { guide } }))) satisfies GetStaticPaths;
 
@@ -29,7 +29,8 @@ const schema = [
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: NAME, item: `${SITE}/` },
-      { "@type": "ListItem", position: 2, name: guide.title.split(" | ")[0], item: url },
+      { "@type": "ListItem", position: 2, name: GUIDE_TEXT.nav, item: new URL(GUIDES_INDEX.path, SITE).href },
+      { "@type": "ListItem", position: 3, name: guide.title.split(" | ")[0], item: url },
     ],
   },
 ];
@@ -40,7 +41,7 @@ const schema = [
   <main class="guide wrap">
     <article>
       <header class="guide-head">
-        <a class="guide-back" href="/#guides">← {GUIDE_TEXT.label}</a>
+        <a class="guide-back" href={GUIDES_INDEX.path}>← {GUIDE_TEXT.label}</a>
         <h1>{guide.heading}</h1>
         <div class="guide-intro">
           {guide.intro.map((text) => <p>{text}</p>)}
