@@ -18,6 +18,7 @@ NON_NATIVE_FILES = {
 
 
 def needs_native(paths):
+    """Require native checks unless a nonempty diff contains only known safe paths."""
     return not paths or any(
         path not in NON_NATIVE_FILES and not path.startswith(NON_NATIVE_PREFIXES)
         for path in paths
@@ -25,6 +26,7 @@ def needs_native(paths):
 
 
 def select_native(event_name, event, head):
+    """Check the full event diff, retaining native coverage when comparison fails."""
     if event_name == "pull_request":
         base = event.get("pull_request", {}).get("base", {}).get("sha", "")
     elif event_name == "push":
@@ -46,6 +48,7 @@ def select_native(event_name, event, head):
 
 
 def main():
+    """Read the Actions event and publish the native-check decision and reason."""
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     native = select_native(os.environ["GITHUB_EVENT_NAME"], event, os.environ["GITHUB_SHA"])
     value = str(native).lower()

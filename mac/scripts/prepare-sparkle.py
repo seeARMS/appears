@@ -10,7 +10,9 @@ import sys
 
 
 def prepare(root):
+    """Apply the privacy patches from pinned originals without rewriting equal files."""
     def write_if_changed(path, source):
+        """Preserve the timestamp when the generated patch is already on disk."""
         target = root / path
         # Preserve timestamps on restored source so Xcode can reuse Sparkle's
         # compiled objects. Still derive every patch from the pinned originals.
@@ -18,9 +20,11 @@ def prepare(root):
             target.write_text(source)
 
     def original(path):
+        """Read an unmodified source file from the checkout's pinned Git revision."""
         return subprocess.check_output(["git", "-C", str(root), "show", f"HEAD:{path}"], text=True)
 
     def replace_once(text, before, after):
+        """Apply one expected substitution, failing if upstream source has drifted."""
         if text.count(before) != 1:
             raise ValueError("Pinned Sparkle source changed; review the privacy patch")
         return text.replace(before, after)
