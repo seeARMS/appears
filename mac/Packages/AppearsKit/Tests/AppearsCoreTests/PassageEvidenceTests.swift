@@ -11,6 +11,7 @@ struct PassageTestEmbedder: Embedder {
     let modelID = "passage-test"
     let dimension = 3
     let supportsImages = false
+    var minimumPassageSimilarity: Double? { 0.70 }
     var preferred = PassageEvidenceTests.answer
     var onEmbed: (@Sendable () throws -> Void)?
     func embed(queries: [String]) async throws -> [[Float]] {
@@ -299,6 +300,28 @@ struct PassageTestEmbedder: Embedder {
         #expect(results == [original])
         #expect(results.first?.item.message?.attachmentPath == fixture.photo.path)
         #expect(results.first?.item.message?.rowID == 3)
+    }
+
+    @Test(arguments: [UnitKind.text, .image])
+    func conversationScopeRaisesPhotoRankWithoutRaisingConfidence(_ kind: UnitKind) async throws {
+        let fixture = try MessageFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.folder) }
+        let store = try IndexStore(url: fixture.folder.appending(path: "evidence/index.sqlite"))
+        let original = try photo(fixture, store: store, kind: kind)
+        let lexical = try LexicalTerms("Silverbrook tasting invitation", store: store)
+        let selector = PassageSelector()
+        let global = try await selector.select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                store: store, messages: MessagesReader(url: fixture.url), excluded: [],
+                                                question: nil, terms: [], lexical: lexical)
+        let scoped = try await selector.select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                store: store, messages: MessagesReader(url: fixture.url), excluded: [],
+                                                question: nil, terms: [], lexical: lexical,
+                                                scopedChats: [try #require(original.item.message?.chatID)])
+        let unscopedResult = try #require(global.first)
+        let scopedResult = try #require(scoped.first)
+        #expect(scopedResult.score > unscopedResult.score)
+        #expect(scopedResult.confidence == unscopedResult.confidence)
+        #expect(scopedResult.item.message == unscopedResult.item.message)
     }
 
     @Test(arguments: [UnitKind.text, .image])

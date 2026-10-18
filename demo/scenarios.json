@@ -2,6 +2,16 @@
   "about": "Contexts for `appears eval`: what's on screen, and what Appears should find (paths under demo/files), and, when the context asks for a value, the line the top result should quote. Negative scenarios should surface nothing confidently. Scenarios with app \"Calendar\" are upcoming meetings, read the way the app reads an event: title, recipients (the attendees), location, and visible (the notes, conferencing boilerplate and all).",
   "scenarios": [
     {
+      "name": "A short selected place overrides an unrelated draft",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "selection": "Lisbon",
+      "origin": "accessibility",
+      "focused": "How much was the final apartment bill?",
+      "visible": "Can we borrow the work lights for the weekend?",
+      "expect": ["Documents/Travel/Lisbon 2023/itinerary.md"]
+    },
+    {
       "name": "Replying to the contractor",
       "app": "Mail",
       "title": "Re: Kitchen — can you start on the 14th?",
@@ -300,7 +310,10 @@
       "name": "Search: separate rent discussions and conversations with the same name",
       "text": "Juniper Court rent payment confirmed",
       "limit": 3,
-      "expectedConversations": [9101, 9102],
+      "expectedConversations": [
+        9101,
+        9102
+      ],
       "expectedPaths": [
         "messages:search-rent-paid",
         "messages:search-rent-thanks",
@@ -332,6 +345,15 @@
     }
   ],
   "negative": [
+    {
+      "name": "An unsupported short selection overrides a familiar draft",
+      "app": "Messages",
+      "title": "Lisbon travel plans",
+      "selection": "Zorbax",
+      "origin": "accessibility",
+      "focused": "Where did we stay in Lisbon last time?",
+      "visible": "Lisbon apartment itinerary and flight details."
+    },
     {
       "name": "Reading about Mars",
       "app": "Safari",
@@ -506,6 +528,83 @@
       "title": "Design review",
       "focused": "Please review the amplifier enclosure design.",
       "visible": "When were the brakes last looked at? Call Eastshore Honda."
+    }
+  ],
+  "retrieval": [
+    {
+      "name": "Matching photo OCR prefers the resolved conversation",
+      "title": "Morgan Hale",
+      "focused": "find the kestrel maintenance case screenshot",
+      "visible": "",
+      "chatIDs": [910],
+      "expect": ["messages:retrieval-photo-scoped"],
+      "first": "messages:retrieval-photo-scoped"
+    },
+    {
+      "name": "Final bill across separate messages and competing old receipts",
+      "title": "Morgan Hale",
+      "focused": "how much was the final cedar point bill",
+      "visible": "Could my parents borrow the work lights? Make sure they have batteries. Want to walk? Here is a bed from the furniture store.",
+      "chatIDs": [
+        910
+      ],
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "We only owe $845.",
+      "rejectQuotes": [
+        "furniture",
+        "$920"
+      ]
+    },
+    {
+      "name": "Final bill paraphrase without conversation scope",
+      "title": "",
+      "focused": "what did we end up owing cedar point after moving out",
+      "visible": "",
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "We only owe $845."
+    },
+    {
+      "name": "Waiver versus the other persons outstanding charge",
+      "title": "Morgan Hale",
+      "focused": "was the extra cedar point rent waived",
+      "visible": "Want to walk?",
+      "chatIDs": [
+        910
+      ],
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "responsibility was waived",
+      "rejectQuotes": [
+        "furniture",
+        "$920"
+      ]
+    },
+    {
+      "name": "Unrelated draft with bill discussion visible",
+      "title": "Morgan Hale",
+      "focused": "Want to grab a sandwich before our walk?",
+      "visible": "Cedar Point final rent bill was $845. The responsibility was waived.",
+      "chatIDs": [
+        910
+      ],
+      "expect": [],
+      "silent": true
+    },
+    {
+      "name": "Missing evidence in a familiar conversation",
+      "title": "Morgan Hale",
+      "focused": "what was the access code for the storage locker",
+      "visible": "Cedar Point rent payment receipt",
+      "chatIDs": [
+        910
+      ],
+      "expect": [],
+      "silent": true
     }
   ]
 }

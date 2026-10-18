@@ -300,7 +300,7 @@ final class AppModel {
         // Short composed questions and pictures can both be useful without 80 characters.
         guard captured.snapshot.hasAmbientText || captured.snapshot.showsPicture else { return }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
-        guard let response = try? await engine.related(RecallRequest(context: captured.snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
+        guard let response = try? await engine.related(RecallRequest(context: retrievalContext(captured.snapshot), trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         // The context may have moved on while the engine worked.
         guard !Task.isCancelled, !settings.isPaused, settings.ambientMode != .off,
               let current = reader.capture(includeBrowserURL: true),
@@ -379,7 +379,7 @@ final class AppModel {
         guard modelDownload.phase == .ready, settings.calendarContext, settings.ambientMode != .off, !settings.isPaused,
               settings.onboarded || CalendarWatcher.isInjecting else { return }
         let snapshot = event.snapshot()
-        guard let response = try? await engine.related(RecallRequest(context: snapshot, trigger: .ambient, limit: Self.contextResultLimit)) else { return }
+        guard let response = try? await engine.related(RecallRequest(context: retrievalContext(snapshot), trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         policy.settings = settings.policySettings
         let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
         Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
@@ -430,6 +430,15 @@ final class AppModel {
     private static let log = Logger(subsystem: "rs.appea.appears", category: "calendar")
 
     // MARK: - Pull
+
+    /// Resolve identity in the app; never send the contact directory into the engine.
+    private func retrievalContext(_ snapshot: ContextSnapshot) -> ContextSnapshot {
+        var context = snapshot
+        if settings.sources.messages, Self.demoFolder == nil, snapshot.bundleID == "com.apple.MobileSMS" {
+            context.messageChatIDs = contacts.snapshot.chatIDs(forWindowTitle: snapshot.windowTitle)
+        }
+        return context
+    }
 
     /// The hotkey or a click: read the window now and show what relates, always.
     func pull() async {
@@ -488,7 +497,7 @@ final class AppModel {
         guard !Task.isCancelled, pullRevision == revision else { return }
         let fingerprint = captured.snapshot.fingerprint(salt: settings.salt)
         do {
-            let response = try await engine.related(RecallRequest(context: captured.snapshot, trigger: .pull, limit: Self.contextResultLimit))
+            let response = try await engine.related(RecallRequest(context: retrievalContext(captured.snapshot), trigger: .pull, limit: Self.contextResultLimit))
             guard !Task.isCancelled, pullRevision == revision else { return }
             let topic = captured.snapshot.topicFingerprint(salt: settings.salt)
             let eligible = response.suggestions.filter { !policy.isDismissed(itemID: $0.item.id, topic: topic) }

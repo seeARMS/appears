@@ -23,7 +23,7 @@ public struct Query: Sendable, Equatable {
     public var fullText: String {
         let phrases = (entities + contextEntities + identifiers + rareTerms)
             .map { $0.replacingOccurrences(of: "\"", with: " ").trimmingCharacters(in: .whitespaces) }
-            .filter { $0.count >= 2 }
+            .filter { !$0.isEmpty }
         return Array(Set(phrases)).sorted().map { "\"\($0)\"" }.joined(separator: " OR ")
     }
 
@@ -50,7 +50,7 @@ public enum QueryBuilder {
         // The selection says most clearly what you care about; then what you're writing; then
         // the window's title and the rest of what's visible.
         var parts: [String] = []
-        if selection.count >= 12 { parts.append(selection) }
+        if !selection.isEmpty { parts.append(selection) }
         if focused.count >= 12 { parts.append(focused) }
         let title = cleanTitle(context.windowTitle, app: context.appName)
         if !title.isEmpty { parts.append(title) }
@@ -75,7 +75,12 @@ public enum QueryBuilder {
         let identifiers = Self.identifiers(in: entitySource)
         var rare: [String] = []
         if let frequencies {
-            rare = rareTerms(in: entitySource, frequencies: frequencies, excluding: Set((strong + weak).map { $0.lowercased() }).union(ignored))
+            let active = selection.isEmpty ? focused : selection
+            if !selection.isEmpty || focused.count >= 12 || (context.origin == .text && !focused.isEmpty) {
+                rare = Array(LexicalTerms.tokens(active).filter { !LexicalTerms.filler.contains($0) && !ignored.contains($0) }.prefix(32))
+            } else {
+                rare = rareTerms(in: entitySource, frequencies: frequencies, excluding: Set((strong + weak).map { $0.lowercased() }).union(ignored))
+            }
         }
         func unique(_ names: [String], _ limit: Int) -> [String] {
             Array(NSOrderedSet(array: names).compactMap { $0 as? String }.prefix(limit))
@@ -262,24 +267,12 @@ public enum QueryBuilder {
     static func rareTerms(
         in text: String, frequencies: ([String]) -> (counts: [String: Int], total: Int), excluding: Set<String>
     ) -> [String] {
-        // Nouns only: verbs and adjectives ("need", "call", "through") are rare in a small
-        // index without saying anything about the topic. Interjections too: the tagger calls
-        // some nouns that end a chat question one ("the contractor's quote?"), and real ones
-        // are short or common words.
-        var words: [String: Int] = [:]
-        let tagger = NLTagger(tagSchemes: [.lexicalClass])
-        tagger.string = text
-        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: [.omitPunctuation, .omitWhitespace]) { tag, range in
-            guard tag == .noun || tag == .otherWord || tag == .interjection else { return true }
-            let word = text[range].lowercased()
-            if word.count >= 4, !commonWords.contains(word), !excluding.contains(word), !word.allSatisfy(\.isNumber) {
-                words[word, default: 0] += 1
-            }
-            return true
+        let words = LexicalTerms.tokens(text).filter {
+            !LexicalTerms.filler.contains($0) && !excluding.contains($0)
         }
         guard !words.isEmpty else { return [] }
         // Asked for as written: the index stems them the way it stems what it stores.
-        let candidates = Array(words.keys.prefix(300))
+        let candidates = Array(words.prefix(300))
         let (counts, total) = frequencies(candidates)
         guard total > 0 else { return [] }
         let limit = max(2, total / 100)

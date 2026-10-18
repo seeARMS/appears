@@ -3,7 +3,7 @@ import Testing
 @testable import AppearsCore
 
 @Suite struct RecentMessagesTests {
-    @Test func recentMessagesCanSurfaceWithASmallRankingPenalty() async throws {
+    @Test func activeQuestionsRankRecentMessagesEquallyAndDiscoveryCanPreferOlderOnes() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "appears-recent-messages-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
@@ -33,11 +33,16 @@ import Testing
         let recent = try #require(ambient.suggestions.first { $0.item.path == "messages:0" })
         let old = try #require(ambient.suggestions.first { $0.item.path == "messages:1" })
         #expect(recent.confidence >= SurfacePolicy.Settings().threshold)
-        #expect(recent.score < old.score)
-        #expect(recent.score > old.score * 0.8)
+        #expect(recent.score == old.score, "Age cannot demote equally relevant answers to an active question")
         let pull = try await recall.run(RecallRequest(context: context, trigger: .pull), now: now)
         let pulled = try #require(pull.suggestions.first { $0.item.path == "messages:0" })
         #expect(recent.confidence == pulled.confidence)
+        var discovery = recall
+        discovery.settings.preferForgottenForActiveText = true
+        let forgotten = try await discovery.run(RecallRequest(context: context, trigger: .pull), now: now)
+        let recentDiscovery = try #require(forgotten.suggestions.first { $0.item.path == "messages:0" })
+        let oldDiscovery = try #require(forgotten.suggestions.first { $0.item.path == "messages:1" })
+        #expect(recentDiscovery.score < oldDiscovery.score)
 
         // The chat name and old visible text must not turn the rent message into an
         // answer to a new, unrelated draft in that same conversation.

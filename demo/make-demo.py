@@ -566,3 +566,7 @@ write("Documents/Outings/Courier recommendation.md", """
 (ROOT / "manifest.json").write_text(json.dumps({"about": "Days since each demo file was last touched. The eval sets modification dates from this.", "ages": dict(sorted(ages.items()))}, indent=2) + "\n")
 (ROOT / "messages.json").write_text(json.dumps(MESSAGES, indent=2) + "\n")
 print(f"wrote {len(ages)} files")
+
+# Regenerate the larger, isolated retrieval corpus as well.
+import runpy
+runpy.run_path(str(ROOT / "retrieval-fixtures.py"))
