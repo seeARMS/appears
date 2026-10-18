@@ -52,7 +52,7 @@ a proposed commit message without committing or publishing:
 Use $release-appears to prepare a release draft only.
 ```
 
-Update `VERSION`, merge the intended release to `main`, push its `vX.Y.Z` tag, and publish a stable GitHub release with its changelog. Pushing a tag alone doesn't publish a download. Signing credentials live only in a temporary runner keychain or private runner files and are removed when the job ends.
+Update `VERSION`, `MARKETING_VERSION` in `mac/project.yml`, and `MCPServer.version` in `mac/Packages/AppearsKit/Sources/AppearsMCP/MCPServer.swift`. Merge the intended release to `main`, push its `vX.Y.Z` tag, and publish a stable GitHub release with its changelog. Pushing a tag alone doesn't publish a download. Signing credentials live only in a temporary runner keychain or private runner files and are removed when the job ends.
 
 Release tags must point to a commit reachable from `main`. For a manual rerun, select the version tag as the workflow ref and supply the same tag input; dispatching from `main` can't enter the tag-only release environment. Validation runs before the job that can access the release environment.
 

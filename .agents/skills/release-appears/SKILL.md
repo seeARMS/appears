@@ -110,8 +110,11 @@ Metadata presence is only a preflight; the run proves the credentials work.
 Report missing settings before publishing. Ordinary releases require no new keys.
 
 Create or reuse a task-owned `codex/release-X.Y.Z` branch from the intended main
-commit. Update `VERSION` and keep the default `MARKETING_VERSION` in
-`mac/project.yml` consistent. The release script supplies the actual version and
+commit. Update `VERSION`, the default `MARKETING_VERSION` in `mac/project.yml`,
+and `MCPServer.version` in
+`mac/Packages/AppearsKit/Sources/AppearsMCP/MCPServer.swift` together. Search for
+other runtime copies of the old version, leaving historical release references
+and unrelated dependency/protocol versions alone. The release script supplies the actual version and
 derives the build number from Git history; do not hand-edit generated Xcode files
 or reset the build number. If the correct bump is already merged, inspect and
 reuse it instead of making an empty commit.

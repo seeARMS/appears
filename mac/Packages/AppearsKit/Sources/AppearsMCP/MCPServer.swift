@@ -19,7 +19,7 @@ public actor MCPServer {
     static let name = "rs.appea/appears"
     static let title = "Appears"
     /// Keep in step with VERSION and `MARKETING_VERSION` in mac/project.yml.
-    static let version = "0.1.0"
+    static let version = "0.1.1"
     /// At most 100 characters, for a server card or registry listing.
     static let description = "Find what you already have on your Mac about anything: files, PDFs, screenshots and notes."
     static let website = "https://appea.rs"
