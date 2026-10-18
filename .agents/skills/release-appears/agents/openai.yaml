@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Appears"
+  short_description: "Draft release notes and ship a verified Mac release"
+  default_prompt: "Use $release-appears to cut the next Appears release, summarize the changes since the last release, write friendly release notes and a release commit message, and verify publication."
