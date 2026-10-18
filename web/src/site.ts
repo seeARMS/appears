@@ -169,7 +169,7 @@ export const HOW = [
 
 export const QUIET_HEADING = "It never interrupts you.";
 export const QUIET =
-  "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot. Click it when you're ready, or press a shortcut to ask any time.";
+  "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot and keeps slowly rotating until you open it. Click it when you're ready, or press a shortcut to ask any time. Reduce Motion keeps the mark still.";
 /** The menu bar glyph's states (drawn in mac/App/Sources/Glyph.swift; src/components/Glyph.astro on the site). */
 export const GLYPHS = [
   { state: "idle", label: "Nothing to show" },
@@ -252,7 +252,7 @@ export const FAQ = [
   {
     q: "How often will it suggest something?",
     a: [
-      "When it finds a confident match, after five seconds reading or a two-second pause after typing. New suggestions are at least one minute apart, and the same item won't repeat in that conversation. The menu bar ring gets a dot; nothing pops up.",
+      "When it finds a confident match, after five seconds reading or a two-second pause after typing. New suggestions are at least one minute apart, and the same item won't repeat in that conversation. The menu bar ring gets a dot and slowly rotates until you open or clear the result. Reduce Motion keeps it still; nothing pops up.",
       "Press {Shift–Command–Space} to ask any time.",
     ],
   },

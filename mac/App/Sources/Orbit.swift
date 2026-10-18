@@ -24,7 +24,7 @@ enum OrbitGeometry {
 }
 
 /// The same Orbit drawing in the brand mark and onboarding illustrations.
-/// Only illustrations animate the dot; the real menu bar stays still.
+/// The menu bar rotates the whole drawing separately in GlyphImage.
 struct OrbitSymbol: View {
     var size: CGFloat = 24
     var found: Double = 1

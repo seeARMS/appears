@@ -16,6 +16,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     private var pullRevision = 0
     private var clickMonitor: Any?
     private var localClickMonitor: Any?
+    private var glyphAnimator: StatusGlyphAnimator?
     private let performPull: @MainActor () async -> Void
     var isVisible: Bool { panel.isVisible }
     var openSettings: (() -> Void)?
@@ -38,7 +39,8 @@ final class StatusController: NSObject, NSMenuItemValidation {
         }))
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         if let button = item.button {
-            button.image = GlyphImage.image(for: model.glyph)
+            glyphAnimator = StatusGlyphAnimator(button: button)
+            glyphAnimator?.update(model.glyph)
             button.target = self
             button.action = #selector(clicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -51,7 +53,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
         withObservationTracking { _ = model.glyph } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.item.button?.image = GlyphImage.image(for: self.model.glyph)
+                self.glyphAnimator?.update(self.model.glyph)
                 self.observeGlyph()
             }
         }
