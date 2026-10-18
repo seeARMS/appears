@@ -17,6 +17,11 @@ final class StatusController: NSObject, NSMenuItemValidation {
     private var clickMonitor: Any?
     private var localClickMonitor: Any?
     private var glyphAnimator: StatusGlyphAnimator?
+    private let toast = MatchToastController()
+    private var lastWaitingAt: Date?
+    private var lastWaitingItemID: Int64?
+    private var lastAlertStyle: MatchAlertStyle?
+    var isToastVisible: Bool { toast.isVisible }
     private let performPull: @MainActor () async -> Void
     var isVisible: Bool { panel.isVisible }
     var openSettings: (() -> Void)?
@@ -40,22 +45,53 @@ final class StatusController: NSObject, NSMenuItemValidation {
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         if let button = item.button {
             glyphAnimator = StatusGlyphAnimator(button: button)
-            glyphAnimator?.update(model.glyph)
+            glyphAnimator?.update(model.glyph, style: model.settings.matchAlertStyle)
             button.target = self
             button.action = #selector(clicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         model.onShow = { [weak self] makeKey in self?.show(makeKey: makeKey) }
-        observeGlyph()
+        updateAlert()
+        observeAlert()
     }
 
-    private func observeGlyph() {
-        withObservationTracking { _ = model.glyph } onChange: { [weak self] in
+    private func observeAlert() {
+        withObservationTracking {
+            _ = model.glyph
+            _ = model.waiting
+            _ = model.settings.matchAlertStyle
+            _ = model.settings.ambientMode
+            _ = model.settings.pausedUntil
+        } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.glyphAnimator?.update(self.model.glyph)
-                self.observeGlyph()
+                self.updateAlert()
+                self.observeAlert()
             }
+        }
+    }
+
+    private func updateAlert() {
+        let style = model.settings.matchAlertStyle
+        glyphAnimator?.update(model.glyph, style: style)
+        let waiting = model.waiting
+        let isNew = waiting?.at != lastWaitingAt
+        if isNew || waiting?.suggestions.first?.id != lastWaitingItemID || style != lastAlertStyle
+            || model.glyph != .found || model.settings.ambientMode != .on || model.settings.isPaused {
+            toast.dismiss()
+        }
+        lastWaitingAt = waiting?.at
+        lastWaitingItemID = waiting?.suggestions.first?.id
+        lastAlertStyle = style
+        // Changing preferences never replays an old discovery. Only a newly accepted
+        // ambient result can show a toast; pull/search and log-only mode cannot.
+        guard isNew, style == .toast, model.glyph == .found, !panel.isVisible,
+              model.settings.ambientMode == .on, !model.settings.isPaused,
+              let waiting, waiting.mode == .ambient else { return }
+        toast.show(waiting, contacts: model.contacts, screen: item.button?.window?.screen) { [weak self] in
+            guard let self else { return }
+            self.toast.dismiss()
+            self.model.openWaitingMatch(at: waiting.at)
         }
     }
 
@@ -86,6 +122,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
 
     private func show(makeKey: Bool) {
         guard !Task.isCancelled else { return }
+        toast.dismiss()
         willShow?()
         position()
         if makeKey {
@@ -116,6 +153,7 @@ final class StatusController: NSObject, NSMenuItemValidation {
     }
 
     func close() {
+        toast.dismiss()
         pullRevision += 1
         pullTask?.cancel()
         pullTask = nil

@@ -3,12 +3,22 @@ import Testing
 @testable import AppearsCore
 
 @Suite struct AmbientLookupTests {
-    @Test func readingLooksFiveSecondsAfterEnteringAContext() {
+    @Test func defaultReadingLooksOneSecondAfterEnteringAContext() {
         var schedule = AmbientLookupSchedule()
         let now = Date()
         schedule.didChange(at: now)
-        #expect(schedule.settleDelay(now: now.addingTimeInterval(1)) == 1)
-        #expect(schedule.delay(fingerprint: "a", topic: "chat-a", requiredDwell: 5, now: now.addingTimeInterval(2)) == 3)
+        #expect(schedule.settleDelay(now: now.addingTimeInterval(0.5)) == 0.5)
+        let ready = now.addingTimeInterval(schedule.settleDelay(now: now))
+        #expect(ready.timeIntervalSince(now) == 1)
+        #expect(schedule.delay(fingerprint: "a", topic: "chat-a", requiredDwell: SurfacePolicy.Settings().dwell, now: ready) == 0)
+        #expect(schedule.dwell(now: ready) == 1)
+    }
+
+    @Test func longerReadingWaitStillApplies() {
+        var schedule = AmbientLookupSchedule()
+        let now = Date()
+        schedule.didChange(at: now)
+        #expect(schedule.delay(fingerprint: "a", topic: "chat-a", requiredDwell: 5, now: now.addingTimeInterval(1)) == 4)
         #expect(schedule.dwell(now: now.addingTimeInterval(5)) == 5)
     }
 
@@ -19,18 +29,18 @@ import Testing
         schedule.didChange(textEdited: true, at: now.addingTimeInterval(0.5))
         // Selection notifications following typing must not erase the edit signal.
         schedule.didChange(at: now.addingTimeInterval(0.5))
-        #expect(schedule.settleDelay(now: now.addingTimeInterval(1)) == 1.5)
-        #expect(schedule.delay(fingerprint: "rent?", topic: "new-chat", requiredDwell: 5, now: now.addingTimeInterval(2.5)) == 0)
-        #expect(schedule.dwell(now: now.addingTimeInterval(2.5)) < 5)
+        #expect(schedule.settleDelay(now: now.addingTimeInterval(1)) == 0.5)
+        #expect(schedule.delay(fingerprint: "rent?", topic: "new-chat", requiredDwell: 5, now: now.addingTimeInterval(1.5)) == 0)
+        #expect(schedule.dwell(now: now.addingTimeInterval(1.5)) < 5)
     }
 
     @Test func eachEditRestartsDebounceWithoutAnotherLookupThrottle() {
         var schedule = AmbientLookupSchedule()
         let now = Date()
         schedule.didChange(textEdited: true, at: now)
-        schedule.didChange(textEdited: true, at: now.addingTimeInterval(1))
-        #expect(schedule.settleDelay(now: now.addingTimeInterval(2)) == 1)
-        #expect(schedule.delay(fingerprint: "first draft", topic: "chat", requiredDwell: 5, now: now.addingTimeInterval(3)) == 0)
+        schedule.didChange(textEdited: true, at: now.addingTimeInterval(0.5))
+        #expect(schedule.settleDelay(now: now.addingTimeInterval(1)) == 0.5)
+        #expect(schedule.delay(fingerprint: "first draft", topic: "chat", requiredDwell: 5, now: now.addingTimeInterval(1.5)) == 0)
         schedule.didFinish(fingerprint: "first draft")
         schedule.didChange(textEdited: true, at: now.addingTimeInterval(3.5))
         #expect(schedule.delay(fingerprint: "next draft", topic: "chat", requiredDwell: 5, now: now.addingTimeInterval(5.5)) == 0)

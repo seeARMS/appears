@@ -178,7 +178,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 0) {
             title("You're all set")
             paragraph(model.modelDownload.phase == .ready
-                ? "Appears is getting to know your files now; the first pass takes a little while. Keep working, and when something useful turns up, the menu bar ring gets a dot and slowly rotates. Reduce Motion keeps it still."
+                ? "Appears is getting to know your files now; the first pass takes a little while. When something useful turns up, the menu bar ring gets a dot and slowly rotates. Reduce Motion keeps it still. Settings also offers a still dot or a toast with match details."
                 : "You can finish setup now. The model will keep downloading in the background, then Appears will start getting to know your files automatically.")
             VStack(spacing: 0) {
                 HStack {

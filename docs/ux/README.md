@@ -4,6 +4,10 @@ These light and dark screenshots use only made-up demo files, notes and messages
 
 To regenerate from the repository root, build the `appears-snapshots` Release scheme with Xcode, then run the resulting executable. Images are written to `mac/build/snapshots`. The same run verifies search request ordering, selection, clearing, failures, launch-event routing and the related list’s scrolling behavior.
 
+`settings-suggestions-motion`, `settings-suggestions-dot` and `settings-suggestions-toast` show the three alert styles. `match-toast` and `match-toast-meeting` show the optional banner with source evidence. The native checks cover preference persistence, alert routing, focus preservation, opening a waiting match, stale alerts, pause/off/log-only mode, automatic expiry and display sleep.
+
+Review the alert setting in [light](settings-suggestions-toast-light.png) and [dark](settings-suggestions-toast-dark.png), and the toast in [light](match-toast-light.png) and [dark](match-toast-dark.png).
+
 Run the same executable with `--glyph-preview` to verify discovery animation on a native status button and render `mac/build/snapshots/menu-bar-rotation.gif`. It shows a waiting match rotating continuously in light and dark, with the production icon at menu bar size and 4× magnification. The eight-second loop contains two full turns with no pause. The surrounding menu bar is synthetic; the drawing and timing come directly from `GlyphImage`.
 
 The checked-in [animation](../media/menu-bar-rotation.gif) and [still frame](menu-bar-rotation.png) show both appearances for review.

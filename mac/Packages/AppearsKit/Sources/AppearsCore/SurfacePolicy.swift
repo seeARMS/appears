@@ -15,7 +15,7 @@ public enum AmbientMode: String, Sendable, Codable, CaseIterable {
 public struct SurfacePolicy: Sendable {
     public struct Settings: Sendable, Codable, Equatable {
         /// Seconds in one context before Appears looks.
-        public var dwell: TimeInterval = 5
+        public var dwell: TimeInterval = 1
         /// 0 (strict) to 1 (broad). The default maps to a confidence threshold of 0.6.
         public var sensitivity: Double = 5.0 / 7.0
         /// The minimum interval between menu bar signals. There is no hourly budget.

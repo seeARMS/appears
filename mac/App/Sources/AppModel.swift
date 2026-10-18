@@ -9,7 +9,7 @@ import os
 /// The loop: the Accessibility observer reports a change → wait for it to settle → note the
 /// "topic" (app, window, document, URL) and when it started → after reading or a typing
 /// pause, ask the engine (ambient) → if the answer is confident and the signal gap allows,
-/// change the glyph. Nothing else happens until you look.
+/// present the chosen alert style. Motion in the menu bar is the default.
 @MainActor @Observable
 final class AppModel {
     var settings = AppSettings()
@@ -431,6 +431,21 @@ final class AppModel {
 
     // MARK: - Pull
 
+    /// Open the exact discovery represented by a toast, without recapturing the window
+    /// after the click. A stale toast cannot open a replacement discovery.
+    func openWaitingMatch(at date: Date) {
+        guard let waiting, waiting.at == date else { return }
+        pullRevision += 1
+        selectedIndex = 0
+        isPulling = false
+        pullError = nil
+        skippedReason = nil
+        shown = waiting
+        self.waiting = nil
+        updateGlyph()
+        onShow?(true)
+    }
+
     /// Resolve identity in the app; never send the contact directory into the engine.
     private func retrievalContext(_ snapshot: ContextSnapshot) -> ContextSnapshot {
         var context = snapshot
@@ -446,11 +461,7 @@ final class AppModel {
         let revision = pullRevision
         // An ambient result is already waiting: show it.
         if let waiting, waiting.meeting != nil || reader.capture(includeBrowserURL: true)?.snapshot.fingerprint(salt: settings.salt) == waiting.fingerprint {
-            selectedIndex = 0
-            shown = waiting
-            self.waiting = nil
-            updateGlyph()
-            onShow?(true)
+            openWaitingMatch(at: waiting.at)
             return
         }
         if let waiting {
@@ -723,4 +734,9 @@ final class AppModel {
     }
 
     func showDownloadForSnapshot(_ download: ModelDownloadStatus) { modelDownload = download }
+
+    func waitForSnapshot(_ entry: Shown?) {
+        waiting = entry
+        updateGlyph()
+    }
 }
