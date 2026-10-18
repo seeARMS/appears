@@ -40,7 +40,7 @@ npm run build
 
 The `Checks` workflow runs on pull requests and pushes to `main`. Web checks always run. Changes confined to `web/`, `docs/`, `brand/` and the top-level contributor documentation skip the two native jobs. Native code, demo fixtures, licenses, workflow changes and unrecognized paths run all checks; manual runs also run everything. The selector compares the full PR merge or push, including deletions and both sides of renames. If selection fails, the native jobs run.
 
-Native jobs cache Swift package builds/sources and the pinned Sparkle build, with toolchain and input hashes in the build cache keys. The app still gets a clean Release build and complete signature, privacy and notice checks. The workflow has read-only repository access and no release secrets. Its required checks keep the names `Core and MCP`, `Web`, and `Mac app`, including when native jobs are skipped.
+Native jobs cache Swift package builds/sources, the pinned Sparkle build and Xcode's content-addressed compiler results, with toolchain and input hashes in the build cache keys. The app still gets a clean Release build and complete signature, privacy and notice checks; cached compiler results do not restore app/resource bundles. The workflow has read-only repository access and no release secrets. Its required checks keep the names `Core and MCP`, `Web`, and `Mac app`, including when native jobs are skipped.
 
 ## Model tests and ranking changes
 

@@ -107,6 +107,15 @@ jobs:
           # a clean build, including all signature/privacy/license checks.
           path: mac/build/CheckDerivedData/SourcePackages
           key: app-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}
+      - name: Cache app compilations
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Xcode's content-addressed compiler cache survives clean builds. It
+          # reuses only matching compiler inputs; products are rebuilt/signed.
+          path: mac/build/CheckDerivedData/CompilationCache.noindex
+          key: app-compile-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/scripts/check-app.sh', 'mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            app-compile-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/scripts/check-app.sh', 'mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}-
       - name: Install build tools
         run: |
           brew install xcodegen
