@@ -425,7 +425,6 @@ public struct Recall: Sendable {
                        reason: Self.reason(entry.candidate.item, unit: entry.candidate.unit, matched: entry.matched, query: query, now: now),
                        snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
                        score: entry.score, confidence: entry.confidence, features: entry.features,
-                       line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) },
                        ambientEligible: request.trigger == .ambient && !ranksPassages ? position < 3 : nil)
         }
         // Index-only lookups can collapse identical whole windows. With live source
@@ -563,7 +562,17 @@ public struct Recall: Sendable {
             if !folder.isEmpty { usedFolders.insert(folder) }
         }
 
-        let suggestions = chosen.map { pool[$0] }
+        let suggestions = chosen.map { index in
+            let result = pool[index]
+            // Passage refinement already formats its verified source range. Images
+            // and stored-vector lookups need the original unit's line, but only after
+            // selection: formatting every discovery candidate cannot affect ranking.
+            guard let question, result.evidence == nil || !embedder.supportsPassageRefinement else { return result }
+            return Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
+                              score: result.score, confidence: result.confidence, features: result.features,
+                              line: MatchedLine.find(in: result.unit.text, for: question, terms: terms),
+                              evidence: result.evidence, ambientEligible: result.ambientEligible)
+        }
         try Task.checkCancellation()
         return RecallResponse(
             suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000,

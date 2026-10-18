@@ -146,15 +146,24 @@ public struct MatchedLine: Sendable, Codable, Hashable {
     /// Longer lines are cut to about this many characters around the answer.
     static let displayLimit = 140
 
+    /// Immutable matchers are shared across lookups. Compiling Unicode character
+    /// classes for every line dominated value questions over large candidate pools.
+    private enum Patterns {
+        static let leadingLabel = try! NSRegularExpression(pattern: #"^([\p{L}\p{N}][\p{L}\p{N} #'’&/().-]{0,30}?)\s*:\s+(?=\S)"#)
+        static let inlineLabel = try! NSRegularExpression(pattern: #"(?<=\s)(\p{Lu}[\p{L}\p{N}]*(?: \p{Ll}+){0,2})\s*:\s+(?=\S)"#)
+        static let email = try! NSRegularExpression(pattern: #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#)
+        static let money = try! NSRegularExpression(pattern: #"[$€£¥]\s?\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP|CAD|dollars)\b"#)
+        static let number = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])[\p{L}\p{N}#][\p{L}\p{N}#.,/-]*\p{N}[\p{L}\p{N}#.,/-]*(?<![.,/-])"#)
+        static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType([.date, .phoneNumber, .address]).rawValue)
+    }
+
     /// The line of `text` that best answers `question`, or nil if none does. A line answers if
     /// it holds a value of the kind asked for (a date for "when") or is labelled with a word
     /// of the question ("Password: …" for "the wifi password"); the question's other words and
     /// `terms` (the context's names and rare words) break ties.
     public static func find(in text: String, for question: Question, terms: [String] = []) -> MatchedLine? {
         let lines = Self.lines(text)
-        let detector = question.kinds.isDisjoint(with: [.date, .phone, .address]) ? nil : try? NSDataDetector(
-            types: NSTextCheckingResult.CheckingType([.date, .phoneNumber, .address]).rawValue
-        )
+        let detector = question.kinds.isDisjoint(with: [.date, .phone, .address]) ? nil : Patterns.detector
         let terms = terms.map { $0.lowercased() }.filter { $0.count >= 3 }
         let candidates = lines.map { evaluate($0, question: question, terms: terms, detector: detector) }
         var best: Int?
@@ -306,18 +315,15 @@ public struct MatchedLine: Sendable, Codable, Hashable {
     static func labelPairs(in line: String) -> [(label: [String], value: Range<String.Index>, leading: Bool)] {
         let whole = NSRange(line.startIndex..., in: line)
         var labels: [(label: Range<String.Index>, colonEnd: String.Index, leading: Bool)] = []
-        if let regex = try? NSRegularExpression(pattern: #"^([\p{L}\p{N}][\p{L}\p{N} #'’&/().-]{0,30}?)\s*:\s+(?=\S)"#),
-           let match = regex.firstMatch(in: line, range: whole),
+        if let match = Patterns.leadingLabel.firstMatch(in: line, range: whole),
            let label = Range(match.range(at: 1), in: line), let all = Range(match.range, in: line),
            line[label].contains(where: \.isLetter) {
             labels.append((label, all.upperBound, true))
         }
-        if let regex = try? NSRegularExpression(pattern: #"(?<=\s)(\p{Lu}[\p{L}\p{N}]*(?: \p{Ll}+){0,2})\s*:\s+(?=\S)"#) {
-            for match in regex.matches(in: line, range: whole) {
-                guard let label = Range(match.range(at: 1), in: line), let all = Range(match.range, in: line),
-                      label.lowerBound >= (labels.last?.colonEnd ?? line.startIndex) else { continue }
-                labels.append((label, all.upperBound, false))
-            }
+        for match in Patterns.inlineLabel.matches(in: line, range: whole) {
+            guard let label = Range(match.range(at: 1), in: line), let all = Range(match.range, in: line),
+                  label.lowerBound >= (labels.last?.colonEnd ?? line.startIndex) else { continue }
+            labels.append((label, all.upperBound, false))
         }
         return labels.enumerated().map { offset, entry in
             let end = offset + 1 < labels.count ? labels[offset + 1].label.lowerBound : line.endIndex
@@ -331,8 +337,7 @@ public struct MatchedLine: Sendable, Codable, Hashable {
 
     static func ranges(of kind: Question.Kind, in line: String, detector: NSDataDetector?) -> [Range<String.Index>] {
         let whole = NSRange(line.startIndex..., in: line)
-        func matching(_ pattern: String) -> [Range<String.Index>] {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        func matching(_ regex: NSRegularExpression) -> [Range<String.Index>] {
             return regex.matches(in: line, range: whole).compactMap { Range($0.range, in: line) }
         }
         func detected(_ type: NSTextCheckingResult.CheckingType) -> [Range<String.Index>] {
@@ -342,9 +347,9 @@ public struct MatchedLine: Sendable, Codable, Hashable {
         case .date: return detected(.date)
         case .phone: return detected(.phoneNumber)
         case .address: return detected(.address)
-        case .email: return matching(#"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#)
-        case .money: return matching(#"[$€£¥]\s?\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP|CAD|dollars)\b"#)
-        case .number: return matching(#"(?<![\p{L}\p{N}])[\p{L}\p{N}#][\p{L}\p{N}#.,/-]*\p{N}[\p{L}\p{N}#.,/-]*(?<![.,/-])"#).filter { line[$0].count >= 3 }
+        case .email: return matching(Patterns.email)
+        case .money: return matching(Patterns.money)
+        case .number: return matching(Patterns.number).filter { line[$0].count >= 3 }
         }
     }
 
