@@ -4,6 +4,7 @@
 // comes from src/site.ts, like the page's.
 
 import type { APIRoute } from "astro";
+import { plainKeys } from "../lib/inline";
 import { frontMatter } from "../lib/markdown";
 import {
   AUTHOR,
@@ -44,7 +45,7 @@ export const prerender = true;
 
 const DOWNLOAD = `[${DOWNLOAD_LABEL}](${new URL(DOWNLOAD_URL, SITE).href}). ${REQUIREMENTS}`;
 
-const MARKDOWN = `${[
+const MARKDOWN = `${plainKeys([
   frontMatter({ title: TITLE, description: DESCRIPTION, url: `${SITE}/` }),
   `# ${HEADLINE}`,
   LEDE,
@@ -75,6 +76,6 @@ const MARKDOWN = `${[
   "## Links",
   [`- [${SOURCE_LABEL}](${SOURCE_URL})`, `- [${LICENSE} license](${LICENSE_URL})`, `- [llms.txt](${SITE}/llms.txt): ${NAME} in brief, for agents`].join("\n"),
   `${NAME} is made by [${AUTHOR.name}](${AUTHOR.url}).`,
-].join("\n\n")}\n`;
+].join("\n\n"))}\n`;
 
 export const GET: APIRoute = () => new Response(MARKDOWN, { headers: { "content-type": "text/markdown; charset=utf-8" } });

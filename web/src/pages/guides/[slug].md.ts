@@ -1,4 +1,5 @@
 import type { APIRoute, GetStaticPaths } from "astro";
+import { plainKeys } from "../../lib/inline";
 import { frontMatter } from "../../lib/markdown";
 import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDE_TEXT, REQUIREMENTS, SITE, guidePath, type SearchGuide } from "../../site";
 
@@ -25,6 +26,6 @@ export const GET: APIRoute = ({ props }) => {
     `## ${GUIDE_TEXT.related}`,
     GUIDES.filter((other) => other.slug !== guide.slug).map((other) => `- [${other.title.split(" | ")[0]}](${new URL(guidePath(other.slug), SITE).href}): ${other.summary}`).join("\n"),
     `[Appears](${SITE}/) is made by [${AUTHOR.name}](${AUTHOR.url}).`,
-  ].join("\n\n") + "\n";
+  ].map(plainKeys).join("\n\n") + "\n";
   return new Response(markdown, { headers: { "content-type": "text/markdown; charset=utf-8" } });
 };

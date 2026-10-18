@@ -1693,6 +1693,43 @@ h2 {
   text-wrap: pretty;
 }
 
+/* A shortcut written as Mac keycaps, inline with body text. */
+.keys {
+  display: inline-flex;
+  gap: 0.25em;
+  margin: 0 0.15em;
+  padding: 0;
+  border: 0;
+  background: none;
+  vertical-align: 0.1em;
+  white-space: nowrap;
+}
+.keycap {
+  min-width: 1.75em;
+  height: 1.75em;
+  padding: 0 0.5em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  box-shadow: inset 0 -1.5px 0 var(--border);
+  /* The system font draws ⌃ ⇧ ⌘ the way the Mac's own menus do. */
+  font-family: -apple-system, system-ui, var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.keycap-symbol {
+  font-size: 1rem;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

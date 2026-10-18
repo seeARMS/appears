@@ -5,7 +5,7 @@
 <h1 align="center">Appears</h1>
 
 <p align="center">
-  <strong>Let your Mac do the searching.</strong><br>
+  <strong>Your Mac remembers, so you don't have to.</strong><br>
   A menu bar app that notices what you're working on and quietly brings back<br>
   the messages, notes, photos and files you already have. Everything stays on your Mac.
 </p>
