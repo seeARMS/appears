@@ -8,15 +8,19 @@ final class MatchToastController: NSObject {
     private let panel = MatchToastPanel()
     private var expiry: Task<Void, Never>?
     private let duration: Duration
+    private let sleep: @Sendable (Duration) async throws -> Void
     private var remainingDuration: Duration = .zero
     private var expiryDeadline: ContinuousClock.Instant?
+    private var expiryGeneration: UUID?
     private var isHovering = false
     private var displayAsleep = false
     private var sessionActive = true
     var isVisible: Bool { panel.isVisible }
 
-    init(duration: Duration = .seconds(8)) {
+    init(duration: Duration = .seconds(8),
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.duration = duration
+        self.sleep = sleep
         super.init()
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(displaySlept), name: NSWorkspace.screensDidSleepNotification, object: nil)
@@ -47,9 +51,7 @@ final class MatchToastController: NSObject {
     }
 
     @objc func dismiss() {
-        expiry?.cancel()
-        expiry = nil
-        expiryDeadline = nil
+        cancelExpiry()
         remainingDuration = .zero
         isHovering = false
         panel.orderOut(nil)
@@ -63,9 +65,7 @@ final class MatchToastController: NSObject {
             if let expiryDeadline {
                 remainingDuration = max(.zero, ContinuousClock.now.duration(to: expiryDeadline))
             }
-            expiry?.cancel()
-            expiry = nil
-            expiryDeadline = nil
+            cancelExpiry()
         } else {
             scheduleExpiry()
         }
@@ -77,14 +77,25 @@ final class MatchToastController: NSObject {
     @objc private func sessionBecameActive() { sessionActive = true }
 
     private func scheduleExpiry() {
-        expiry?.cancel()
+        cancelExpiry()
         guard panel.isVisible, !isHovering else { return }
         let duration = remainingDuration
+        let sleep = sleep
+        let generation = UUID()
+        expiryGeneration = generation
         expiryDeadline = .now.advanced(by: duration)
         expiry = Task { [weak self] in
-            do { try await Task.sleep(for: duration) } catch { return }
+            do { try await sleep(duration) } catch { return }
+            guard self?.expiryGeneration == generation else { return }
             self?.dismiss()
         }
+    }
+
+    private func cancelExpiry() {
+        expiryGeneration = nil
+        expiry?.cancel()
+        expiry = nil
+        expiryDeadline = nil
     }
 }
 

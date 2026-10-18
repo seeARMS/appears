@@ -112,6 +112,30 @@ func verifyMatchAlerts(suggestions: [Suggestion], status: EngineStatus) async {
     precondition(hoveredToast.isVisible, "A new toast must receive its full duration")
     hoveredToast.dismiss()
 
+    // Model a sleep that already completed before cancellation and resumes late.
+    let delayedSleeper = DelayedToastSleeper()
+    let delayedToast = MatchToastController(sleep: { _ in await delayedSleeper.sleep() })
+    delayedToast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
+    await settle()
+    delayedToast.setHovering(true)
+    await delayedSleeper.finishNext()
+    await settle()
+    precondition(delayedToast.isVisible, "A cancelled expiry resuming late cannot dismiss a hovered toast")
+    delayedToast.setHovering(false)
+    await settle()
+    delayedToast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
+    await settle()
+    await delayedSleeper.finishNext()
+    await settle()
+    precondition(delayedToast.isVisible, "A stale expiry cannot dismiss a replacement toast")
+    await delayedSleeper.finishNext()
+    // The resumed sleep still has to return from its actor to the UI's main actor.
+    for _ in 0..<20 {
+        if !delayedToast.isVisible { break }
+        await settle()
+    }
+    precondition(!delayedToast.isVisible, "The replacement toast's own expiry must still dismiss it")
+
     toast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
     precondition(!toast.isVisible, "Display sleep must clear the toast")
@@ -123,5 +147,18 @@ func verifyMatchAlerts(suggestions: [Suggestion], status: EngineStatus) async {
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
     precondition(!toast.isVisible, "Leaving the user session must clear the toast")
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
-    print("Verified alert persistence, motion/dot/toast routing, focus, opening, stale alerts, pause, off/log-only, expiry, hover and sleep")
+    print("Verified alert persistence, motion/dot/toast routing, focus, opening, stale alerts, pause, off/log-only, expiry, hover, late timers and sleep")
+}
+
+private actor DelayedToastSleeper {
+    private var pending: [CheckedContinuation<Void, Never>] = []
+
+    func sleep() async {
+        await withCheckedContinuation { pending.append($0) }
+    }
+
+    func finishNext() {
+        precondition(!pending.isEmpty, "An expiry must be scheduled before it can finish")
+        pending.removeFirst().resume()
+    }
 }
