@@ -5,6 +5,37 @@ import Testing
 @testable import AppearsCore
 
 @Suite struct RetrievalPlanTests {
+    @Test(arguments: [false, true])
+    func aSpecificQueryClueSurvivesTopicAndConversationCrowding(_ scoped: Bool) async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let vectors = VectorIndex(dimension: 3)
+        let answer = "The UPS driver suggested Silverbrook Cellars."
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        var answerID: Int64 = 0
+        for number in 0..<81 {
+            let target = number == 80
+            let text = target ? answer : "A guy recommended a winery for outing \(number)."
+            let reference = MessageReference(rowID: Int64(number), guid: "clue-\(number)", chatID: target ? 2 : 1, conversationURL: nil)
+            let item = Item(source: .messages, path: "messages:clue-\(number)", kind: .message, title: "Outings",
+                            size: 1, created: date, modified: date, lastUsed: nil, message: reference)
+            let (id, _) = try store.record(item, signature: "fixture")
+            let vector: [Float] = target ? [0.8, 0.6, 0] : [0.9, 0.43589, 0]
+            let update = try store.replaceUnits(itemID: id, title: item.title, units: [(Unit(kind: .text, locator: .whole, text: text), vector)])
+            for unit in update.added { vectors.upsert(id: unit.id, kind: .text, vector: vector) }
+            if target { answerID = id }
+        }
+        var context = ContextSnapshot(focusedText: "Which winery did the UPS guy recommend?")
+        context.messageChatIDs = scoped ? [1] : nil
+        let recall = Recall(store: store, vectors: vectors,
+                            embedder: PassageTestEmbedder(preferred: answer, otherVector: [0.9, 0.43589, 0]))
+        let result = try await recall.run(RecallRequest(context: context, trigger: .pull))
+        #expect(result.retrieval?.candidateItemIDs.contains(answerID) == true)
+        #expect(result.retrieval?.shortlistedItemIDs.contains(answerID) == true)
+        #expect(result.suggestions.prefix(3).contains { $0.evidence?.text == answer })
+    }
+
     @Test func primaryQueryKeepsVerbsQualifiersNegationAndShortNumbers() {
         let query = QueryBuilder.build(ContextSnapshot(focusedText: "Was the final rent paid or not waived? It was 85, not 805.")) { terms in
             (Dictionary(uniqueKeysWithValues: terms.map { ($0, 500) }), 600)

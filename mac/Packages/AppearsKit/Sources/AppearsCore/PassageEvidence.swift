@@ -365,7 +365,7 @@ final class PassageSelector: Sendable {
             }
             return valid && (indexedQuotes.isEmpty || indexedQuotes.joined(separator: "\n") == result.evidence?.text)
         }
-        results.sort { $0.score > $1.score }
+        results.sort { $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score }
         var unique: [Suggestion] = []
         for result in results {
             let duplicate = unique.contains { previous in

@@ -149,6 +149,8 @@ struct Related: AsyncParsableCommand {
         if diagnostics, let retrieval = response.retrieval {
             print("Candidates: \(retrieval.candidateItemIDs)")
             print("Shortlist: \(retrieval.shortlistedItemIDs)")
+            print("Ranked: \(retrieval.rankedItemIDs ?? [])")
+            print("Refined: \(retrieval.refinedItemIDs ?? [])")
         }
         print("Query: \(response.query.denseCharacters) chars; entities \(response.query.entities); rare \(response.query.rareTerms); \(Int(response.milliseconds)) ms")
         for (index, suggestion) in response.suggestions.enumerated() {

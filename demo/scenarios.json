@@ -532,6 +532,41 @@
   ],
   "retrieval": [
     {
+      "name": "Specific recommendation outside the open conversation survives topic distractors",
+      "title": "Morgan Hale",
+      "focused": "what winery did the UPS guy recommend?",
+      "visible": "Here is the bed frame. Hello!",
+      "chatIDs": [910],
+      "expect": ["messages:retrieval-courier-winery"],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "Recommendation paraphrase remains global despite an open conversation",
+      "title": "Morgan Hale",
+      "focused": "which winery did the UPS driver suggest?",
+      "visible": "",
+      "chatIDs": [910],
+      "expect": ["messages:retrieval-courier-winery"],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "Specific recommendation survives topic distractors without conversation scope",
+      "title": "",
+      "focused": "what winery did the UPS guy recommend?",
+      "visible": "",
+      "expect": ["messages:retrieval-courier-winery"],
+      "quote": "Silverbrook Cellars in Oak Hollow"
+    },
+    {
+      "name": "A familiar winery topic cannot answer an unrelated question",
+      "title": "Morgan Hale",
+      "focused": "what was the garage door access code from the courier",
+      "visible": "Silverbrook Cellars has tastings on Sunday.",
+      "chatIDs": [910],
+      "expect": [],
+      "silent": true
+    },
+    {
       "name": "Matching photo OCR prefers the resolved conversation",
       "title": "Morgan Hale",
       "focused": "find the kestrel maintenance case screenshot",
