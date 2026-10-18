@@ -413,7 +413,6 @@ public struct Recall: Sendable {
             let score = ranksPassages
                 ? max(0, discoveryCosine) * (1 + discoveryCoverage)
                     * (settings.preferForgottenForActiveText ? forgotten * novelty : 1)
-                    * ((context.messageChatIDs ?? []).contains(item.message?.chatID ?? -1) ? settings.entityBoost : 1)
                 : rankScore * (0.25 + Confidence.estimate(unasked) * recentFactor)
             scored.append((candidate, score, features, matched, confidence))
         }
@@ -466,6 +465,25 @@ public struct Recall: Sendable {
         }
         let chats = Set(context.messageChatIDs ?? [])
         if plan.hasActiveText {
+            // At discovery time, the open conversation gets its own route instead of
+            // multiplying scores. Keep global coverage before the scoped budgets.
+            try admit(distinct, limit: 8)
+            if ranksPassages {
+                // Aggregate topic similarity can bury the only match for a specific
+                // clue. Give each of the rarest query terms bounded representation,
+                // then let the source passages compete on their actual evidence.
+                let tokens = Dictionary(uniqueKeysWithValues: distinct.map {
+                    ($0.id, Set(LexicalTerms.tokens($0.unit.text + " " + $0.item.title)))
+                })
+                let clues = lexical.terms.sorted {
+                    let left = lexical.weights[$0] ?? 0, right = lexical.weights[$1] ?? 0
+                    return left == right ? $0 < $1 : left > right
+                }.prefix(8)
+                for clue in clues {
+                    let represented = shortlist.filter { tokens[$0.id]?.contains(clue) == true }.count
+                    try admit(distinct.filter { tokens[$0.id]?.contains(clue) == true }, limit: max(0, 2 - represented))
+                }
+            }
             let recentIDs = Set(recentHits.compactMap { units[$0.unitID]?.itemID })
             try admit(distinct.filter { recentIDs.contains($0.id) }, limit: 8)
             try admit(distinct.filter { chats.contains($0.item.message?.chatID ?? -1) }, limit: 8)
@@ -504,6 +522,9 @@ public struct Recall: Sendable {
         let pool = Array(refined.prefix(PassageSelector.maximumCandidates))
         let poolVectors = (try? store.vectors(unitIDs: pool.map(\.unit.id))) ?? [:]
         let evidenceVectors = passages.vectors(for: pool)
+        let evidenceClues = pool.map { result in
+            Set(lexical.terms).intersection(LexicalTerms.tokens(result.evidence?.text ?? result.unit.text))
+        }
         let topScore = max(pool.first?.score ?? 1, .leastNormalMagnitude)
         var chosen: [Int] = []
         var usedFolders: Set<String> = []
@@ -522,7 +543,14 @@ public struct Recall: Sendable {
                                              evidenceVectors[previous.id] ?? poolVectors[previous.unit.id])
                     // Different sentence crops must not make repeated source windows
                     // look diverse. Preserve both levels of evidence for redundancy.
-                    return ranksPassages ? max(passage, similarity(poolVectors[entry.unit.id], poolVectors[previous.unit.id])) : passage
+                    guard ranksPassages else { return passage }
+                    let semantic = max(passage, similarity(poolVectors[entry.unit.id], poolVectors[previous.unit.id]))
+                    let clues = evidenceClues[index]
+                    guard !clues.isEmpty else { return semantic }
+                    // Same topic is not necessarily the same evidence. A passage that
+                    // supplies a still-missing query clue should not be penalized as
+                    // a duplicate of a generic topic match. Use only verified evidence.
+                    return !evidenceClues[other].isEmpty && clues.isDisjoint(with: evidenceClues[other]) ? 0 : semantic
                 }
                 let similarity = ranksPassages ? similarities.reduce(0, +) : similarities.max() ?? 0
                 let diversity = settings.diversity
@@ -539,7 +567,8 @@ public struct Recall: Sendable {
         try Task.checkCancellation()
         return RecallResponse(
             suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000,
-            retrieval: RetrievalDiagnostics(candidateItemIDs: candidates.keys.sorted(), shortlistedItemIDs: shortlist.map(\.id))
+            retrieval: RetrievalDiagnostics(candidateItemIDs: candidates.keys.sorted(), shortlistedItemIDs: shortlist.map(\.id),
+                                            rankedItemIDs: distinct.map(\.id), refinedItemIDs: refined.map(\.id))
         )
     }
 

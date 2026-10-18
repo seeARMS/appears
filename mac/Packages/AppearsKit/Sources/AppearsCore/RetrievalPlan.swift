@@ -81,4 +81,6 @@ struct LexicalTerms {
 public struct RetrievalDiagnostics: Sendable, Codable {
     public var candidateItemIDs: [Int64]
     public var shortlistedItemIDs: [Int64]
+    public var rankedItemIDs: [Int64]? = nil
+    public var refinedItemIDs: [Int64]? = nil
 }

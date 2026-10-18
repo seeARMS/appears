@@ -23,4 +23,17 @@ for i in range(100):
 for suffix, chat in [("other", 912), ("scoped", 910)]:
     messages.append(dict(path=f"messages:retrieval-photo-{suffix}", title="Photo · Maintenance", chatID=chat,
                          imageOCR=True, text="Kestrel maintenance case K-417. Replacement hinge approved.", age=20))
+# The active one-to-one chat is only context. The specific recommendation lives in
+# a different group, while the open chat has more topic matches than the shortlist.
+messages.append(dict(path="messages:retrieval-courier-winery", title="Family outings", chatID=930,
+                     text="The UPS driver said his cousins run Silverbrook Cellars in Oak Hollow. They host tastings on the first Sunday each month. We should visit.", age=5))
+for i in range(80):
+    topics = [
+        "I think you mentioned this is a good winery?",
+        "The guy at the wine shop recommended the winery's red wines.",
+        "Do you remember which winery we should visit next?",
+        "The winery tour includes the cellar and a tasting.",
+    ]
+    messages.append(dict(path=f"messages:retrieval-winery-topic-{i}", title="Morgan Hale", chatID=910,
+                         text=topics[i % len(topics)] + f" We can go on outing number {i+1}.", age=30+i))
 Path(__file__).with_name("retrieval-messages.json").write_text(json.dumps(messages, indent=2)+"\n")

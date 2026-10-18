@@ -13,6 +13,7 @@ struct PassageTestEmbedder: Embedder {
     let supportsImages = false
     var minimumPassageSimilarity: Double? { 0.70 }
     var preferred = PassageEvidenceTests.answer
+    var otherVector: [Float] = [0, 1, 0]
     var onEmbed: (@Sendable () throws -> Void)?
     func embed(queries: [String]) async throws -> [[Float]] {
         queries.map { $0.contains("amplifier") ? [0, 0, 1] : [1, 0, 0] }
@@ -21,7 +22,7 @@ struct PassageTestEmbedder: Embedder {
         try onEmbed?()
         return documents.map { document in
             if document.text == preferred { return [1, 0, 0] }
-            return document.text.contains(preferred) ? [0.95, 0.31225, 0] : [0, 1, 0]
+            return document.text.contains(preferred) ? [0.95, 0.31225, 0] : otherVector
         }
     }
     func embed(images: [CGImage]) async throws -> [[Float]] { [] }
