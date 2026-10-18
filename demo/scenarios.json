@@ -593,6 +593,16 @@
       ]
     },
     {
+      "name": "Value question over a large receipt history without surrounding text",
+      "title": "Morgan Hale",
+      "focused": "how much was the final cedar point bill",
+      "visible": "",
+      "chatIDs": [910],
+      "expect": ["messages:retrieval-bill-confirmed"],
+      "quote": "We only owe $845.",
+      "rejectQuotes": ["$920"]
+    },
+    {
       "name": "Final bill paraphrase without conversation scope",
       "title": "",
       "focused": "what did we end up owing cedar point after moving out",

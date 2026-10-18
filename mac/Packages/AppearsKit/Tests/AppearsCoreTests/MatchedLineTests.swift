@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -81,6 +82,18 @@ private func emphasized(_ line: MatchedLine?) -> [String] {
 }
 
 @Suite struct MatchedLineTests {
+    @Test func unicodeLabelsKeepExactValues() throws {
+        let text = "Réservation: été-2041\nDépôt: €240.50\nContact: robin@pinehollow.example"
+        let amount = MatchedLine.find(in: text, for: Question(kinds: [.money], words: ["dépôt"]))
+        #expect(amount?.text == "Dépôt: €240.50")
+        #expect(emphasized(amount) == ["€240.50"])
+        let reference = MatchedLine.find(in: text, for: Question(kinds: [.number], words: ["réservation"]))
+        #expect(reference?.text == "Réservation: été-2041")
+        #expect(emphasized(reference) == ["été-2041"])
+        let email = MatchedLine.find(in: text, for: Question(kinds: [.email], words: ["contact"]))
+        #expect(emphasized(email) == ["robin@pinehollow.example"])
+    }
+
     @Test func wifiPasswordKeepsItsNetwork() throws {
         let line = try #require(MatchedLine.find(in: cabinCard, for: try asking("What was the wifi password again?")))
         #expect(line.text == "WiFi: PineHollow-Guest\nPassword: trout-meadow-88")
@@ -148,7 +161,44 @@ private func emphasized(_ line: MatchedLine?) -> [String] {
     }
 }
 
+private struct LineTestEmbedder: Embedder {
+    let supportsPassageRefinement: Bool
+    let modelID = "line-test"
+    let dimension = 3
+    let supportsImages = false
+    func embed(queries: [String]) async throws -> [[Float]] { queries.map { _ in [1, 0, 0] } }
+    func embed(documents: [EmbeddingDocument]) async throws -> [[Float]] { documents.map { _ in [1, 0, 0] } }
+    func embed(images: [CGImage]) async throws -> [[Float]] { [] }
+}
+
 @Suite struct RecallLineTests {
+    @Test(arguments: [true, false])
+    func selectedTextAndImageOCRKeepAnswerLines(refinesPassages: Bool) async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "appears-lines-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let embedder = LineTestEmbedder(supportsPassageRefinement: refinesPassages)
+        let date = Date().addingTimeInterval(-400 * 86_400)
+        let text = "Pine Hollow cabin booking.\nDeposit: $240."
+        for kind in [ItemKind.document, .image] {
+            let store = try IndexStore(url: folder.appending(path: "\(kind.rawValue)/index.sqlite"))
+            let vectors = VectorIndex(dimension: embedder.dimension)
+            let item = Item(source: .file, path: folder.appending(path: "\(kind.rawValue).txt").path, kind: kind,
+                            title: "Pine Hollow cabin", size: Int64(text.utf8.count), created: date, modified: date, lastUsed: nil)
+            let (id, _) = try store.record(item, signature: "fixture")
+            let update = try store.replaceUnits(itemID: id, title: item.title, units: [
+                (AppearsCore.Unit(kind: .text, locator: .whole, text: text), [1, 0, 0]),
+            ])
+            for unit in update.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: [1, 0, 0]) }
+            let recall = Recall(store: store, vectors: vectors, embedder: embedder)
+            let response = try await recall.run(RecallRequest(context: .text("How much was the Pine Hollow cabin deposit?"), trigger: .pull))
+            let result = try #require(response.suggestions.first)
+            #expect(result.id == id)
+            #expect(result.line?.text == "Deposit: $240.")
+            #expect(emphasized(result.line) == ["$240"])
+            #expect((kind == .image) == (result.evidence == nil))
+        }
+    }
+
     @Test func suggestionCarriesTheLine() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "appears-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
