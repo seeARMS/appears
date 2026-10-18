@@ -37,6 +37,21 @@ The release build signs both the DMG and an appcast containing the GitHub releas
 
 ## Cutting a release
 
+The repo-local agent skill [release-appears](../.agents/skills/release-appears/SKILL.md)
+handles commit review, friendly release notes, the release commit and version-bump
+PR, checked merge, publication, and verification. Invoke it from this repository:
+
+```text
+Use $release-appears to cut the next release.
+```
+
+You can specify a version, or ask it to choose one from the changes. For notes and
+a proposed commit message without committing or publishing:
+
+```text
+Use $release-appears to prepare a release draft only.
+```
+
 Update `VERSION`, merge the intended release to `main`, push its `vX.Y.Z` tag, and publish a stable GitHub release with its changelog. Pushing a tag alone doesn't publish a download. Signing credentials live only in a temporary runner keychain or private runner files and are removed when the job ends.
 
 Release tags must point to a commit reachable from `main`. For a manual rerun, select the version tag as the workflow ref and supply the same tag input; dispatching from `main` can't enter the tag-only release environment. Validation runs before the job that can access the release environment.
