@@ -1,7 +1,7 @@
 import type { APIRoute, GetStaticPaths } from "astro";
 import { plainKeys } from "../../lib/inline";
 import { frontMatter } from "../../lib/markdown";
-import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDE_TEXT, REQUIREMENTS, SITE, guidePath, type SearchGuide } from "../../site";
+import { AUTHOR, DOWNLOAD_LABEL, DOWNLOAD_URL, GUIDES, GUIDES_INDEX, GUIDE_TEXT, REQUIREMENTS, SITE, guidePath, type SearchGuide } from "../../site";
 
 export const prerender = true;
 export const getStaticPaths = (() => GUIDES.map((guide) => ({ params: { slug: guide.slug }, props: { guide } }))) satisfies GetStaticPaths;
@@ -11,6 +11,7 @@ export const GET: APIRoute = ({ props }) => {
   const markdown = [
     frontMatter({ title: guide.title, description: guide.description, url: new URL(guidePath(guide.slug), SITE).href }),
     `# ${guide.heading}`,
+    `[${GUIDE_TEXT.label}](${new URL(GUIDES_INDEX.path, SITE).href})`,
     ...guide.intro,
     `## ${GUIDE_TEXT.example}`,
     `Query: ${guide.example.query}`,

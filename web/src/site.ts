@@ -306,6 +306,19 @@ export const GET_TEXT = "Download Appears and pick the apps and folders it can l
 // These pages describe capabilities in the public v0.1.0 release as well as
 // current builds. Avoid promises about result counts or newer preview controls.
 
+export const GUIDES_INDEX = {
+  path: "/guides/",
+  markdown: "/guides/index.md",
+  title: "Mac search guides: iMessage, Notes, photos and files | Appears",
+  description: "Learn how to search iMessage, Apple Notes, documents, photos and screenshots on your Mac with Appears. Source setup, example searches and help with missing results.",
+  eyebrow: "Search guides for Mac",
+  heading: "Find what you remember.",
+  intro: "A conversation, a note, a picture. Start with the detail you still have. These guides show you how to search across your Mac, choose your sources and find out why a result might be missing.",
+  read: "Read the guide",
+  example: "Example search",
+  exampleNote: "Examples use a made-up library. Your results depend on the sources you've enabled and indexed.",
+};
+
 export const GUIDE_TEXT = {
   label: "Search guides",
   nav: "Guides",
@@ -319,6 +332,8 @@ export const GUIDE_TEXT = {
 
 export interface SearchGuide {
   slug: string;
+  category: string;
+  icon: "message" | "notebook" | "image";
   title: string;
   heading: string;
   description: string;
@@ -335,6 +350,8 @@ export const guideMarkdownPath = (slug: string) => `/guides/${slug}.md`;
 export const GUIDES: SearchGuide[] = [
   {
     slug: "search-imessage-on-mac",
+    category: "Messages",
+    icon: "message",
     title: "Search iMessage on Mac by meaning | Appears",
     heading: "Search iMessage by what you remember.",
     description: "Search iMessage on your Mac by describing what you remember. Set up Appears for local Messages search, check the source, and troubleshoot missing results.",
@@ -363,6 +380,8 @@ export const GUIDES: SearchGuide[] = [
   },
   {
     slug: "search-apple-notes-and-documents",
+    category: "Notes & documents",
+    icon: "notebook",
     title: "Search Apple Notes and documents together on Mac | Appears",
     heading: "Search Apple Notes and documents together.",
     description: "Search Apple Notes, PDFs and documents together on your Mac with Appears. Learn how to enable sources, search by meaning, and check missing local content.",
@@ -391,6 +410,8 @@ export const GUIDES: SearchGuide[] = [
   },
   {
     slug: "find-photos-and-screenshots-on-mac",
+    category: "Photos & screenshots",
+    icon: "image",
     title: "Find photos and screenshots on Mac by description | Appears",
     heading: "Find photos and screenshots by description.",
     description: "Find photos and screenshots on your Mac by describing them. Learn how Appears uses image matching and text recognition, and which local images it can search.",

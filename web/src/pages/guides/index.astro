@@ -1,0 +1,75 @@
+---
+import Base from "../../layouts/Base.astro";
+import SiteHeader from "../../components/SiteHeader.astro";
+import SiteFooter from "../../components/SiteFooter.astro";
+import Icon from "../../components/Icon.astro";
+import { GUIDES, GUIDES_INDEX, GUIDE_TEXT, NAME, SITE, guidePath } from "../../site";
+
+const url = new URL(GUIDES_INDEX.path, SITE).href;
+const schema = [
+  {
+    "@type": "CollectionPage",
+    "@id": `${url}#page`,
+    url,
+    name: GUIDES_INDEX.title,
+    description: GUIDES_INDEX.description,
+    inLanguage: "en",
+    isPartOf: { "@id": `${SITE}/#website` },
+    about: { "@id": `${SITE}/#app` },
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: GUIDES.map((guide, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: guide.title.split(" | ")[0],
+        url: new URL(guidePath(guide.slug), SITE).href,
+      })),
+    },
+  },
+  {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: NAME, item: `${SITE}/` },
+      { "@type": "ListItem", position: 2, name: GUIDE_TEXT.nav, item: url },
+    ],
+  },
+];
+---
+
+<Base title={GUIDES_INDEX.title} description={GUIDES_INDEX.description} path={GUIDES_INDEX.path} markdown={GUIDES_INDEX.markdown} schema={schema}>
+  <SiteHeader />
+  <main class="guides-index wrap">
+    <header class="guides-index-head">
+      <div>
+        <p class="eyebrow">{GUIDES_INDEX.eyebrow}</p>
+        <h1>{GUIDES_INDEX.heading}</h1>
+      </div>
+      <p class="guides-index-intro">{GUIDES_INDEX.intro}</p>
+    </header>
+
+    <ul class="guides-index-list">
+      {GUIDES.map((guide) => (
+        <li>
+          <a class="guide-card" href={guidePath(guide.slug)} aria-labelledby={`guide-${guide.slug}`}>
+            <div class="guide-card-copy">
+              <span class="guide-category"><Icon name={guide.icon} size={18} />{guide.category}</span>
+              <h2 id={`guide-${guide.slug}`}>{guide.title.split(" | ")[0]}</h2>
+              <p>{guide.summary}</p>
+              <span class="guide-read">{GUIDES_INDEX.read}<Icon name="arrow-down" size={16} /></span>
+            </div>
+            <div class="guide-card-example">
+              <p class="eyebrow">{GUIDES_INDEX.example}</p>
+              <p class="guide-card-query"><Icon name="search" size={18} /><span>{guide.example.query}</span></p>
+              <div class="guide-card-result">
+                <p class="example-source">{guide.example.source}</p>
+                <p>“{guide.example.excerpt}”</p>
+              </div>
+            </div>
+          </a>
+        </li>
+      ))}
+    </ul>
+    <p class="guides-index-note">{GUIDES_INDEX.exampleNote}</p>
+  </main>
+  <SiteFooter />
+</Base>
