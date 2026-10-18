@@ -97,6 +97,21 @@ func verifyMatchAlerts(suggestions: [Suggestion], status: EngineStatus) async {
     precondition(toast.isVisible)
     try? await Task.sleep(for: .milliseconds(250))
     precondition(!toast.isVisible, "Toasts must expire automatically")
+
+    let hoveredToast = MatchToastController(duration: .seconds(1))
+    hoveredToast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
+    try? await Task.sleep(for: .milliseconds(650))
+    hoveredToast.setHovering(true)
+    try? await Task.sleep(for: .milliseconds(1100))
+    precondition(hoveredToast.isVisible, "Hovering must pause expiry")
+    hoveredToast.setHovering(false)
+    try? await Task.sleep(for: .milliseconds(550))
+    precondition(!hoveredToast.isVisible, "Leaving hover must resume the remaining time, not a full duration")
+    hoveredToast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
+    try? await Task.sleep(for: .milliseconds(550))
+    precondition(hoveredToast.isVisible, "A new toast must receive its full duration")
+    hoveredToast.dismiss()
+
     toast.show(discovery, contacts: model.contacts, screen: NSScreen.main, open: {})
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
     precondition(!toast.isVisible, "Display sleep must clear the toast")
@@ -108,5 +123,5 @@ func verifyMatchAlerts(suggestions: [Suggestion], status: EngineStatus) async {
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
     precondition(!toast.isVisible, "Leaving the user session must clear the toast")
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
-    print("Verified alert persistence, motion/dot/toast routing, focus, opening, stale alerts, pause, off/log-only, expiry and sleep")
+    print("Verified alert persistence, motion/dot/toast routing, focus, opening, stale alerts, pause, off/log-only, expiry, hover and sleep")
 }

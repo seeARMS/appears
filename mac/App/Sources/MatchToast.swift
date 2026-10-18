@@ -8,6 +8,9 @@ final class MatchToastController: NSObject {
     private let panel = MatchToastPanel()
     private var expiry: Task<Void, Never>?
     private let duration: Duration
+    private var remainingDuration: Duration = .zero
+    private var expiryDeadline: ContinuousClock.Instant?
+    private var isHovering = false
     private var displayAsleep = false
     private var sessionActive = true
     var isVisible: Bool { panel.isVisible }
@@ -30,11 +33,10 @@ final class MatchToastController: NSObject {
     func show(_ entry: AppModel.Shown, contacts: ContactDirectory, screen: NSScreen?, open: @escaping () -> Void) {
         dismiss()
         guard !displayAsleep, sessionActive, let suggestion = entry.suggestions.first else { return }
+        remainingDuration = duration
         let view = MatchToastView(suggestion: suggestion, terms: entry.evidenceTerms, contacts: contacts,
                                  meeting: entry.meeting, open: open, dismiss: { [weak self] in self?.dismiss() })
-            .onHover { [weak self] hovering in
-                if hovering { self?.expiry?.cancel() } else { self?.scheduleExpiry() }
-            }
+            .onHover { [weak self] hovering in self?.setHovering(hovering) }
         let host = NSHostingView(rootView: view)
         panel.contentView = host
         panel.setContentSize(host.fittingSize)
@@ -47,8 +49,26 @@ final class MatchToastController: NSObject {
     @objc func dismiss() {
         expiry?.cancel()
         expiry = nil
+        expiryDeadline = nil
+        remainingDuration = .zero
+        isHovering = false
         panel.orderOut(nil)
         panel.contentView = nil
+    }
+
+    func setHovering(_ hovering: Bool) {
+        guard isHovering != hovering else { return }
+        isHovering = hovering
+        if hovering {
+            if let expiryDeadline {
+                remainingDuration = max(.zero, ContinuousClock.now.duration(to: expiryDeadline))
+            }
+            expiry?.cancel()
+            expiry = nil
+            expiryDeadline = nil
+        } else {
+            scheduleExpiry()
+        }
     }
 
     @objc private func displaySlept() { displayAsleep = true; dismiss() }
@@ -58,8 +78,9 @@ final class MatchToastController: NSObject {
 
     private func scheduleExpiry() {
         expiry?.cancel()
-        guard panel.isVisible else { return }
-        let duration = duration
+        guard panel.isVisible, !isHovering else { return }
+        let duration = remainingDuration
+        expiryDeadline = .now.advanced(by: duration)
         expiry = Task { [weak self] in
             do { try await Task.sleep(for: duration) } catch { return }
             self?.dismiss()
