@@ -1,10 +1,18 @@
 ---
 import Mark from "./Mark.astro";
-import { AUTHOR, LICENSE, LICENSE_URL, NAME, SOURCE_LABEL, SOURCE_URL } from "../site";
+import { AUTHOR, GUIDES, GUIDE_TEXT, guidePath, LICENSE, LICENSE_URL, NAME, SOURCE_LABEL, SOURCE_URL } from "../site";
 ---
 
 <footer class="foot">
   <div class="wrap foot-inner">
+    <nav class="foot-guides" aria-labelledby="footer-guides">
+      <h2 id="footer-guides">{GUIDE_TEXT.nav}</h2>
+      <ul>
+        {GUIDES.map((guide) => (
+          <li><a href={guidePath(guide.slug)}>{guide.title.split(" | ")[0]}</a></li>
+        ))}
+      </ul>
+    </nav>
     <a class="brand" href="/" aria-label="Appears, home">
       <Mark size={20} />
       <span class="wordmark">appears</span>

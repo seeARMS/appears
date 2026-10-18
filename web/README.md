@@ -13,9 +13,9 @@ Follows the site conventions in the repo's [AGENTS.md](../AGENTS.md#site-convent
 | All the copy: headline, sections, privacy rows, the mock's results, the share card's text | `src/site.ts` (the page, its Markdown, `llms.txt` and the share card all read it) |
 | The page and its JSON-LD | `src/pages/index.astro`, `src/layouts/Base.astro` |
 | Source setup and search guides | `src/pages/guides/[slug].astro`, with copy and route names in `src/site.ts`; `[slug].md.ts` builds matching Markdown |
-| The actual app's light/dark demo screenshot | `src/components/AppScreenshot.astro`; Astro generates responsive WebP images from `../docs/screenshots/` |
+| The search window illustration, in HTML and CSS | `src/components/SearchWindow.astro`; shared by the search section and the hero's search tab, with fictional excerpts from `../demo/landing.json` |
 | Palette, type and layout | `src/styles/global.css` (shadcn zinc tokens from `../brand/README.md`); fonts are set in `astro.config.mjs` |
-| The hero mock (Mail reply + Appears panel), in HTML and CSS | `src/components/Mock.astro`. Everything in it is made up. |
+| The hero mock (email, photo, meeting and search examples), in HTML and CSS | `src/components/Mock.astro`. Everything in it is made up. |
 | Orbit mark and five menu bar states | `src/lib/orbit.ts`, `src/components/Mark.astro`, `src/components/Glyph.astro`; `scripts/brand.ts` generates the SVGs, favicon and Mac icon sizes |
 | Markdown for agents | `src/pages/index.md.ts` → `/index.md`; `src/worker.ts` also serves it at `/` when the Accept header prefers `text/markdown` (`src/lib/negotiate.ts`) |
 | `llms.txt` | `src/pages/llms.txt.ts` |
