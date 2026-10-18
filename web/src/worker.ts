@@ -8,7 +8,7 @@
 // they always get the HTML.
 
 import { prefersMarkdown } from "./lib/negotiate";
-import { GUIDES, SITE, guideMarkdownPath, guidePath } from "./site";
+import { GUIDES, GUIDES_INDEX, SITE, guideMarkdownPath, guidePath } from "./site";
 import { download } from "./lib/download";
 import type { R2Bucket } from "@cloudflare/workers-types";
 
@@ -24,6 +24,7 @@ declare const caches: { default: WorkerCache };
 
 const pages = [
   { path: "/", markdown: "/index.md" },
+  { path: GUIDES_INDEX.path, markdown: GUIDES_INDEX.markdown },
   ...GUIDES.map((guide) => ({ path: guidePath(guide.slug), markdown: guideMarkdownPath(guide.slug) })),
 ];
 

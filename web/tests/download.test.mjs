@@ -12,10 +12,12 @@ const mf = new Miniflare(convertV4MiniflareOptions({
 after(() => mf.dispose());
 const fetch = (path, init) => mf.dispatchFetch(`https://appea.rs${path}`, init);
 
-test("guide pages negotiate their own Markdown without losing HTTP semantics", async (t) => {
-  const path = "/guides/search-imessage-on-mac/";
-  const markdownPath = "/guides/search-imessage-on-mac.md";
-  const assets = new Map([[path, "<h1>Messages guide</h1>"], [markdownPath, "# Messages guide\n"]]);
+for (const [path, markdownPath, title] of [
+  ["/guides/", "/guides/index.md", "Search guides"],
+  ["/guides/search-imessage-on-mac/", "/guides/search-imessage-on-mac.md", "Messages guide"],
+]) {
+test(`${path} negotiates its own Markdown without losing HTTP semantics`, async (t) => {
+  const assets = new Map([[path, `<h1>${title}</h1>`], [markdownPath, `# ${title}\n`]]);
   const guideWorker = new Miniflare(convertV4MiniflareOptions({
     modules: true,
     scriptPath: ".data/worker-test.mjs",
@@ -59,7 +61,7 @@ test("guide pages negotiate their own Markdown without losing HTTP semantics", a
       const response = await get(markdownPath, { headers: { Range: "bytes=0-3" } });
       assert.equal(response.status, 206);
       assert.equal(response.headers.get("content-range"), `bytes 0-3/${assets.get(markdownPath).length}`);
-      assert.equal(await response.text(), "# Me");
+      assert.equal(await response.text(), assets.get(markdownPath).slice(0, 4));
     });
     await t.test("unknown guide paths remain 404", async () => {
       for (const url of ["/guides/missing/", "/guides/missing.md"]) {
@@ -70,6 +72,7 @@ test("guide pages negotiate their own Markdown without losing HTTP semantics", a
     await guideWorker.dispose();
   }
 });
+}
 
 test("R2 downloads, redirects and resumable transfers", async (t) => {
   const bucket = await mf.getR2Bucket("DOWNLOADS");

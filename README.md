@@ -36,7 +36,7 @@
 
 You're replying to an email about the kitchen remodel. Somewhere on your Mac is a photo of the contractor's quote, a note from the walkthrough, and a text from Dana about the outlet. You'd find them if you went looking, but you won't, because you've forgotten they exist.
 
-Appears reads the window in front of you, works out what it's about, and finds what you already have on the subject. When it's confident, a small dot appears on its menu bar ring. Click it, or press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Space</kbd>, and they're there. No query, no notifications, no cloud.
+Appears reads the window in front of you, works out what it's about, and finds what you already have on the subject. When it's confident, a small dot appears on its menu bar ring and the whole mark slowly rotates. Click it, or press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Space</kbd>, and they're there. No query, no notifications, no cloud.
 
 ## Features
 
@@ -88,7 +88,7 @@ Appears reads your screen, so "trust us" isn't good enough. Each promise below i
 
 - **Nothing about your screen is stored.** What's on screen, and your calendar events, are read in memory and dropped. The journal of what you opened or dismissed keeps item ids, scores and a salted fingerprint, never text.
 - **Sensitive windows are never read:** password managers, Keychain Access, System Settings, secure text fields, and private browser windows. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on.
-- **Silence is the default.** No notifications, no sounds, no pop-ups. A dot on the menu bar ring is the loudest it gets.
+- **Silence is the default.** No notifications, no sounds, no pop-ups. The menu bar ring and dot rotate continuously while a result waits, taking four seconds per full turn with no pause between turns. Opening or clearing it stops the motion; macOS Reduce Motion keeps the mark still.
 - **No analytics, telemetry or crash reporting**, in the app or on the site.
 
 Check the engine's entitlements and the app's imports on any build:

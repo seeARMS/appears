@@ -1,9 +1,7 @@
 ---
 import Mark from "./Mark.astro";
-import { DOWNLOAD_URL, GUIDE_TEXT } from "../site";
-
-const { home = false } = Astro.props;
-const anchor = (id: string) => `${home ? "" : "/"}#${id}`;
+import Icon from "./Icon.astro";
+import { DOWNLOAD_URL } from "../site";
 ---
 
 <header class="top">
@@ -13,10 +11,7 @@ const anchor = (id: string) => `${home ? "" : "/"}#${id}`;
       <span class="wordmark">appears</span>
     </a>
     <nav class="top-nav" aria-label="Main navigation">
-      <a class="nav-how" href={anchor("how")}>How it works</a>
-      <a href={anchor("guides")}>{GUIDE_TEXT.nav}</a>
-      <a href={anchor("privacy")}>Privacy</a>
-      <a class="top-get" href={DOWNLOAD_URL}>Download</a>
+      <a class="button button-primary" href={DOWNLOAD_URL}><Icon name="download" size={15} />Download</a>
     </nav>
   </div>
 </header>

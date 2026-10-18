@@ -1,11 +1,12 @@
 ---
 // The hero's mock, in HTML and CSS rather than an image: a Mac desktop with
-// Appears' panel hanging from its menu bar glyph, in three scenarios picked by
+// Appears' panel hanging from its menu bar glyph, in four scenarios picked by
 // the tabs above it (MOCK_SCENARIOS in src/site.ts):
 //
 // - email: a planning email being typed in Mail;
 // - photo: a photo of a houseplant opened from the desktop in Preview;
 // - meeting: nothing open at all, ten minutes before a meeting.
+// - search: describing a remembered decision in Appears' search window.
 //
 // Every name, file and number here is made up; the fictional content comes
 // from demo/landing.json.
@@ -18,12 +19,13 @@
 import Glyph from "./Glyph.astro";
 import Icon from "./Icon.astro";
 import PlantPhoto from "./PlantPhoto.astro";
+import SearchWindow from "./SearchWindow.astro";
 import { MOCK_EMAIL, MOCK_MEETING, MOCK_NOTE, MOCK_SCENARIOS } from "../site";
 
 const SUBJECT = MOCK_EMAIL.subject;
 const PHOTO = MOCK_SCENARIOS[1].context.split(" · ")[0];
 const first = MOCK_SCENARIOS[0];
-const panels = MOCK_SCENARIOS.map((s) => {
+const panels = MOCK_SCENARIOS.filter((s) => s.id !== "search").map((s) => {
   const results = s.results.map((r, i) => ({ ...r, i, first: i === 0 }) as { kind: string; group: string; title: string; reason: string; i: number; first: boolean });
   return {
     ...s,
@@ -40,7 +42,10 @@ const panels = MOCK_SCENARIOS.map((s) => {
           class="mock-tab"
           type="button"
           role="tab"
+          id={`example-${s.id}`}
+          aria-controls="example-display"
           aria-selected={i === 0 ? "true" : "false"}
+          tabindex={i === 0 ? 0 : -1}
           data-scene={s.id}
           data-app={s.app}
           data-clock={s.clock}
@@ -50,6 +55,7 @@ const panels = MOCK_SCENARIOS.map((s) => {
       ))
     }
   </div>
+  <div id="example-display" role="tabpanel" aria-labelledby={`example-${first.id}`} aria-describedby={`caption-${first.id}`}>
   <div class="desk" aria-hidden="true">
     <div class="menubar">
       <span class="mb-apple"><Icon name="apple" size={13} /></span>
@@ -114,6 +120,10 @@ const panels = MOCK_SCENARIOS.map((s) => {
           <PlantPhoto />
           <span class="v-scan"></span>
         </div>
+      </div>
+
+      <div class="search-win win is-closed">
+        <SearchWindow />
       </div>
 
       {
@@ -191,13 +201,14 @@ const panels = MOCK_SCENARIOS.map((s) => {
       </div>
     </div>
   </div>
+  </div>
   <button class="replay" type="button" hidden aria-label="Replay the animation" title="Replay">
     <Icon name="replay" size={15} />
   </button>
   <figcaption>
     {
       MOCK_SCENARIOS.map((s, i) => (
-        <span class="mock-caption" data-scene={s.id} hidden={i > 0}>
+        <span class="mock-caption" id={`caption-${s.id}`} data-scene={s.id} hidden={i > 0}>
           {s.caption}{" "}
         </span>
       ))
@@ -207,7 +218,7 @@ const panels = MOCK_SCENARIOS.map((s) => {
 </figure>
 
 <script>
-  type Scene = "email" | "photo" | "meeting";
+  type Scene = "email" | "photo" | "meeting" | "search";
 
   const mock = document.querySelector<HTMLElement>(".mock");
   if (mock) setup(mock);
@@ -223,6 +234,9 @@ const panels = MOCK_SCENARIOS.map((s) => {
     const clock = $(".mb-clock");
     const compose = $(".compose");
     const viewer = $(".viewer");
+    const searchWindow = $(".search-win");
+    const searchQuery = $(".search-win [data-search-query]");
+    const queryText = searchQuery.textContent!;
     const file = $(".desk-file");
     const mailIcon = $(".app-mail");
     const previewIcon = $(".app-preview");
@@ -285,7 +299,12 @@ const panels = MOCK_SCENARIOS.map((s) => {
     function select(s: Scene) {
       scene = s;
       mock.dataset.scene = s;
-      for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.scene === s));
+      for (const t of tabs) {
+        t.setAttribute("aria-selected", String(t.dataset.scene === s));
+        t.tabIndex = t.dataset.scene === s ? 0 : -1;
+      }
+      $("#example-display").setAttribute("aria-labelledby", `example-${s}`);
+      $("#example-display").setAttribute("aria-describedby", `caption-${s}`);
       for (const c of mock.querySelectorAll<HTMLElement>(".mock-caption")) c.hidden = c.dataset.scene !== s;
     }
     function showPanel(s: Scene) {
@@ -297,11 +316,13 @@ const panels = MOCK_SCENARIOS.map((s) => {
 
     // A scenario's first frame, set at once: its window open, nothing found yet.
     function prepare(s: Scene) {
-      mock.classList.remove("is-found", "is-open", "is-pressed", "is-clicking", "is-typing", "is-soon", "is-done");
+      mock.classList.remove("is-found", "is-open", "is-pressed", "is-clicking", "is-typing", "is-soon", "is-done", "is-search-ready");
       viewer.classList.remove("is-looking");
       file.classList.remove("is-selected");
       compose.classList.toggle("is-closed", s !== "email");
       viewer.classList.toggle("is-closed", s !== "photo");
+      searchWindow.classList.toggle("is-closed", s !== "search");
+      searchQuery.textContent = "";
       clearText();
       showPanel(s);
       setApp(tab(s).dataset.app!);
@@ -313,7 +334,12 @@ const panels = MOCK_SCENARIOS.map((s) => {
       prepare(s);
       fillText();
       clock.textContent = tab(s).dataset.clock!;
-      mock.classList.add("is-found", "is-open");
+      if (s === "search") {
+        searchQuery.textContent = queryText;
+        mock.classList.add("is-search-ready");
+      } else {
+        mock.classList.add("is-found", "is-open");
+      }
       if (s === "meeting") mock.classList.add("is-soon");
     }
 
@@ -346,16 +372,20 @@ const panels = MOCK_SCENARIOS.map((s) => {
     // Close whatever window is open, by its red button.
     async function leave() {
       mock.classList.remove("is-typing");
-      const open = [compose, viewer].find((w) => !w.classList.contains("is-closed"));
+      const open = [compose, viewer, searchWindow].find((w) => !w.classList.contains("is-closed"));
       if (!open) {
         mock.classList.remove("is-open", "is-found", "is-soon");
         return;
       }
-      await appear(open, 0.6, 0.55);
-      await move(open.querySelector(".l-close")!);
-      await click();
+      if (open === searchWindow) {
+        pointer.classList.remove("is-shown");
+      } else {
+        await appear(open, 0.6, 0.55);
+        await move(open.querySelector(".l-close")!);
+        await click();
+      }
       open.classList.add("is-closed");
-      mock.classList.remove("is-found", "is-soon");
+      mock.classList.remove("is-found", "is-soon", "is-search-ready");
       viewer.classList.remove("is-looking");
       setApp("Finder");
       await wait(500);
@@ -387,6 +417,13 @@ const panels = MOCK_SCENARIOS.map((s) => {
         file.classList.remove("is-selected");
         setApp("Preview");
         await wait(500);
+      } else if (s === "search") {
+        searchQuery.textContent = "";
+        mock.classList.remove("is-search-ready");
+        pointer.classList.remove("is-shown");
+        searchWindow.classList.remove("is-closed");
+        setApp("Appears");
+        await wait(400);
       } else {
         setApp("Finder");
         // Nothing to open: the pointer drifts off to the side and waits.
@@ -444,6 +481,14 @@ const panels = MOCK_SCENARIOS.map((s) => {
         mock.classList.add("is-found");
         await wait(1100);
         await appear(viewer, 0.7, 0.6);
+      } else if (s === "search") {
+        await wait(350);
+        for (const character of queryText) {
+          searchQuery.textContent += character;
+          await wait(jitter(35, 65));
+        }
+        await wait(550);
+        mock.classList.add("is-search-ready");
       } else {
         await wait(1300);
         clock.textContent = tab(s).dataset.clock!;
@@ -473,12 +518,14 @@ const panels = MOCK_SCENARIOS.map((s) => {
           await enter(s);
         }
         await act(s);
-        // The pointer clicks the glyph and the panel drops.
-        await move(glyph, 0.45, 0.6);
-        mock.classList.add("is-pressed", "is-clicking");
-        await wait(140);
-        mock.classList.remove("is-pressed", "is-clicking");
-        mock.classList.add("is-open");
+        if (s !== "search") {
+          // Ambient results open from the glyph; typed search has its own window.
+          await move(glyph, 0.45, 0.6);
+          mock.classList.add("is-pressed", "is-clicking");
+          await wait(140);
+          mock.classList.remove("is-pressed", "is-clicking");
+          mock.classList.add("is-open");
+        }
         await wait(1600);
         mock.classList.remove("is-playing");
         mock.classList.add("is-done");
@@ -504,8 +551,10 @@ const panels = MOCK_SCENARIOS.map((s) => {
       // Arrow keys move between tabs, as in any tab list.
       t.addEventListener("keydown", (e) => {
         const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-        if (!step) return;
-        const next = tabs[(tabs.indexOf(t) + step + tabs.length) % tabs.length];
+        if (!step && e.key !== "Home" && e.key !== "End") return;
+        e.preventDefault();
+        const index = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (tabs.indexOf(t) + step + tabs.length) % tabs.length;
+        const next = tabs[index];
         next.focus();
         next.click();
       });
@@ -514,7 +563,10 @@ const panels = MOCK_SCENARIOS.map((s) => {
 
     const animated = !reduced && "IntersectionObserver" in window;
     let seen: IntersectionObserver | undefined;
-    if (!animated) return;
+    if (!animated) {
+      finish("email");
+      return;
+    }
     mock.classList.add("is-animated");
     prepare("email");
     seen = new IntersectionObserver(

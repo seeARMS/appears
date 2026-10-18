@@ -1,0 +1,41 @@
+---
+// A shared HTML illustration for the search section and the desktop's search tab.
+// Excerpts come from the generated, fictional demo library, never personal data.
+import Glyph from "./Glyph.astro";
+import Icon from "./Icon.astro";
+import { SEARCH, SEARCH_RESULTS } from "../site";
+---
+
+<div class="search-demo">
+  <div class="search-demo-bar">
+    <span><Glyph state="idle" size={16} />{SEARCH.windowTitle}</span>
+    <span class="search-shortcut" aria-label={SEARCH.shortcut}><kbd>⌃</kbd><kbd>⇧</kbd><kbd>Space</kbd></span>
+  </div>
+  <div class="search-demo-query">
+    <Icon name="search" size={20} />
+    <span data-search-query>{SEARCH.query}</span>
+  </div>
+  <ul class="search-demo-results" aria-label={SEARCH.resultsLabel}>
+    {SEARCH_RESULTS.map((result, i) => {
+      const start = result.text.indexOf(result.match);
+      return (
+        <li class:list={["search-demo-result", { "is-selected": i === 0 }]}>
+          <span class:list={["search-source-icon", `search-source-${result.kind}`]} aria-hidden="true">
+            {result.kind === "message" && <Icon name="message" size={20} />}
+            {result.kind === "pdf" && <span class="search-file-icon">PDF</span>}
+            {result.kind === "note" && <span class="search-note-icon"><i /><i /><i /></span>}
+          </span>
+          <div class="search-result-copy">
+            <p class="search-result-title">{result.title}</p>
+            <p class="search-result-excerpt">{result.text.slice(0, start)}<mark>{result.match}</mark>{result.text.slice(start + result.match.length)}</p>
+            <p class="search-result-source">{result.source}</p>
+          </div>
+        </li>
+      );
+    })}
+  </ul>
+  <div class="search-demo-foot" aria-hidden="true">
+    <span><kbd>↩</kbd> {SEARCH.open}</span>
+    <span><kbd>⌘</kbd><kbd>Y</kbd> {SEARCH.preview}</span>
+  </div>
+</div>

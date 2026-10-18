@@ -2,7 +2,7 @@
 // The home page. Its copy is in src/site.ts, which the Markdown version
 // (index.md.ts) and llms.txt read too.
 import Base from "../layouts/Base.astro";
-import AppScreenshot from "../components/AppScreenshot.astro";
+import SearchWindow from "../components/SearchWindow.astro";
 import Found from "../components/Found.astro";
 import Glyph from "../components/Glyph.astro";
 import Icon from "../components/Icon.astro";
@@ -22,11 +22,6 @@ import {
   FAQ_HEADING,
   GET_HEADING,
   GET_TEXT,
-  GUIDES,
-  GUIDES_HEADING,
-  GUIDES_INTRO,
-  GUIDE_TEXT,
-  guidePath,
   GLYPHS,
   HEADLINE,
   HOW,
@@ -86,7 +81,7 @@ const schema = [
 ---
 
 <Base title={TITLE} path="/" markdown="/index.md" schema={schema}>
-  <SiteHeader home />
+  <SiteHeader />
 
   <main>
     <section class="hero wrap">
@@ -112,7 +107,10 @@ const schema = [
         <h2 id="search-heading">{SEARCH.heading}</h2>
         <p class="part-text" set:html={inline(SEARCH.text)} />
       </div>
-      <AppScreenshot />
+      <figure class="search-illustration reveal">
+        <SearchWindow />
+        <figcaption>{SEARCH.caption}</figcaption>
+      </figure>
     </section>
 
     <section class="part wrap" aria-labelledby="how">
@@ -175,25 +173,6 @@ const schema = [
           ))
         }
       </dl>
-    </section>
-
-    <section class="part wrap" aria-labelledby="guides">
-      <div class="part-head reveal">
-        <p class="eyebrow">{GUIDE_TEXT.label}</p>
-        <h2 id="guides">{GUIDES_HEADING}</h2>
-        <p class="part-text">{GUIDES_INTRO}</p>
-      </div>
-      <div class="guide-links">
-        {GUIDES.map((guide) => (
-          <a class="guide-link" href={guidePath(guide.slug)}>
-            <div>
-              <h3>{guide.title.split(" | ")[0]}</h3>
-              <p>{guide.summary}</p>
-            </div>
-            <Icon name="arrow-down" size={18} />
-          </a>
-        ))}
-      </div>
     </section>
 
     <section class="part wrap" aria-labelledby="questions">
