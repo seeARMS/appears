@@ -11,6 +11,7 @@ struct PassageTestEmbedder: Embedder {
     let modelID = "passage-test"
     let dimension = 3
     let supportsImages = false
+    var minimumPassageSimilarity: Double? { 0.70 }
     var preferred = PassageEvidenceTests.answer
     var onEmbed: (@Sendable () throws -> Void)?
     func embed(queries: [String]) async throws -> [[Float]] {

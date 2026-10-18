@@ -33,6 +33,11 @@ public protocol Embedder: Sendable {
     /// Stored-document-vector lookups keep their already-scored indexed units; they
     /// cannot refine passages as though the vector represented a free-text question.
     var supportsPassageRefinement: Bool { get }
+    /// Model-calibrated floor for primary-query text evidence. Nil for encoders
+    /// without a calibrated semantic scale (including the hashing test stand-in).
+    var minimumPassageSimilarity: Double? { get }
+    /// Hash-based encoders only model literal overlap, not semantic evidence.
+    var supportsSemanticSimilarity: Bool { get }
     /// Names the model and its settings. Changing it makes the index re-embed everything.
     var modelID: String { get }
     var dimension: Int { get }
@@ -49,6 +54,8 @@ public protocol Embedder: Sendable {
 
 extension Embedder {
     public var supportsPassageRefinement: Bool { true }
+    public var minimumPassageSimilarity: Double? { nil }
+    public var supportsSemanticSimilarity: Bool { true }
     public func embed(passages: [EmbeddingDocument]) async throws -> [[Float]] {
         try await embed(documents: passages)
     }

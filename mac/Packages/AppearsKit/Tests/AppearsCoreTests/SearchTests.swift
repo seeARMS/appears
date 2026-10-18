@@ -65,7 +65,7 @@ private struct SearchTestEmbedder: Embedder {
         try engine.store.setNeverShow(itemID: blocked)
         let sources = SourceSettings(excludes: [folder.appending(path: "excluded").path], excludedKinds: [.pdf], notes: false, messages: false)
         let response = try await Search(recall: engine.recall).run(SearchRequest(text: "wifi"), sources: sources)
-        #expect(response.query.denseCharacters >= 12)
+        #expect(response.query.denseCharacters == 4, "Explicit short queries are embedded verbatim")
         #expect(response.suggestions.map(\.id) == [allowed])
     }
 

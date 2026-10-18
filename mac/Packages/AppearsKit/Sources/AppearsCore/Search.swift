@@ -41,9 +41,7 @@ public struct Search: Sendable {
         // Explicit search orders by relevance. Ambient diversity can otherwise promote an
         // unrelated item ahead of a second close match (especially a photo of the same thing).
         recall.settings.diversity = 1
-        // A short selection otherwise doesn't reach the dense query. Keep one-word searches
-        // ("Lisbon", "wifi") useful without changing how screen contexts are interpreted.
-        let context = ContextSnapshot(selection: QueryBuilder.clean(text).count < 12 ? "Anything about \(text)" : text, origin: .text)
+        let context = ContextSnapshot(selection: text, origin: .text)
         return try await recall.run(
             RecallRequest(context: context, trigger: .pull, limit: min(max(request.limit, 1), 20), exclude: excluded),
             now: now

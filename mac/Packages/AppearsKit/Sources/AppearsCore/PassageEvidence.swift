@@ -21,8 +21,10 @@ public struct PassageEvidence: Sendable, Codable, Hashable {
 
     /// Identities, rather than conversation names or similar wording, define duplicates.
     func overlaps(_ other: Self) -> Bool {
-        sources.contains { a in
-            other.sources.contains { b in
+        // Supporting context may be shared by distinct follow-ups. Compare the
+        // destination passage, so a shared earlier question cannot hide a new answer.
+        sources.suffix(1).contains { a in
+            other.sources.suffix(1).contains { b in
                 let same = a.message.map { $0.guid == b.message?.guid && $0.chatID == b.message?.chatID }
                     ?? (b.message == nil && a.unitID == b.unitID)
                 guard same else { return false }
@@ -64,7 +66,10 @@ final class PassageSelector: Sendable {
 
     func select(_ candidates: [Suggestion], query: [Float], embedder: any Embedder,
                 store: IndexStore, messages: MessagesReader?, excluded: Set<Int64>,
-                question: Question?, terms: [String]) async throws -> [Suggestion] {
+                question: Question?, terms: [String], lexical: LexicalTerms? = nil,
+                connections: [Int64: [Int64]] = [:], scopedChats: Set<Int64> = [],
+                ranking: RankingSettings = RankingSettings(), confidenceStats: Stats? = nil,
+                entities: [String] = []) async throws -> [Suggestion] {
         let forbidden = try store.neverShown().union(excluded)
         func usesImageEvidence(_ result: Suggestion) -> Bool {
             // Messages photos have their own OCR at .whole; only .chunk(0) is the
@@ -72,12 +77,15 @@ final class PassageSelector: Sendable {
             result.item.kind == .image && !(result.item.source == .messages
                 && result.unit.kind == .text && result.unit.locator == .chunk(0))
         }
+        let linkedUnits = try store.units(ids: Array(Set(connections.values.flatMap { $0 })))
+        let linkedItems = try store.items(ids: Array(Set(linkedUnits.values.map(\.itemID))))
+        let linkedRows = linkedItems.values.compactMap { $0.message?.rowID }
         let anchors = candidates.filter { $0.item.source == .messages && $0.unit.kind == .text && !usesImageEvidence($0) }
         // A caller must explicitly provide the source reader. Demo/eval/unit tests never
         // fall through to the person's real Messages database.
         let contexts = messages.map { reader in
             (try? reader.database.messagesWithThreads(
-                rowIDs: Array(Set(candidates.filter { $0.item.source == .messages }.compactMap { $0.item.message?.rowID })), before: 5, after: 2
+                rowIDs: Array(Set(candidates.filter { $0.item.source == .messages }.compactMap { $0.item.message?.rowID } + linkedRows)), before: 5, after: 2
             )) ?? [:]
         }
         var live: [Int64: [Passage]] = [:]
@@ -130,7 +138,7 @@ final class PassageSelector: Sendable {
                 possibleChoices.append([])
                 continue
             }
-            let possible: [Passage]
+            var possible: [Passage]
             if contexts != nil, candidate.item.source == .messages {
                 // An inaccessible/deleted/unsent source must never revive an old window.
                 possible = live[candidate.id] ?? []
@@ -138,8 +146,60 @@ final class PassageSelector: Sendable {
                 possible = Self.passages(candidate.unit.text, item: candidate.item, unit: candidate.unit,
                                          message: nil, modified: candidate.item.modified)
             }
+            // A follow-up may omit the subject named by its earlier message. Keep
+            // the supporting source range beside it, with independent provenance.
+            // Both pieces are revalidated after inference just like ordinary evidence.
+            if let lexical {
+                let original = possible
+                for id in (connections[candidate.unit.id] ?? []).prefix(3) {
+                    guard let unit = linkedUnits[id], let item = linkedItems[unit.itemID],
+                          !forbidden.contains(item.id), item.message?.chatID == candidate.item.message?.chatID else { continue }
+                    let support: [Passage]
+                    if let contexts, let reference = item.message {
+                        guard let message = contexts[reference.rowID]?.message, message.guid == reference.guid,
+                              message.chatID == reference.chatID, message.isSearchable, let text = message.text else { continue }
+                        support = Self.passages(text, item: item, unit: unit, message: reference,
+                                                modified: max(message.date, message.editedAt ?? .distantPast))
+                    } else {
+                        support = Self.passages(unit.text, item: item, unit: unit, message: nil, modified: item.modified)
+                    }
+                    let coverage = support.map { lexical.coverage($0.text) }.max() ?? 0
+                    guard coverage > 0 else { continue }
+                    let topics = support.filter { lexical.coverage($0.text) == coverage }.sorted { $0.text.count < $1.text.count }
+                    let representatives = [topics.first, topics.last].compactMap { $0 }
+                    for topic in representatives {
+                        let references = DiscussionLink.references(topic.text)
+                        for passage in original where passage.text.count + topic.text.count <= 650 {
+                            // The quoted ranges themselves must carry the shared reference.
+                            // An amount elsewhere in their indexed windows is insufficient.
+                            guard !references.isDisjoint(with: DiscussionLink.references(passage.text)) else { continue }
+                            // Preserve chronological order. A shared reference only adds
+                            // context; the final model still scores the complete quote.
+                            let ordered = item.created <= passage.item.created ? [topic, passage] : [passage, topic]
+                            possible.append(Passage(item: ordered.last!.item, unit: ordered.last!.unit,
+                                                    text: ordered.map(\.text).joined(separator: "\n"), sources: ordered.flatMap(\.sources)))
+                        }
+                    }
+                }
+            }
             let answering = possible.filter(answersValue)
-            possibleChoices.append(Self.spread(answering.isEmpty ? possible : answering))
+            let eligible = answering.isEmpty ? possible : answering
+            if let lexical, !connections.isEmpty {
+                // Reserve a connected, self-contained passage before sampling finer
+                // subdivisions; otherwise a later answer can miss the inference budget.
+                let connected = eligible.filter { $0.sources.count > 1 }.sorted {
+                    let left = lexical.coverage($0.text), right = lexical.coverage($1.text)
+                    return left == right ? $0.text.count < $1.text.count : left > right
+                }
+                var ordered = Array(connected.prefix(1))
+                if let longest = connected.max(by: { $0.text.count < $1.text.count }),
+                   longest.document != ordered.first?.document { ordered.append(longest) }
+                let reserved = Set(ordered.map(\.document))
+                ordered += Self.spread(eligible).filter { !reserved.contains($0.document) }
+                possibleChoices.append(ordered)
+            } else {
+                possibleChoices.append(Self.spread(eligible))
+            }
         }
         // Share the fixed inference budget round-robin. A verbose early result must
         // not spend every slot before later candidates receive any source evidence.
@@ -179,7 +239,25 @@ final class PassageSelector: Sendable {
             guard !forbidden.contains(candidate.id) else { continue }
             if candidate.unit.kind == .image || usesImageEvidence(candidate)
                 || candidate.unit.text.isEmpty {
-                results.append(candidate)
+                var result = candidate
+                if lexical != nil {
+                    // Image vectors have a different similarity distribution. Keep
+                    // their existing calibrated confidence test, then put their raw
+                    // relevance on the same score scale as refined text passages.
+                    if let minimum = embedder.minimumPassageSimilarity,
+                       candidate.features.cosine < minimum,
+                       candidate.confidence < SurfacePolicy.Settings().threshold { continue }
+                    let similarity = embedder.supportsSemanticSimilarity ? max(0, candidate.features.cosine)
+                        : lexical?.coverage(candidate.unit.text + " " + candidate.item.title) ?? 0
+                    let score = similarity
+                        * (candidate.features.entityHit ? ranking.entityBoost : 1)
+                        * (ranking.preferForgottenForActiveText ? candidate.features.forgotten * candidate.features.novelty : 1)
+                    result = Suggestion(item: candidate.item, unit: candidate.unit, reason: candidate.reason,
+                                        snippet: candidate.snippet, score: score, confidence: candidate.confidence,
+                                        features: candidate.features, line: candidate.line, evidence: candidate.evidence,
+                                        ambientEligible: candidate.ambientEligible)
+                }
+                results.append(result)
                 continue
             }
             let scored = passages.compactMap { passage -> (Passage, Double)? in
@@ -187,20 +265,40 @@ final class PassageSelector: Sendable {
                 return (passage, Double(VectorMath.dot(query, vector)))
             }
             guard let best = scored.max(by: { a, b in
-                a.1 == b.1 ? a.0.text.count > b.0.text.count : a.1 < b.1
+                if !embedder.supportsSemanticSimilarity, let lexical {
+                    let left = lexical.coverage(a.0.text), right = lexical.coverage(b.0.text)
+                    if left != right { return left < right }
+                }
+                return a.1 == b.1 ? a.0.text.count > b.0.text.count : a.1 < b.1
             }) else { continue }
             let passage = best.0
+            if lexical != nil, let minimum = embedder.minimumPassageSimilarity, best.1 < minimum { continue }
             let evidence = PassageEvidence(text: passage.text, sources: passage.sources, cosine: best.1)
-            // Fine-grained evidence can lower a broad match's relevance/confidence. It
-            // cannot turn weak retrieval into a new confident ambient interruption.
+            // Background discovery keeps its original confidence ceiling. For an active
+            // question, confidence describes the quoted passage, using the same calibrated
+            // estimator and retrieval distribution. A chat hint never raises confidence.
             let support = min(1, max(0, best.1) / max(0.05, candidate.features.cosine))
+            var features = candidate.features
+            var confidence = candidate.confidence * support
+            if let stats = confidenceStats, let lexical {
+                features.cosine = best.1
+                features.zScore = stats.z(best.1)
+                features.agreement = lexical.coverage(evidence.text) > 0
+                let haystack = (evidence.text + " " + passage.item.title).lowercased()
+                features.entityHit = entities.contains(where: haystack.contains)
+                confidence = Confidence.estimate(features)
+            }
             var unit = passage.unit
             // The indexed window can contain a now-hidden or unsent neighbour. Return
             // only the source text just validated above, including for inline previews.
             if passage.item.source == .messages, contexts != nil { unit.text = evidence.text }
+            let relevance = lexical.map { terms in (embedder.supportsSemanticSimilarity ? max(0, best.1) : terms.coverage(evidence.text + " " + passage.item.title))
+                * (features.entityHit ? ranking.entityBoost : 1)
+                * (ranking.preferForgottenForActiveText ? candidate.features.forgotten * candidate.features.novelty : 1)
+                * (scopedChats.contains(passage.item.message?.chatID ?? -1) ? ranking.entityBoost : 1) }
             let result = Suggestion(item: passage.item, unit: unit, reason: candidate.reason,
-                                    snippet: evidence.text, score: candidate.score * support,
-                                    confidence: candidate.confidence * support, features: candidate.features,
+                                    snippet: evidence.text, score: relevance ?? candidate.score * support,
+                                    confidence: confidence, features: features,
                                     line: question.flatMap {
                                         MatchedLine.find(in: evidence.text, for: $0, terms: terms)
                                     },
@@ -254,14 +352,17 @@ final class PassageSelector: Sendable {
         })))
         results = results.filter { result in
             guard !hidden.contains(result.id) else { return false }
-            return (result.evidence?.sources ?? []).allSatisfy { source in
+            var indexedQuotes: [String] = []
+            let valid = (result.evidence?.sources ?? []).allSatisfy { source in
                 guard !hidden.contains(source.itemID) else { return false }
                 if source.message != nil { return true }
                 guard let unit = currentUnits[source.unitID], unit.itemID == source.itemID,
                       currentItems[source.itemID]?.modified == source.modified,
                       NSMaxRange(NSRange(location: source.utf16Location, length: source.utf16Length)) <= (unit.text as NSString).length else { return false }
-                return (unit.text as NSString).substring(with: NSRange(location: source.utf16Location, length: source.utf16Length)) == result.evidence?.text
+                indexedQuotes.append((unit.text as NSString).substring(with: NSRange(location: source.utf16Location, length: source.utf16Length)))
+                return true
             }
+            return valid && (indexedQuotes.isEmpty || indexedQuotes.joined(separator: "\n") == result.evidence?.text)
         }
         results.sort { $0.score > $1.score }
         var unique: [Suggestion] = []

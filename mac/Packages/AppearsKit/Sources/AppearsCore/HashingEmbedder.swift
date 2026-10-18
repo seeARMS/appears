@@ -8,6 +8,7 @@ public struct HashingEmbedder: Embedder {
     public let dimension: Int
     public var modelID: String { "hashing-\(dimension)" }
     public var supportsImages: Bool { false }
+    public var supportsSemanticSimilarity: Bool { false }
 
     public init(dimension: Int = 256) {
         self.dimension = dimension

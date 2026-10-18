@@ -107,6 +107,7 @@ public struct RecallResponse: Sendable, Codable {
     public var query: Query.Summary
     public var milliseconds: Double
     public var timings: SearchTimings? = nil
+    public var retrieval: RetrievalDiagnostics? = nil
 
     /// The best suggestion's confidence, or 0.
     public var confidence: Double { suggestions.first?.confidence ?? 0 }
@@ -150,7 +151,9 @@ public struct RankingSettings: Sendable, Codable, Equatable {
     public var sameFolderPenalty = 0.6
     public var sameTitlePenalty = 0.5
     /// MMR: 1 is pure relevance, 0 pure variety.
-    public var diversity = 0.7
+    public var diversity = 0.6
+    /// Explicit callers can retain discovery's preference for older material.
+    public var preferForgottenForActiveText = false
     /// When the window shows a picture and has words too, the picture's share of the blended
     /// query vector. With no words, the picture is the whole query.
     public var pictureWeight = 0.7
@@ -187,12 +190,15 @@ public struct Recall: Sendable {
         if picture != nil, let path = context.documentPath, Self.isFileName(context.windowTitle, of: path, app: context.appName) {
             textContext.windowTitle = ""
         }
-        let query = QueryBuilder.build(textContext) { terms in
+        let plan = RetrievalPlan(textContext)
+        let query = QueryBuilder.build(plan.primary) { terms in
             (try? store.documentFrequencies(terms)) ?? ([:], 0)
         }
+        let lexical = try LexicalTerms(query.dense, store: store)
+        let ranksPassages = plan.hasActiveText && embedder.supportsPassageRefinement
         SearchTrace.current?.record(.preparation, since: prepared)
         try Task.checkCancellation()
-        let hasText = query.dense.count >= 12 || !query.entities.isEmpty
+        let hasText = query.dense.count >= 12 || !query.entities.isEmpty || (context.origin == .text && !query.dense.isEmpty)
         guard hasText || picture != nil else {
             return RecallResponse(suggestions: [], query: query.summary, milliseconds: 0)
         }
@@ -212,13 +218,26 @@ public struct Recall: Sendable {
 
         // Candidates: three ranked lists, fused by rank.
         let vectorStarted = ContinuousClock.now
-        let textHits = vectors.search(queryVector, kind: .text, limit: 200)
+        let textHits = vectors.search(queryVector, kind: .text, limit: plan.hasActiveText ? 2_048 : 200)
         try Task.checkCancellation()
         let imageHits = vectors.search(queryVector, kind: .image, limit: 60)
         SearchTrace.current?.record(.vector, since: vectorStarted)
         try Task.checkCancellation()
         let fullTextStarted = ContinuousClock.now
-        let fullTextHits = (try? store.fullText(query.fullText, limit: 100)) ?? []
+        let fullTextHits = try store.fullText(query.fullText, limit: plan.hasActiveText ? 1_024 : 100)
+        let scopedHits = try store.messageHits(query.fullText, chatIDs: Array((context.messageChatIDs ?? []).prefix(8)), limit: 128)
+        // Independent temporal coverage within a resolved conversation. Years of
+        // repeated wording cannot consume every slot before a new discussion is read.
+        // This discovers candidates; age never raises their final evidence score.
+        var recentHits = plan.hasActiveText
+            ? try store.messageHits(query.fullText, chatIDs: Array((context.messageChatIDs ?? []).prefix(8)), limit: 32, newestFirst: true) : []
+        if plan.hasActiveText {
+            recentHits += try store.messageHits(lexical.phraseQuery, chatIDs: nil, limit: 32, newestFirst: true)
+        }
+        // Surroundings discover candidates independently, with a bounded secondary budget.
+        // Their scores never substitute for relevance to the primary question.
+        let surroundingQuery = plan.surrounding.map { QueryBuilder.build($0) { (try? store.documentFrequencies($0)) ?? ([:], 0) } }
+        let surroundingHits = try surroundingQuery.map { try store.fullText($0.fullText, limit: 64) } ?? []
         SearchTrace.current?.record(.fullText, since: fullTextStarted)
         try Task.checkCancellation()
         let rankingStarted = ContinuousClock.now
@@ -232,20 +251,51 @@ public struct Recall: Sendable {
         add(textHits.map(\.id), weight: settings.textWeight)
         add(imageHits.map(\.id), weight: settings.imageWeight)
         add(fullTextHits.map(\.unitID), weight: settings.fullTextWeight)
+        add(scopedHits.map(\.unitID), weight: settings.fullTextWeight)
+        add(recentHits.map(\.unitID), weight: settings.fullTextWeight)
+        add(surroundingHits.map(\.unitID), weight: settings.fullTextWeight * 0.25)
         for hit in textHits + imageHits { cosine[hit.id] = Double(hit.score) }
 
         // How unusual the best matches are for this context: z-scores within each list.
-        let textStats = Stats(textHits.map { Double($0.score) })
+        // Keep the calibrated confidence population stable when retrieval budgets grow.
+        let textStats = Stats(textHits.prefix(200).map { Double($0.score) })
         let imageStats = Stats(imageHits.map { Double($0.score) })
 
-        let units = try store.units(ids: Array(fused.keys))
+        var units = try store.units(ids: Array(fused.keys))
         // Agreement counts per part (a chunk, a page, an image): an image's words are in the
         // full-text index under its OCR text unit, at the same locator.
         func part(_ unit: Unit) -> [String] { [String(unit.itemID), unit.locator.encoded] }
-        let fullTextParts = Set(fullTextHits.compactMap { units[$0.unitID].map(part) })
-        let items = try store.items(ids: Array(Set(units.values.map(\.itemID))))
+        let fullTextParts = Set((fullTextHits + scopedHits + recentHits).compactMap { units[$0.unitID].map(part) })
+        var items = try store.items(ids: Array(Set(units.values.map(\.itemID))))
         let neverShow = try store.neverShown()
         let excluded = Set(request.exclude)
+
+        // Discussion expansion works before the expensive passage shortlist. It uses
+        // source identity and bounded indexed neighbours, not the window title.
+        var connections: [Int64: [Int64]] = [:]
+        let anchors = (recentHits.map(\.unitID) + scopedHits.map(\.unitID) + fullTextHits.map(\.unitID) + textHits.map(\.id))
+        var seenAnchors = Set<Int64>()
+        for id in anchors where plan.hasActiveText && seenAnchors.count < 24 {
+            guard let unit = units[id], let item = items[unit.itemID], item.kind == .message,
+                  !excluded.contains(item.id), !neverShow.contains(item.id),
+                  lexical.coverage(unit.text) > 0, seenAnchors.insert(item.id).inserted else { continue }
+            let neighbours = try store.messageNeighbours(of: item)
+            let connectionVectors = try store.vectors(unitIDs: neighbours.map { $0.1.id } + [unit.id])
+            for (neighbour, text) in neighbours {
+                guard neighbour.id != item.id, !excluded.contains(neighbour.id), !neverShow.contains(neighbour.id),
+                      abs(neighbour.created.timeIntervalSince(item.created)) <= 86_400,
+                      DiscussionLink.connects(unit, text, vectors: connectionVectors) else { continue }
+                units[text.id] = text
+                items[neighbour.id] = neighbour
+                fused[text.id] = max(fused[text.id] ?? 0, (fused[id] ?? 0) * 0.8)
+                connections[text.id, default: []].append(id)
+            }
+        }
+        // Every discovered unit gets its actual primary-query similarity, including
+        // lexical/scoped/expanded hits outside the vector top-k.
+        for (id, vector) in try store.vectors(unitIDs: Array(fused.keys.filter { cosine[$0] == nil })) {
+            cosine[id] = Double(VectorMath.dot(queryVector, vector))
+        }
 
         // Roll units up to items: the best unit, plus a little for each other matching unit.
         struct Candidate {
@@ -271,42 +321,13 @@ public struct Recall: Sendable {
             }
         }
 
-        // The conversation title and visible history help find candidates, but can make
-        // an unrelated message seem confident. When there is a draft, judge Messages
-        // against what you're actually writing or selecting instead.
-        var messageQuery = query
-        var messageCosine = cosine
-        var messageTextStats = textStats
-        var messageImageStats = imageStats
-        var messageFullTextParts = fullTextParts
-        var passageQueryVector = queryVector
-        var passageQuestion = Question(context)
-        if !candidates.isEmpty {
-            let draftContext = ContextSnapshot(appName: context.appName, selection: context.selection, focusedText: context.focusedText)
-            let draft = QueryBuilder.build(draftContext) { terms in
-                (try? store.documentFrequencies(terms)) ?? ([:], 0)
-            }
-            if draft.dense.count >= 12 {
-                // The structured question must come from the same active text as the
-                // passage vector. An old question in window history cannot constrain
-                // evidence for a different draft, even when both queries encode alike.
-                passageQuestion = Question(draftContext)
-            }
-            if draft.dense.count >= 12, draft.dense != query.dense {
-                messageQuery = draft
-                let vector = try await embedder.embed(queries: [draft.dense])[0]
-                passageQueryVector = vector
-                try Task.checkCancellation()
-                let text = vectors.search(vector, kind: .text, limit: 200)
-                let images = vectors.search(vector, kind: .image, limit: 60)
-                messageCosine = Dictionary(uniqueKeysWithValues: (text + images).map { ($0.id, Double($0.score)) })
-                messageTextStats = Stats(text.map { Double($0.score) })
-                messageImageStats = Stats(images.map { Double($0.score) })
-                let hits = (try? store.fullText(draft.fullText, limit: 100)) ?? []
-                let matchedUnits = try store.units(ids: hits.map(\.unitID))
-                messageFullTextParts = Set(matchedUnits.values.map(part))
-            }
-        }
+        let messageQuery = query
+        let messageCosine = cosine
+        let messageTextStats = textStats
+        let messageImageStats = imageStats
+        let messageFullTextParts = fullTextParts
+        let passageQueryVector = queryVector
+        let passageQuestion = Question(plan.primary)
 
         let titleWords = Self.words(QueryBuilder.cleanTitle(context.windowTitle, app: context.appName))
         let documentFolder = context.documentPath.map { ($0 as NSString).deletingLastPathComponent }
@@ -316,7 +337,8 @@ public struct Recall: Sendable {
             let item = candidate.item
             // Hard filters: what's open and what you've ruled out.
             if item.path == context.documentPath || excluded.contains(item.id) || neverShow.contains(item.id) { continue }
-            if item.source == .file, let spotlight = LastUsed.date(path: item.path),
+            if (!ranksPassages || settings.preferForgottenForActiveText), item.source == .file,
+               let spotlight = LastUsed.date(path: item.path),
                spotlight > (item.lastUsed ?? .distantPast) {
                 candidate.item.lastUsed = spotlight
                 try? store.touch(path: item.path, at: spotlight)
@@ -334,7 +356,7 @@ public struct Recall: Sendable {
             var novelty = 1.0
             if let documentFolder, item.folder == documentFolder { novelty *= settings.sameFolderPenalty }
             let itemWords = Self.words((item.title as NSString).deletingPathExtension)
-            if !titleWords.isEmpty, !itemWords.isEmpty,
+            if !plan.hasActiveText, !titleWords.isEmpty, !itemWords.isEmpty,
                Double(titleWords.intersection(itemWords).count) / Double(itemWords.count) >= 0.6 {
                 novelty *= settings.sameTitlePenalty
             }
@@ -382,7 +404,16 @@ public struct Recall: Sendable {
             // without ranking anything higher.
             var unasked = features
             unasked.recallIntent = false
-            let score = rankScore * (0.25 + Confidence.estimate(unasked) * recentFactor)
+            // A reply can omit every topic word. Its connected source supplies a
+            // discovery cue only; the combined verbatim passage must still win scoring.
+            let supportUnits = (connections[candidate.unit.id] ?? []).compactMap { units[$0] }
+            let discoveryCosine = max(unitCosine, supportUnits.compactMap { cosine[$0.id] }.max() ?? 0)
+            let discoveryCoverage = lexical.coverage(([candidate.unit.text] + supportUnits.map(\.text)).joined(separator: "\n"))
+            let score = ranksPassages
+                ? max(0, discoveryCosine) * (1 + discoveryCoverage)
+                    * (settings.preferForgottenForActiveText ? forgotten * novelty : 1)
+                    * ((context.messageChatIDs ?? []).contains(item.message?.chatID ?? -1) ? settings.entityBoost : 1)
+                : rankScore * (0.25 + Confidence.estimate(unasked) * recentFactor)
             scored.append((candidate, score, features, matched, confidence))
         }
         scored.sort { $0.score > $1.score }
@@ -395,7 +426,7 @@ public struct Recall: Sendable {
                        snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
                        score: entry.score, confidence: entry.confidence, features: entry.features,
                        line: question.flatMap { MatchedLine.find(in: entry.candidate.unit.text, for: $0, terms: terms) },
-                       ambientEligible: request.trigger == .ambient ? position < 3 : nil)
+                       ambientEligible: request.trigger == .ambient && !ranksPassages ? position < 3 : nil)
         }
         // Index-only lookups can collapse identical whole windows. With live source
         // provenance, equal text from distinct messages must reach identity dedup.
@@ -404,13 +435,52 @@ public struct Recall: Sendable {
             guard messages == nil, result.unit.kind == .text, let chat = result.item.message?.chatID else { return true }
             return windows.insert("\(chat)\u{0}\(result.unit.text)").inserted
         }
+        // Reserve refinement capacity for independently discovered scoped discussions
+        // and connected follow-ups. One prolific global route cannot consume every slot.
+        var shortlist: [Suggestion] = []
+        var admittedIDs = Set<Int64>()
+        let discoveryVectors = ranksPassages ? try store.vectors(unitIDs: distinct.map(\.unit.id)) : [:]
+        var redundancy: [Int64: Double] = [:]
+        func admit(_ results: [Suggestion], limit: Int) throws {
+            let top = max(results.first?.score ?? 1, .leastNormalMagnitude)
+            for _ in 0..<limit where shortlist.count < PassageSelector.maximumCandidates {
+                try Task.checkCancellation()
+                let next = results.filter { !admittedIDs.contains($0.id) }.max { a, b in
+                    func value(_ candidate: Suggestion) -> Double {
+                        guard ranksPassages else { return candidate.score }
+                        return 0.7 * candidate.score / top - 0.3 * (redundancy[candidate.unit.id] ?? 0)
+                    }
+                    let left = value(a), right = value(b)
+                    return left == right ? a.id > b.id : left < right
+                }
+                guard let next else { break }
+                admittedIDs.insert(next.id)
+                shortlist.append(next)
+                if let selected = discoveryVectors[next.unit.id] {
+                    for (id, vector) in discoveryVectors {
+                        redundancy[id] = max(redundancy[id] ?? 0, Double(VectorMath.dot(selected, vector)))
+                    }
+                }
+            }
+        }
+        let chats = Set(context.messageChatIDs ?? [])
+        if plan.hasActiveText {
+            let recentIDs = Set(recentHits.compactMap { units[$0.unitID]?.itemID })
+            try admit(distinct.filter { recentIDs.contains($0.id) }, limit: 8)
+            try admit(distinct.filter { chats.contains($0.item.message?.chatID ?? -1) }, limit: 8)
+            try admit(distinct.filter { connections[$0.unit.id] != nil }, limit: 8)
+        }
+        try admit(distinct, limit: PassageSelector.maximumCandidates - shortlist.count)
         // Bound source reads/inference, then collapse identical evidence before applying
         // the result limit. Both related results and typed search use the same passages.
         let refined: [Suggestion]
         if embedder.supportsPassageRefinement {
-            refined = try await passages.select(Array(distinct.prefix(PassageSelector.maximumCandidates)), query: passageQueryVector, embedder: embedder,
+            refined = try await passages.select(shortlist, query: passageQueryVector, embedder: embedder,
                                                  store: store, messages: messages, excluded: excluded,
-                                                 question: question, terms: terms)
+                                                 question: question, terms: terms, lexical: ranksPassages ? lexical : nil,
+                                                 connections: connections, scopedChats: Set(context.messageChatIDs ?? []),
+                                                 ranking: settings, confidenceStats: ranksPassages ? textStats : nil,
+                                                 entities: query.matchable)
         } else {
             // For file-to-file similarity, the indexed unit itself is the exact text
             // scored by the stored vector. Preserve that evidence without new inference.
@@ -430,7 +500,7 @@ public struct Recall: Sendable {
 
         // Variety: maximal marginal relevance over the top few, with a nudge away from a
         // second item from the same folder.
-        let pool = Array(refined.prefix(24))
+        let pool = Array(refined.prefix(PassageSelector.maximumCandidates))
         let poolVectors = (try? store.vectors(unitIDs: pool.map(\.unit.id))) ?? [:]
         let evidenceVectors = passages.vectors(for: pool)
         let topScore = max(pool.first?.score ?? 1, .leastNormalMagnitude)
@@ -441,12 +511,21 @@ public struct Recall: Sendable {
             for (index, entry) in pool.enumerated() where !chosen.contains(index) {
                 let folder = entry.item.folder
                 let folderPenalty = !folder.isEmpty && usedFolders.contains(folder) ? 0.85 : 1
-                let similarity = chosen.map { other -> Double in
-                    guard let a = evidenceVectors[entry.id] ?? poolVectors[entry.unit.id],
-                          let b = evidenceVectors[pool[other].id] ?? poolVectors[pool[other].unit.id] else { return 0 }
-                    return Double(VectorMath.dot(a, b))
-                }.max() ?? 0
-                let value = settings.diversity * folderPenalty * entry.score / topScore - (1 - settings.diversity) * similarity
+                let similarities = chosen.map { other -> Double in
+                    let previous = pool[other]
+                    func similarity(_ a: [Float]?, _ b: [Float]?) -> Double {
+                        guard let a, let b else { return 0 }
+                        return Double(VectorMath.dot(a, b))
+                    }
+                    let passage = similarity(evidenceVectors[entry.id] ?? poolVectors[entry.unit.id],
+                                             evidenceVectors[previous.id] ?? poolVectors[previous.unit.id])
+                    // Different sentence crops must not make repeated source windows
+                    // look diverse. Preserve both levels of evidence for redundancy.
+                    return ranksPassages ? max(passage, similarity(poolVectors[entry.unit.id], poolVectors[previous.unit.id])) : passage
+                }
+                let similarity = ranksPassages ? similarities.reduce(0, +) : similarities.max() ?? 0
+                let diversity = settings.diversity
+                let value = diversity * (ranksPassages ? 1 : folderPenalty) * entry.score / topScore - (1 - diversity) * similarity
                 if best == nil || value > best!.value { best = (index, value) }
             }
             guard let best else { break }
@@ -458,7 +537,8 @@ public struct Recall: Sendable {
         let suggestions = chosen.map { pool[$0] }
         try Task.checkCancellation()
         return RecallResponse(
-            suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000
+            suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000,
+            retrieval: RetrievalDiagnostics(candidateItemIDs: candidates.keys.sorted(), shortlistedItemIDs: shortlist.map(\.id))
         )
     }
 

@@ -33,6 +33,19 @@ struct MessageContactsTests {
         #expect(original.message?.guid == "made-up-message")
     }
 
+    @Test func retrievalScopeRequiresAnUnambiguousIdentity() {
+        let directory = MessageContacts(people: [dana], chats: [chat(["+14155550142"])])
+        #expect(directory.chatIDs(forWindowTitle: "Dana Ruiz") == [12])
+        #expect(directory.chatIDs(forWindowTitle: "Dana").isEmpty)
+        let second = MessageContacts.Person(id: "another-dana", name: "Dana Ruiz", addresses: ["+14155550144"])
+        let otherChat = Chat(rowID: 13, guid: "second-chat", identifier: "+14155550144", displayName: nil,
+                             service: "iMessage", style: 45,
+                             participants: [Handle(rowID: 3, address: "+14155550144", service: "iMessage")])
+        let ambiguous = MessageContacts(people: [dana, second], chats: [chat(["+14155550142"]), otherChat])
+        #expect(ambiguous.chatIDs(forWindowTitle: "Dana Ruiz").isEmpty)
+        #expect(ambiguous.chatIDs(forWindowTitle: "+14155550144") == [13])
+    }
+
     @Test func normalizesEmailsAndFormattingWithoutDiscardingCountryCodes() {
         #expect(MessageContacts.key(" DANA@Example.Test ") == MessageContacts.key("dana@example.test"))
         #expect(MessageContacts.key("(415) 555-0142") == MessageContacts.key("+1 415-555-0142"))

@@ -300,7 +300,10 @@
       "name": "Search: separate rent discussions and conversations with the same name",
       "text": "Juniper Court rent payment confirmed",
       "limit": 3,
-      "expectedConversations": [9101, 9102],
+      "expectedConversations": [
+        9101,
+        9102
+      ],
       "expectedPaths": [
         "messages:search-rent-paid",
         "messages:search-rent-thanks",
@@ -506,6 +509,74 @@
       "title": "Design review",
       "focused": "Please review the amplifier enclosure design.",
       "visible": "When were the brakes last looked at? Call Eastshore Honda."
+    }
+  ],
+  "retrieval": [
+    {
+      "name": "Final bill across separate messages and competing old receipts",
+      "title": "Morgan Hale",
+      "focused": "how much was the final cedar point bill",
+      "visible": "Could my parents borrow the work lights? Make sure they have batteries. Want to walk? Here is a bed from the furniture store.",
+      "chatIDs": [
+        910
+      ],
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "We only owe $845.",
+      "rejectQuotes": [
+        "furniture",
+        "$920"
+      ]
+    },
+    {
+      "name": "Final bill paraphrase without conversation scope",
+      "title": "",
+      "focused": "what did we end up owing cedar point after moving out",
+      "visible": "",
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "We only owe $845."
+    },
+    {
+      "name": "Waiver versus the other persons outstanding charge",
+      "title": "Morgan Hale",
+      "focused": "was the extra cedar point rent waived",
+      "visible": "Want to walk?",
+      "chatIDs": [
+        910
+      ],
+      "expect": [
+        "messages:retrieval-bill-confirmed"
+      ],
+      "quote": "responsibility was waived",
+      "rejectQuotes": [
+        "furniture",
+        "$920"
+      ]
+    },
+    {
+      "name": "Unrelated draft with bill discussion visible",
+      "title": "Morgan Hale",
+      "focused": "Want to grab a sandwich before our walk?",
+      "visible": "Cedar Point final rent bill was $845. The responsibility was waived.",
+      "chatIDs": [
+        910
+      ],
+      "expect": [],
+      "silent": true
+    },
+    {
+      "name": "Missing evidence in a familiar conversation",
+      "title": "Morgan Hale",
+      "focused": "what was the access code for the storage locker",
+      "visible": "Cedar Point rent payment receipt",
+      "chatIDs": [
+        910
+      ],
+      "expect": [],
+      "silent": true
     }
   ]
 }

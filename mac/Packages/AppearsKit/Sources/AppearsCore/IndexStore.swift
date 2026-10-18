@@ -161,6 +161,13 @@ public final class IndexStore: Sendable {
                 END;
                 """)
         }
+        migrator.registerMigration("v6-message-retrieval") { db in
+            try db.execute(sql: """
+                CREATE INDEX item_message_chat_date ON item (
+                    json_extract(CAST(message AS TEXT), '$.chatID'), modified
+                ) WHERE source = 'messages';
+                """)
+        }
         return migrator
     }
 
@@ -579,6 +586,48 @@ public final class IndexStore: Sendable {
                 ORDER BY rank LIMIT ?
                 """, arguments: [query, limit])
                 .map { TextHit(unitID: $0["rowid"], score: -($0["rank"] as Double)) }
+        }
+    }
+
+    /// Apply conversation scope before LIMIT so a busy global index cannot crowd
+    /// out this conversation. Stable chat IDs are hints, never title-based exclusions.
+    func messageHits(_ query: String, chatIDs: [Int64]?, limit: Int, newestFirst: Bool = false) throws -> [TextHit] {
+        guard !query.isEmpty, chatIDs?.isEmpty != true else { return [] }
+        return try pool.read { db in
+            let marks = Array(repeating: "?", count: chatIDs?.count ?? 0).joined(separator: ",")
+            let scope = chatIDs == nil ? "" : "AND json_extract(CAST(item.message AS TEXT), '$.chatID') IN (\(marks))"
+            let ordering = newestFirst ? "item.created DESC, rank" : "rank"
+            return try Row.fetchAll(db, sql: """
+                SELECT unit_fts.rowid, bm25(unit_fts, 2.0, 1.0) AS rank
+                FROM unit_fts JOIN unit ON unit.id = unit_fts.rowid JOIN item ON item.id = unit.item_id
+                WHERE unit_fts MATCH ? AND item.source = 'messages' AND item.never_show = 0
+                  \(scope)
+                ORDER BY \(ordering) LIMIT ?
+                """, arguments: StatementArguments([query] + (chatIDs ?? []).map { $0 as DatabaseValueConvertible } + [limit]))
+                .map { TextHit(unitID: $0["rowid"], score: -($0["rank"] as Double)) }
+        }
+    }
+
+    /// Bounded source windows for discussion expansion. Each unit is still independently
+    /// scored and, when Messages is available, revalidated against the original message.
+    func messageNeighbours(of item: Item, limit: Int = 40) throws -> [(Item, Unit)] {
+        guard let chat = item.message?.chatID else { return [] }
+        return try pool.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT item.*, unit.id AS uid, unit.kind AS ukind, unit.locator, unit.text
+                FROM item JOIN unit ON unit.item_id = item.id
+                WHERE item.source = 'messages' AND item.kind = 'message' AND item.never_show = 0
+                  AND json_extract(CAST(item.message AS TEXT), '$.chatID') = ?
+                  AND item.modified BETWEEN ? AND ? AND unit.kind = 0
+                ORDER BY abs(item.modified - ?) LIMIT ?
+                """, arguments: [chat, item.modified.timeIntervalSince1970 - 86_400,
+                                   item.modified.timeIntervalSince1970 + 86_400, item.modified.timeIntervalSince1970, limit])
+            return rows.compactMap { row in
+                let item = Self.item(row)
+                let unit = Unit(id: row["uid"], itemID: item.id, kind: .text,
+                                locator: Locator(encoded: row["locator"]), text: row["text"])
+                return (item, unit)
+            }
         }
     }
 

@@ -3,8 +3,8 @@ import AppearsMessages
 import Contacts
 import Foundation
 
-/// Presentation only, in the app. Contact names and photos never enter the engine,
-/// embeddings, journal or thumbnail cache on disk.
+/// Local contact resolution in the app. Only unambiguous chat IDs may be sent as
+/// transient retrieval hints; the contact directory and photos never enter the engine.
 public struct MessageContacts: Sendable {
     public struct Person: Sendable {
         public var id: String
@@ -110,6 +110,32 @@ public struct MessageContacts: Sendable {
             ?? (group && explicitName?.isEmpty == false ? Self.initials(title) : nil)
         return Presentation(title: item.kind == .image ? "Photo · \(title)" : title,
                             initials: initials, photo: person?.photo, isGroup: group)
+    }
+
+    /// A title is sufficient only when it resolves to one identity. Two contacts or
+    /// groups with the same name must not silently scope retrieval to the wrong chat.
+    public func chatIDs(forWindowTitle title: String) -> [Int64] {
+        func normalized(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let wanted = normalized(title)
+        guard !wanted.isEmpty else { return [] }
+        var matches: [String: [Int64]] = [:]
+        for chat in chats.values {
+            if chat.isGroup {
+                if let name = chat.displayName, normalized(name) == wanted {
+                    matches["chat:\(chat.rowID)", default: []].append(chat.rowID)
+                }
+            } else if let handle = chat.participants.first {
+                if let person = person(for: handle.address), normalized(person.name) == wanted {
+                    matches["person:\(person.id)", default: []].append(chat.rowID)
+                } else if normalized(handle.address) == wanted {
+                    matches["address:\(Self.key(handle.address))", default: []].append(chat.rowID)
+                }
+            }
+        }
+        return matches.count == 1 ? matches.values.first!.sorted() : []
     }
 
     /// Resolve only the speaker at the start of each indexed conversation line.

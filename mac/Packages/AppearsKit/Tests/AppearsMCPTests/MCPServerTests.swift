@@ -218,7 +218,7 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
         let answers = try await exchange([call(1, "related", #"{"text":"Joan"}"#)], index: try await demoIndex())
         let top = try #require(results(try response(answers, id: 1)).first)
         #expect(top["path"]?.string?.hasSuffix("Desktop/IMG_2031.jpg") == true)
-        #expect(top["reason"]?.string?.hasPrefix("Mentions Joan") == true)
+        #expect(top["reason"]?.string?.localizedCaseInsensitiveContains("joan") == true)
     }
 
     @Test func findsWhatRelatesToAFile() async throws {

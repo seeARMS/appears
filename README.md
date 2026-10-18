@@ -128,8 +128,8 @@ The on-device model (about 914 MB) downloads in the background while you go thro
 
 1. **Context.** When the front window changes, the app reads its title, the document it shows, the field you're typing in, the selection and the visible text, in memory only. Browser URLs come from Apple Events (Safari, Chrome) or Accessibility (Firefox). For a meeting, the event stands in for a window, minus join links, dial-ins and passcodes.
 2. **Index.** The engine embeds text, PDF pages and images with Google's [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) on [MLX](https://github.com/ml-explore/mlx-swift), into one vector space, next to an FTS5 full-text index.
-3. **Ranking.** Vector search and full-text search on names, numbers and rare words are fused by rank, then weighted toward things you haven't touched in months, away from the open document and its neighbours, and diversified so you don't get three near-copies.
-4. **Confidence.** Each result gets a 0–1 score from how far it stands above the other candidates. A match counts for more when what you're writing asks your memory ("what was the wifi password again?").
+3. **Ranking.** A selection or draft is searched independently of the surrounding window, keeping meaningful words regardless of their part of speech. Global vector and full-text searches run alongside a conversation search when Messages can be resolved to one identity. Surrounding text helps discover candidates. Short source passages determine relevance to the active text; background discovery still favours forgotten material. Results are diversified before the display limit.
+4. **Confidence.** Each result gets a 0–1 score from how far its evidence stands above the other candidates. For active text, confidence is calculated from the passage being quoted. Conversation identity helps retrieval and ranking but never increases confidence. A match counts for more when what you're writing asks your memory ("what was the wifi password again?").
 5. **When to speak.** Appears looks after five seconds reading or a two-second pause in typing. It marks the ring only for a confident match (0.6 by default), at most once a minute, and never twice for the same item in the same document or conversation.
 
 <details>
@@ -149,9 +149,11 @@ Settings has Include and Exclude lists. Added folders are watched immediately, i
 
 #### Ranking
 
-- **Forgotten:** results are weighted toward what you haven't touched in months. Recent files rank lower. Messages have only a small age penalty (up to 15%), so yesterday's conversation can still answer today's question. The open document is excluded.
+- **Forgotten:** background discovery favours what you haven't touched in months. Messages have only a small age penalty (up to 15%). Selections, drafts and explicit searches rank by their evidence without an age penalty. The open document is excluded.
 - **New:** what's in the same folder or repeats the window title counts less.
 - **Varied:** results are diversified.
+- **Discussions:** nearby messages in the same conversation can supply missing context when they share a numeric reference and their indexed text is semantically related. Expansion is bounded to a day and a limited number of neighbours. Combined quotes preserve both source ranges, open the later message, and are checked against the source again after scoring; hidden, edited or unsent messages cannot survive that check.
+- **Evidence:** an active query can return fewer results, including none, when its source passages lack sufficient semantic support. This relevance check is separate from the higher confidence needed to signal in the menu bar.
 - **Photos:** when the window shows a picture (a photo open in Preview), the picture itself is the query. The engine uses the vector it indexed for that file, or embeds it then, keeping that vector in memory only. Any words in the window are blended in, except a title that is just the file's name.
 
 #### The panel
@@ -173,6 +175,8 @@ With Calendar access, Appears looks once before each meeting, 10 minutes ahead b
 #### Measuring
 
 The journal records each suggestion and what you did with it (opened, previewed, dragged out, dismissed, ignored). Settings → Activity and `appears stats` turn it into precision numbers.
+
+`appears eval --verbose` also runs an isolated fictional retrieval corpus with split conversations, competing old receipts, ambiguous names, paraphrases and missing answers. It reports whether expected items reached retrieval, passage scoring and the first three results. `--retrieval-only` runs that corpus alone. These are regression checks, not an independent quality benchmark; no personal messages are included.
 
 #### Launch, sources and updates
 

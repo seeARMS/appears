@@ -95,20 +95,17 @@ public actor AgentIndex {
         return (item, try await recall.run(request).suggestions)
     }
 
-    /// The agent's words as a context. They're what it cares about, so they go in as the
-    /// selection, where names count fully. A selection under 12 characters doesn't reach the
-    /// dense query, and a lone word at the start of a sentence isn't taken for a name, so a
-    /// short ask ("Dana", "Lisbon trip") is phrased as one. No window title and no open
-    /// document, so nothing is marked down for being in the same folder or named alike.
+    /// Explicit text keeps even a one-word query verbatim. No synthetic asking words,
+    /// window title or open document enter its embedding.
     static func context(_ text: String) -> ContextSnapshot {
-        let short = QueryBuilder.clean(text).count < 12
-        return ContextSnapshot(selection: short ? "Anything about \(text)" : text, origin: .text)
+        return ContextSnapshot(selection: text, origin: .text)
     }
 
     /// The app's ranking, without the "forgotten" weighting unless asked: when an agent asks
     /// outright, yesterday's file is as good an answer as last year's.
     static func ranking(preferForgotten: Bool) -> RankingSettings {
         var settings = RankingSettings()
+        settings.preferForgottenForActiveText = preferForgotten
         if !preferForgotten {
             settings.recentWeight = 1
             settings.recentMessageWeight = 1

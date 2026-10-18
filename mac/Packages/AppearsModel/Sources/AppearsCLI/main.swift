@@ -126,16 +126,30 @@ struct Related: AsyncParsableCommand {
     var title: String = ""
     @Option(help: "How many results.")
     var limit: Int = 5
+    @Flag(help: "Treat the text as an active draft instead of surrounding window text.")
+    var draft = false
+    @Option(help: "Resolved Messages conversation ID; may be repeated. Global results remain eligible.")
+    var chatID: [Int64] = []
+    @Flag(help: "Print transient candidate and passage-shortlist IDs, without storing context.")
+    var diagnostics = false
+    @Option(help: "Explicit read-only Messages source for passage revalidation with a custom index.")
+    var messagesDatabase: String?
 
     func run() async throws {
         let body = try file.map { try String(contentsOfFile: $0, encoding: .utf8) } ?? text ?? ""
         guard !body.isEmpty else { throw ValidationError("Give some text or --file.") }
         let embedder = try await common.makeEmbedder()
         let engine = try Engine(folder: URL(filePath: common.data), embedder: embedder, settings: SourceSettings(),
-                                messagesURL: common.messagesURL)
+                                messagesURL: messagesDatabase.map { URL(filePath: $0) } ?? common.messagesURL)
         var context = ContextSnapshot.text(body, title: title)
+        if draft { context = ContextSnapshot(appName: "Messages", windowTitle: title, focusedText: body) }
+        context.messageChatIDs = chatID.isEmpty ? nil : chatID
         context.documentPath = file.map { URL(filePath: $0).standardizedFileURL.path }
         let response = try await engine.recall.run(RecallRequest(context: context, trigger: .pull, limit: limit))
+        if diagnostics, let retrieval = response.retrieval {
+            print("Candidates: \(retrieval.candidateItemIDs)")
+            print("Shortlist: \(retrieval.shortlistedItemIDs)")
+        }
         print("Query: \(response.query.denseCharacters) chars; entities \(response.query.entities); rare \(response.query.rareTerms); \(Int(response.milliseconds)) ms")
         for (index, suggestion) in response.suggestions.enumerated() {
             let f = suggestion.features
@@ -190,6 +204,9 @@ struct Eval: AsyncParsableCommand {
     var limit: Int = 3
     @Option(help: "Only scenarios whose name contains this.")
     var only: String?
+
+    @Flag(help: "Run only the isolated retrieval stress corpus.")
+    var retrievalOnly = false
 
     struct Scenarios: Decodable {
         struct Scenario: Decodable {
@@ -262,6 +279,12 @@ struct Eval: AsyncParsableCommand {
         }
 
         let embedder = try await common.makeEmbedder()
+        if retrievalOnly {
+            var policy = SurfacePolicy.Settings()
+            policy.sensitivity = sensitivity
+            try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, threshold: policy.threshold, verbose: verbose)
+            return
+        }
         let store = try IndexStore(url: home.appending(path: ".appears/index.sqlite"))
         let vectors = VectorIndex(dimension: embedder.dimension)
         let indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: SourceSettings(notes: false))
@@ -419,6 +442,7 @@ struct Eval: AsyncParsableCommand {
                 for result in response.suggestions { print("    \(short(result.item.path))  \(String(format: "%.2f", result.confidence))") }
             }
         }
+        try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, threshold: threshold, verbose: verbose)
         if searchFailures > 0 || passagesRight != passagesExpected || falseSurfaces > 0 || violations > 0
             || linesRight != linesExpected || linesUnexpected > 0 {
             throw ValidationError("Evaluation failed: \(searchFailures) search scenarios, \(passagesExpected - passagesRight) source passages, \(falseSurfaces) false surfaces, \(violations) excluded items, \(linesExpected - linesRight + linesUnexpected) answer lines.")

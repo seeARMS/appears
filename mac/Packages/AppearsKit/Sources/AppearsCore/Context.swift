@@ -23,6 +23,9 @@ public struct ContextSnapshot: Sendable, Codable, Equatable {
     public var visibleText: String
     /// People the window is addressed to (a mail compose window's To and Cc).
     public var recipients: [String]
+    /// Resolved locally by the app from an unambiguous Messages window. A retrieval
+    /// hint only; global results remain eligible. Never persisted with screen context.
+    public var messageChatIDs: [Int64]? = nil
     public var origin: Origin
     public var capturedAt: Date
 
