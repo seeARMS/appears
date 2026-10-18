@@ -118,6 +118,18 @@ func verifyGlyphAnimation() async {
         let continued = await waitForImageChange(from: afterFullTurn)
         precondition(continued, "Rotation must continue after the first full turn")
     }
+    for style in [MatchAlertStyle.dot, .toast] {
+        animator?.update(.found, style: style)
+        let still = button.image
+        try? await Task.sleep(for: .milliseconds(150))
+        precondition(button.image === still, "Dot and toast styles must stay still while a match waits")
+    }
+    animator?.update(.found, style: .motion)
+    let resumed = button.image
+    if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        let rotated = await waitForImageChange(from: resumed)
+        precondition(rotated, "Changing back to motion must animate an already-waiting match")
+    }
     for state in [AppModel.Glyph.idle, .working, .paused, .needsSetup] {
         animator?.update(state)
         let still = button.image

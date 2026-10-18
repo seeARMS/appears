@@ -71,6 +71,7 @@ enum GlyphImage {
 final class StatusGlyphAnimator: NSObject {
     private weak var button: NSStatusBarButton?
     private var glyph: AppModel.Glyph?
+    private var alertStyle: MatchAlertStyle = .motion
     private var animation: Task<Void, Never>?
     private var displayAsleep = false
     private lazy var frames = (0..<GlyphImage.frameCount).map {
@@ -91,9 +92,10 @@ final class StatusGlyphAnimator: NSObject {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
-    func update(_ glyph: AppModel.Glyph) {
-        guard self.glyph != glyph else { return }
+    func update(_ glyph: AppModel.Glyph, style: MatchAlertStyle = .motion) {
+        guard self.glyph != glyph || alertStyle != style else { return }
         self.glyph = glyph
+        alertStyle = style
         refresh()
     }
 
@@ -105,7 +107,7 @@ final class StatusGlyphAnimator: NSObject {
         animation = nil
         guard let glyph else { return }
         button?.image = GlyphImage.image(for: glyph)
-        guard glyph == .found, !displayAsleep,
+        guard glyph == .found, alertStyle == .motion, !displayAsleep,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let started = ProcessInfo.processInfo.systemUptime
         animation = Task { [weak self] in

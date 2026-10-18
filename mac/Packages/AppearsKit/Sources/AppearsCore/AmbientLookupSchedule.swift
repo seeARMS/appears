@@ -1,9 +1,9 @@
 import Foundation
 
-/// Five seconds reading OR a two-second pause after editing. The app cancels its timers
+/// One second reading by default OR a one-second pause after editing. The app cancels its timers
 /// immediately on each change. Only fingerprints and timing state are retained here.
 public struct AmbientLookupSchedule: Sendable {
-    public var debounce: TimeInterval = 2
+    public var debounce: TimeInterval = 1
     private var changeStartedAt: Date?
     private var lastChangeAt: Date?
     private var textEdited = false

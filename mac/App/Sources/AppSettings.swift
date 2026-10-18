@@ -9,13 +9,36 @@ extension KeyboardShortcuts.Name {
     static let search = Self("search", initial: .init(.space, modifiers: [.control, .shift]))
 }
 
+enum MatchAlertStyle: String, CaseIterable {
+    case motion, dot, toast
+
+    var title: String {
+        switch self {
+        case .motion: "Motion (default)"
+        case .dot: "Dot with no motion"
+        case .toast: "Toast with match details"
+        }
+    }
+
+    var caption: String {
+        switch self {
+        case .motion: "The menu bar ring rotates while a match waits. Reduce Motion keeps it still."
+        case .dot: "A still dot marks a waiting match in the menu bar."
+        case .toast: "A brief, silent banner shows the match and its evidence. Click it to see related results."
+        }
+    }
+}
+
 /// Preferences, in UserDefaults. Only settings live here; nothing about what was on screen.
 @MainActor @Observable
 final class AppSettings {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     var ambientMode: AmbientMode {
         didSet { defaults.set(ambientMode.rawValue, forKey: "ambientMode") }
+    }
+    var matchAlertStyle: MatchAlertStyle {
+        didSet { defaults.set(matchAlertStyle.rawValue, forKey: "matchAlertStyle") }
     }
     var sensitivity: Double {
         didSet { defaults.set(sensitivity, forKey: "sensitivity") }
@@ -62,8 +85,10 @@ final class AppSettings {
     /// Per-install salt for context fingerprints, so they can't be matched across Macs or reversed.
     let salt: String
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         ambientMode = AmbientMode(rawValue: defaults.string(forKey: "ambientMode") ?? "") ?? .on
+        matchAlertStyle = MatchAlertStyle(rawValue: defaults.string(forKey: "matchAlertStyle") ?? "") ?? .motion
         sensitivity = defaults.object(forKey: "sensitivity") as? Double ?? SurfacePolicy.Settings().sensitivity
         dwell = defaults.object(forKey: "dwell") as? Double ?? SurfacePolicy.Settings().dwell
         excludedApps = defaults.stringArray(forKey: "excludedApps") ?? []

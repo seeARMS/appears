@@ -177,19 +177,29 @@ struct SuggestionsPane: View {
                     Text("Log only").tag(AmbientMode.shadow)
                     Text("Off").tag(AmbientMode.off)
                 } label: {
-                    Titled("Suggest on its own", caption: "“Log only” records what it would have shown, for Activity, without changing the menu bar.")
+                    Titled("Suggest on its own", caption: "“Log only” records what it would have shown, for Activity, without alerting you.")
                 }
                 #else
                 Toggle(isOn: Binding(get: { model.settings.ambientMode == .on }, set: { model.setAmbientMode($0 ? .on : .off) })) {
-                    Titled("Suggest on its own", caption: "When something you have is related to what you’re working on, the menu bar icon shows a dot. No notifications or sounds.")
+                    Titled("Suggest on its own", caption: "Alerts you when something you have is a confident match for what you’re working on. Always silent.")
                 }
                 #endif
                 Group {
-                    Picker("Look after reading for", selection: $model.settings.dwell) {
+                    Picker(selection: $model.settings.matchAlertStyle) {
+                        ForEach(MatchAlertStyle.allCases, id: \.self) { style in
+                            Text(style.title).tag(style)
+                        }
+                    } label: {
+                        Titled("Alert style", caption: model.settings.matchAlertStyle.caption)
+                    }
+                    Picker(selection: $model.settings.dwell) {
+                        Text("1 second (default)").tag(1.0)
                         Text("5 seconds").tag(5.0)
                         Text("15 seconds").tag(15.0)
                         Text("30 seconds").tag(30.0)
                         Text("1 minute").tag(60.0)
+                    } label: {
+                        Titled("Wait before suggesting", caption: "After you switch to a window, document or conversation, Appears waits this long before checking for matches. While typing, it checks after a one-second pause.")
                     }
                     LabeledContent("Suggest") {
                         HStack(spacing: 8) {

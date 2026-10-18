@@ -36,7 +36,7 @@
 
 You're replying to an email about the kitchen remodel. Somewhere on your Mac is a photo of the contractor's quote, a note from the walkthrough, and a text from Dana about the outlet. You'd find them if you went looking, but you won't, because you've forgotten they exist.
 
-Appears reads the window in front of you, works out what it's about, and finds what you already have on the subject. When it's confident, a small dot appears on its menu bar ring and the whole mark slowly rotates. Click it, or press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Space</kbd>, and they're there. No query, no notifications, no cloud.
+Appears reads the window in front of you, works out what it's about, and finds what you already have on the subject. When it's confident, a small dot appears on its menu bar ring and the whole mark slowly rotates. Click it, or press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Space</kbd>, and they're there. Prefer a still dot or a toast with the match's details? Choose an alert style in Settings → Suggestions. No query, no sounds, no cloud.
 
 ## Features
 
@@ -88,7 +88,7 @@ Appears reads your screen, so "trust us" isn't good enough. Each promise below i
 
 - **Nothing about your screen is stored.** What's on screen, and your calendar events, are read in memory and dropped. The journal of what you opened or dismissed keeps item ids, scores and a salted fingerprint, never text.
 - **Sensitive windows are never read:** password managers, Keychain Access, System Settings, secure text fields, and private browser windows. Safari can't say whether a window is private, so ambient mode skips Safari unless you turn it on.
-- **Silence is the default.** No notifications, no sounds, no pop-ups. The menu bar ring and dot rotate continuously while a result waits, taking four seconds per full turn with no pause between turns. Opening or clearing it stops the motion; macOS Reduce Motion keeps the mark still.
+- **Silence is the default.** The menu bar ring and dot rotate continuously while a result waits, taking four seconds per full turn. Opening or clearing it stops the motion; macOS Reduce Motion keeps the mark still. Settings → Suggestions → Alert style also offers a still dot or an optional silent toast with the match's title and evidence. The toast disappears after eight seconds (longer while hovered); click it to see related results. Toasts stay in memory and never enter Notification Center.
 - **No analytics, telemetry or crash reporting**, in the app or on the site.
 
 Check the engine's entitlements and the app's imports on any build:
@@ -130,7 +130,7 @@ The on-device model (about 914 MB) downloads in the background while you go thro
 2. **Index.** The engine embeds text, PDF pages and images with Google's [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) on [MLX](https://github.com/ml-explore/mlx-swift), into one vector space, next to an FTS5 full-text index.
 3. **Ranking.** A selection or draft is searched independently of the surrounding window, keeping meaningful words regardless of their part of speech. Global vector and full-text searches run alongside a conversation search when Messages can be resolved to one identity. Surrounding text helps discover candidates. Short source passages determine relevance to the active text; background discovery still favours forgotten material. Results are diversified before the display limit.
 4. **Confidence.** Each result gets a 0–1 score from how far its evidence stands above the other candidates. For active text, confidence is calculated from the passage being quoted. Conversation identity helps retrieval and ranking but never increases confidence. A match counts for more when what you're writing asks your memory ("what was the wifi password again?").
-5. **When to speak.** Appears looks after five seconds reading or a two-second pause in typing. It marks the ring only for a confident match (0.6 by default), at most once a minute, and never twice for the same item in the same document or conversation.
+5. **When to speak.** By default, Appears looks after one second in a window, document or conversation, or a one-second pause in typing. You can choose a longer wait in Settings → Suggestions. It marks the ring only for a confident match (0.6 by default), at most once a minute, and never twice for the same item in the same document or conversation.
 
 <details>
 <summary><strong>The details</strong></summary>

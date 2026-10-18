@@ -298,6 +298,11 @@ let weaker = [
     model.showForSnapshot(.init(mode: .ambient, bundleID: CalendarEvent.bundleID, appName: CalendarEvent.appName, windowTitle: meeting.title,
                                 fingerprint: "x", suggestions: Array(suggestions.prefix(2)), evidenceTerms: ["Ruiz", "kitchen", "outlets"], meeting: meeting), status: status)
     render(PanelView(model: model, close: {}), "panel-meeting", width: 400)
+    render(MatchToastView(suggestion: contactResults[0], terms: ["kitchen", "outlet"], contacts: contactModel.contacts,
+                         open: {}, dismiss: {}), "match-toast", width: 360)
+    render(MatchToastView(suggestion: contactResults[0], terms: ["kitchen", "outlet"], contacts: contactModel.contacts,
+                         meeting: meeting, open: {}, dismiss: {}), "match-toast-meeting", width: 360)
+    await verifyMatchAlerts(suggestions: suggestions, status: status)
 
     model.showForSnapshot(.init(mode: .pull, bundleID: "com.apple.Safari", appName: "Safari", windowTitle: "NASA rover finds evidence of ancient lakebeds", fingerprint: "x",
                                 suggestions: []), status: status)
@@ -322,6 +327,12 @@ let weaker = [
     UserDefaults.standard.removeObject(forKey: "onboardingStep")
     // Each pane alone: the toolbar tabs belong to the window, which isn't drawn offscreen.
     render(GeneralPane(model: model).frame(width: 560, height: 580), "settings-general", width: 560)
+    let originalAlertStyle = model.settings.matchAlertStyle
+    for style in MatchAlertStyle.allCases {
+        model.settings.matchAlertStyle = style
+        render(SuggestionsPane(model: model).frame(width: 560, height: 580), "settings-suggestions-\(style.rawValue)", width: 560)
+    }
+    model.settings.matchAlertStyle = originalAlertStyle
     render(SuggestionsPane(model: model).frame(width: 560, height: 580), "settings-suggestions", width: 560)
     render(PrivacyPane(model: model).frame(width: 560, height: 580), "settings-privacy", width: 560)
     render(ActivityPane(model: model).frame(width: 560, height: 580), "settings-activity", width: 560)
