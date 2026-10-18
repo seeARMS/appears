@@ -174,15 +174,17 @@ import Testing
 }
 
 private final class RetryWalk: Sendable {
-    let started = DispatchSemaphore(value: 0)
+    // Resume the test directly; a queued semaphore waiter can be starved by
+    // concurrent scan fixtures until this walk's watchdog has already fired.
+    let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let finish = DispatchSemaphore(value: 0)
     let state = Mutex((count: 0, fail: true, timedOut: false))
 
     func walk(_ scanner: FileScanner) throws -> [Item] {
         let first = state.withLock { $0.count += 1; return $0.count == 1 }
         if first {
-            started.signal()
-            let result = finish.wait(timeout: .now() + 5)
+            started.continuation.yield(())
+            let result = finish.wait(timeout: .now() + 30)
             state.withLock { $0.timedOut = result == .timedOut }
         }
         if state.withLock({ $0.fail }) {
@@ -192,8 +194,7 @@ private final class RetryWalk: Sendable {
     }
 
     func waitUntilStarted() async {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async { self.started.wait(); continuation.resume() }
-        }
+        var iterator = started.stream.makeAsyncIterator()
+        _ = await iterator.next()
     }
 }
