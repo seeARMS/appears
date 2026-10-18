@@ -38,6 +38,15 @@ import Testing
         #expect(query.fullText == "\"joan\"")
     }
 
+    @Test(arguments: [ContextSnapshot.Origin.accessibility, .ocr])
+    func shortSelectionOverridesLongDraft(_ origin: ContextSnapshot.Origin) {
+        let plan = RetrievalPlan(ContextSnapshot(selection: "Joan", focusedText: "How much was the final apartment bill?", origin: origin))
+        let query = QueryBuilder.build(plan.primary) { _ in (["joan": 20], 100) }
+        #expect(plan.hasActiveText)
+        #expect(query.dense == "Joan")
+        #expect(query.fullText == "\"joan\"")
+    }
+
     @Test func repeatedAmountsNeedIndependentTopicSupport() {
         let bill = Unit(id: 1, kind: .text, locator: .whole, text: "The apartment statement asks for $845.")
         let confirmation = Unit(id: 2, kind: .text, locator: .whole, text: "We only owe $845 after the leasing office corrected it.")

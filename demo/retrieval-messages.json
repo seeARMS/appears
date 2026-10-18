@@ -4933,5 +4933,21 @@
     "chatID": 1299,
     "text": "Bring the work lights and batteries on our walk. The room needs to be brighter. Meet near trail 100.",
     "age": 129
+  },
+  {
+    "path": "messages:retrieval-photo-other",
+    "title": "Photo \u00b7 Maintenance",
+    "chatID": 912,
+    "imageOCR": true,
+    "text": "Kestrel maintenance case K-417. Replacement hinge approved.",
+    "age": 20
+  },
+  {
+    "path": "messages:retrieval-photo-scoped",
+    "title": "Photo \u00b7 Maintenance",
+    "chatID": 910,
+    "imageOCR": true,
+    "text": "Kestrel maintenance case K-417. Replacement hinge approved.",
+    "age": 20
   }
 ]

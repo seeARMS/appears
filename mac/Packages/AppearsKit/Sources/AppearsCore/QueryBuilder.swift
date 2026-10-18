@@ -50,7 +50,7 @@ public enum QueryBuilder {
         // The selection says most clearly what you care about; then what you're writing; then
         // the window's title and the rest of what's visible.
         var parts: [String] = []
-        if selection.count >= 12 || (context.origin == .text && !selection.isEmpty) { parts.append(selection) }
+        if !selection.isEmpty { parts.append(selection) }
         if focused.count >= 12 { parts.append(focused) }
         let title = cleanTitle(context.windowTitle, app: context.appName)
         if !title.isEmpty { parts.append(title) }
@@ -75,8 +75,8 @@ public enum QueryBuilder {
         let identifiers = Self.identifiers(in: entitySource)
         var rare: [String] = []
         if let frequencies {
-            let active = selection.count >= 12 || (context.origin == .text && !selection.isEmpty) ? selection : focused
-            if active.count >= 12 || (context.origin == .text && !active.isEmpty) {
+            let active = selection.isEmpty ? focused : selection
+            if !selection.isEmpty || focused.count >= 12 || (context.origin == .text && !focused.isEmpty) {
                 rare = Array(LexicalTerms.tokens(active).filter { !LexicalTerms.filler.contains($0) && !ignored.contains($0) }.prefix(32))
             } else {
                 rare = rareTerms(in: entitySource, frequencies: frequencies, excluding: Set((strong + weak).map { $0.lowercased() }).union(ignored))

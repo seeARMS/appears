@@ -20,4 +20,7 @@ for i in range(600):
 for i in range(100):
     messages.append(dict(path=f"messages:retrieval-context-{i}", title="Weekend plans", chatID=1200+i,
                          text=f"Bring the work lights and batteries on our walk. The room needs to be brighter. Meet near trail {i+1}.", age=30+i))
+for suffix, chat in [("other", 912), ("scoped", 910)]:
+    messages.append(dict(path=f"messages:retrieval-photo-{suffix}", title="Photo · Maintenance", chatID=chat,
+                         imageOCR=True, text="Kestrel maintenance case K-417. Replacement hinge approved.", age=20))
 Path(__file__).with_name("retrieval-messages.json").write_text(json.dumps(messages, indent=2)+"\n")

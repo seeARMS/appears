@@ -3,8 +3,9 @@ import Foundation
 /// A shared reference is a discovery hint, not proof that two statements concern the
 /// same subject. Require both stable conversation identity and semantic coherence.
 enum DiscussionLink {
+    private static let expression = try! NSRegularExpression(pattern: #"(?i)(?:[$€£]\s*)?\b(?:[a-z]+-?)?\d+(?:[.,]\d+)*(?:-[a-z0-9]+)*\b"#)
+
     static func references(_ text: String) -> Set<String> {
-        let expression = try! NSRegularExpression(pattern: #"(?i)(?:[$€£]\s*)?\b(?:[a-z]+-?)?\d+(?:[.,]\d+)*(?:-[a-z0-9]+)*\b"#)
         return Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
             guard let range = Range(match.range, in: text) else { return nil }
             let raw = String(text[range]).lowercased()

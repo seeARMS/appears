@@ -15,10 +15,11 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
         var quote: String?
         var silent: Bool?
         var rejectQuotes: [String]?
+        var first: String?
     }
     struct Suite: Decodable { var retrieval: [Scenario]? }
     let scenarios = try JSONDecoder().decode(Suite.self, from: Data(contentsOf: demo.appending(path: "scenarios.json"))).retrieval ?? []
-    guard !scenarios.isEmpty else { return }
+    guard !scenarios.isEmpty else { throw ValidationError("No retrieval scenarios found in scenarios.json.") }
     let store = try IndexStore(url: home.appending(path: ".retrieval/index.sqlite"))
     let vectors = VectorIndex(dimension: embedder.dimension)
     let messages = try JSONDecoder().decode([Eval.DemoMessage].self, from: Data(contentsOf: demo.appending(path: "retrieval-messages.json")))
@@ -29,7 +30,7 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
         for (offset, message) in batch.enumerated() {
             let date = now.addingTimeInterval(-message.age * 86_400)
             let reference = MessageReference(rowID: Int64(start + offset + 1), guid: message.path, chatID: message.chatID ?? 0, conversationURL: nil)
-            let item = Item(source: .messages, path: message.path, kind: .message, title: message.title,
+            let item = Item(source: .messages, path: message.path, kind: message.imageOCR == true ? .image : .message, title: message.title,
                             size: Int64(message.text.utf8.count), created: date, modified: date, lastUsed: nil, message: reference)
             let (id, _) = try store.record(item, signature: "demo")
             let update = try store.replaceUnits(itemID: id, title: message.title, units: [(Unit(kind: .text, locator: .whole, text: message.text), embedded[offset])])
@@ -52,6 +53,7 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
             passed = !response.suggestions.prefix(3).contains { $0.ambientEligible != false && $0.confidence >= threshold }
         } else {
             passed = scenario.expect.allSatisfy(paths.contains)
+                && (scenario.first.map { paths.first == $0 } ?? true)
                 && !(scenario.rejectQuotes ?? []).contains { rejected in response.suggestions.prefix(3).contains {
                     ($0.evidence?.text ?? $0.snippet).localizedCaseInsensitiveContains(rejected)
                 } }

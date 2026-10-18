@@ -252,6 +252,7 @@ final class PassageSelector: Sendable {
                     let score = similarity
                         * (candidate.features.entityHit ? ranking.entityBoost : 1)
                         * (ranking.preferForgottenForActiveText ? candidate.features.forgotten * candidate.features.novelty : 1)
+                        * (scopedChats.contains(candidate.item.message?.chatID ?? -1) ? ranking.entityBoost : 1)
                     result = Suggestion(item: candidate.item, unit: candidate.unit, reason: candidate.reason,
                                         snippet: candidate.snippet, score: score, confidence: candidate.confidence,
                                         features: candidate.features, line: candidate.line, evidence: candidate.evidence,

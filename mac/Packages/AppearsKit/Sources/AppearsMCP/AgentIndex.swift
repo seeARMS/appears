@@ -89,7 +89,7 @@ public actor AgentIndex {
         var recall = Recall(store: store, vectors: vectors, embedder: FileQueryEmbedder(base: embedder, vector: mean))
         recall.settings = Self.ranking(preferForgotten: preferForgotten)
         let request = RecallRequest(
-            context: Self.context(String(text.prefix(4_000))), trigger: .pull, limit: limit,
+            context: .text(String(text.prefix(4_000))), trigger: .pull, limit: limit,
             exclude: excluded + [item.id]
         )
         return (item, try await recall.run(request).suggestions)

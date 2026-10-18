@@ -10,8 +10,10 @@ struct RetrievalPlan {
     init(_ context: ContextSnapshot) {
         let selection = QueryBuilder.clean(context.selection)
         let draft = QueryBuilder.clean(context.focusedText)
-        let active = selection.count >= 12 || (context.origin == .text && !selection.isEmpty) ? selection : draft
-        hasActiveText = active.count >= 12 || (context.origin == .text && !active.isEmpty)
+        // A selection is explicit intent, including a short name or identifier.
+        // The minimum length applies only to an automatically observed draft.
+        let active = selection.isEmpty ? draft : selection
+        hasActiveText = !selection.isEmpty || draft.count >= 12 || (context.origin == .text && !draft.isEmpty)
         if hasActiveText {
             primary = ContextSnapshot(appName: context.appName, selection: active, origin: context.origin)
             surrounding = ContextSnapshot(appName: context.appName, windowTitle: context.windowTitle,

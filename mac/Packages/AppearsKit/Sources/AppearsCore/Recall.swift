@@ -198,7 +198,8 @@ public struct Recall: Sendable {
         let ranksPassages = plan.hasActiveText && embedder.supportsPassageRefinement
         SearchTrace.current?.record(.preparation, since: prepared)
         try Task.checkCancellation()
-        let hasText = query.dense.count >= 12 || !query.entities.isEmpty || (context.origin == .text && !query.dense.isEmpty)
+        let hasText = query.dense.count >= 12 || !query.entities.isEmpty
+            || ((plan.hasActiveText || context.origin == .text) && !query.dense.isEmpty)
         guard hasText || picture != nil else {
             return RecallResponse(suggestions: [], query: query.summary, milliseconds: 0)
         }

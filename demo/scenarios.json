@@ -2,6 +2,16 @@
   "about": "Contexts for `appears eval`: what's on screen, and what Appears should find (paths under demo/files), and, when the context asks for a value, the line the top result should quote. Negative scenarios should surface nothing confidently. Scenarios with app \"Calendar\" are upcoming meetings, read the way the app reads an event: title, recipients (the attendees), location, and visible (the notes, conferencing boilerplate and all).",
   "scenarios": [
     {
+      "name": "A short selected place overrides an unrelated draft",
+      "app": "Messages",
+      "title": "Weekend plans",
+      "selection": "Lisbon",
+      "origin": "accessibility",
+      "focused": "How much was the final apartment bill?",
+      "visible": "Can we borrow the work lights for the weekend?",
+      "expect": ["Documents/Travel/Lisbon 2023/itinerary.md"]
+    },
+    {
       "name": "Replying to the contractor",
       "app": "Mail",
       "title": "Re: Kitchen — can you start on the 14th?",
@@ -336,6 +346,15 @@
   ],
   "negative": [
     {
+      "name": "An unsupported short selection overrides a familiar draft",
+      "app": "Messages",
+      "title": "Lisbon travel plans",
+      "selection": "Zorbax",
+      "origin": "accessibility",
+      "focused": "Where did we stay in Lisbon last time?",
+      "visible": "Lisbon apartment itinerary and flight details."
+    },
+    {
       "name": "Reading about Mars",
       "app": "Safari",
       "title": "NASA rover finds new evidence of ancient lakebeds on Mars",
@@ -512,6 +531,15 @@
     }
   ],
   "retrieval": [
+    {
+      "name": "Matching photo OCR prefers the resolved conversation",
+      "title": "Morgan Hale",
+      "focused": "find the kestrel maintenance case screenshot",
+      "visible": "",
+      "chatIDs": [910],
+      "expect": ["messages:retrieval-photo-scoped"],
+      "first": "messages:retrieval-photo-scoped"
+    },
     {
       "name": "Final bill across separate messages and competing old receipts",
       "title": "Morgan Hale",

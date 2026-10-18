@@ -217,6 +217,8 @@ struct Eval: AsyncParsableCommand {
             /// Calendar scenarios: the event's location.
             var location: String?
             var focused: String?
+            var selection: String?
+            var origin: ContextSnapshot.Origin?
             var visible: String?
             var document: String?
             var expect: [String]?
@@ -250,6 +252,8 @@ struct Eval: AsyncParsableCommand {
         var text: String
         var age: Double
         var chatID: Int64?
+        /// Synthetic OCR evidence attached to a photo, without a personal image file.
+        var imageOCR: Bool?
     }
 
     func demoFolder() throws -> URL {
@@ -343,8 +347,8 @@ struct Eval: AsyncParsableCommand {
         func context(_ s: Scenarios.Scenario) -> ContextSnapshot {
             ContextSnapshot(
                 appName: s.app, bundleID: "eval.\(s.app)", windowTitle: s.title,
-                documentPath: s.document.map { home.appending(path: $0).path }, focusedText: s.focused ?? "",
-                visibleText: s.visible ?? "", recipients: s.recipients ?? [], origin: .text
+                documentPath: s.document.map { home.appending(path: $0).path }, selection: s.selection ?? "", focusedText: s.focused ?? "",
+                visibleText: s.visible ?? "", recipients: s.recipients ?? [], origin: s.origin ?? .text
             )
         }
         func short(_ path: String) -> String { path.replacingOccurrences(of: home.path + "/", with: "") }
