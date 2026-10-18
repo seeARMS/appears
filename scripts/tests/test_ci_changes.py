@@ -32,6 +32,15 @@ class SelectionTests(unittest.TestCase):
 
 class GitDiffTests(unittest.TestCase):
     def setUp(self):
+        # Hooks export repository-local variables that override `git -C` and
+        # could direct fixture commits into the caller's repository. Isolate
+        # every Git subprocess, including the selector exercised by these tests.
+        git_variables = subprocess.check_output(["git", "rev-parse", "--local-env-vars"], text=True).splitlines()
+        environment = patch.dict(os.environ, {
+            key: value for key, value in os.environ.items() if key not in git_variables
+        }, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
