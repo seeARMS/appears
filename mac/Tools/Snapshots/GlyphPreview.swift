@@ -100,15 +100,23 @@ func verifyGlyphAnimation() async {
     let first = button.image
     animator?.update(.found) // Polling the same state must not reset the animation.
     precondition(button.image === first)
-    try? await Task.sleep(for: .milliseconds(150))
+    func waitForImageChange(from image: NSImage?) async -> Bool {
+        for _ in 0..<50 {
+            if button.image !== image { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return button.image !== image
+    }
     if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        try? await Task.sleep(for: .milliseconds(150))
         precondition(button.image === first, "Reduce Motion keeps discoveries still")
     } else {
-        precondition(button.image !== first, "A waiting discovery must rotate")
+        let rotated = await waitForImageChange(from: first)
+        precondition(rotated, "A waiting discovery must rotate")
         try? await Task.sleep(for: .seconds(GlyphImage.rotationDuration))
         let afterFullTurn = button.image
-        try? await Task.sleep(for: .milliseconds(150))
-        precondition(button.image !== afterFullTurn, "Rotation must continue after the first full turn")
+        let continued = await waitForImageChange(from: afterFullTurn)
+        precondition(continued, "Rotation must continue after the first full turn")
     }
     for state in [AppModel.Glyph.idle, .working, .paused, .needsSetup] {
         animator?.update(state)
