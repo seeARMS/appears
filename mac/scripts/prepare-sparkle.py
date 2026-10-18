@@ -10,10 +10,21 @@ import sys
 
 
 def prepare(root):
+    """Apply the privacy patches from pinned originals without rewriting equal files."""
+    def write_if_changed(path, source):
+        """Preserve the timestamp when the generated patch is already on disk."""
+        target = root / path
+        # Preserve timestamps on restored source so Xcode can reuse Sparkle's
+        # compiled objects. Still derive every patch from the pinned originals.
+        if not target.exists() or target.read_text() != source:
+            target.write_text(source)
+
     def original(path):
+        """Read an unmodified source file from the checkout's pinned Git revision."""
         return subprocess.check_output(["git", "-C", str(root), "show", f"HEAD:{path}"], text=True)
 
     def replace_once(text, before, after):
+        """Apply one expected substitution, failing if upstream source has drifted."""
         if text.count(before) != 1:
             raise ValueError("Pinned Sparkle source changed; review the privacy patch")
         return text.replace(before, after)
@@ -21,7 +32,7 @@ def prepare(root):
     path = "Sparkle/SPUDownloadDriver.m"
     source = replace_once(original(path), "_downloader = [[SPUDownloader alloc] initWithDelegate:self];",
                           '@throw [NSException exceptionWithName:NSInternalInconsistencyException reason:@"Appears requires the isolated downloader service" userInfo:nil];')
-    (root / path).write_text(source)
+    write_if_changed(path, source)
 
     path = "Sparkle/SUUpdateAlert.m"
     source = original(path).replace('#import "SUWKWebView.h"\n', "").replace('#import "SULegacyWebView.h"\n', "")
@@ -34,7 +45,7 @@ def prepare(root):
         customAllowedURLSchemes:@[]];
 
 ''' + source[end:]
-    (root / path).write_text(source)
+    write_if_changed(path, source)
 
     path = "Sparkle.xcodeproj/project.pbxproj"
     source = original(path)
@@ -44,7 +55,7 @@ def prepare(root):
         "723ABF31259D062F00BDB4FA /* SULegacyWebView.m in Sources */",
     ]:
         source = replace_once(source, f"\t\t\t\t{entry},\n", "")
-    (root / path).write_text(source)
+    write_if_changed(path, source)
 
 
 if __name__ == "__main__":

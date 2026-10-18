@@ -14,14 +14,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Test check selection
+        run: python3 -I -m unittest discover -s scripts/tests -v
+      - name: Select native checks
+        id: changes
+        run: python3 -I scripts/ci-changes.py
+
   core:
     name: Core and MCP
+    needs: changes
+    # A failed detector must run the checks, never silently skip them. Keep the
+    # workflow and required job names present for site-only pull requests.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.native != 'false') }}
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Identify toolchain
+        id: toolchain
+        run: echo "key=$( { xcodebuild -version; xcrun swift --version; xcrun --sdk macosx --show-sdk-version; sw_vers -buildVersion; } | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Cache Swift build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mac/Packages/AppearsKit/.build
+          key: core-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/Packages/AppearsKit/Package.*') }}-${{ hashFiles('mac/Packages/AppearsKit/Sources/**', 'mac/Packages/AppearsKit/Tests/**') }}
+          restore-keys: |
+            core-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/Packages/AppearsKit/Package.*') }}-
       - name: Test core, Messages and MCP
         working-directory: mac/Packages/AppearsKit
         run: swift test
@@ -51,12 +82,40 @@ jobs:
 
   mac:
     name: Mac app
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.native != 'false') }}
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Identify toolchain
+        id: toolchain
+        run: echo "key=$( { xcodebuild -version; xcrun swift --version; xcrun --sdk macosx --show-sdk-version; sw_vers -buildVersion; } | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Cache pinned Sparkle build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            mac/build/sparkle-src
+            mac/build/sparkle-derived
+          key: sparkle-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/scripts/build-sparkle.sh', 'mac/scripts/prepare-sparkle.py') }}
+      - name: Cache app package sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Keep app products/intermediates out: check-app.sh deliberately does
+          # a clean build, including all signature/privacy/license checks.
+          path: mac/build/CheckDerivedData/SourcePackages
+          key: app-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}
+      - name: Cache app compilations
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Xcode's content-addressed compiler cache survives clean builds. It
+          # reuses only matching compiler inputs; products are rebuilt/signed.
+          path: mac/build/CheckDerivedData/CompilationCache.noindex
+          key: app-compile-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/scripts/check-app.sh', 'mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            app-compile-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('mac/scripts/check-app.sh', 'mac/project.yml', 'mac/Packages/**/Package.swift', 'mac/Packages/**/Package.resolved') }}-
       - name: Install build tools
         run: |
           brew install xcodegen
