@@ -110,7 +110,7 @@ const schema = [
       <div class="search-intro reveal">
         <p class="eyebrow">{SEARCH.eyebrow}</p>
         <h2 id="search-heading">{SEARCH.heading}</h2>
-        <p class="part-text">{SEARCH.text}</p>
+        <p class="part-text" set:html={inline(SEARCH.text)} />
       </div>
       <AppScreenshot />
     </section>

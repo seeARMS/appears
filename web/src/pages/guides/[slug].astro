@@ -62,7 +62,7 @@ const schema = [
         <h2 id="steps">{GUIDE_TEXT.steps}</h2>
         <ol class="guide-steps">
           {guide.steps.map((step) => (
-            <li><h3>{step.title}</h3><p>{step.text}</p></li>
+            <li><h3>{step.title}</h3><p set:html={inline(step.text)} /></li>
           ))}
         </ol>
       </section>

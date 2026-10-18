@@ -4,7 +4,8 @@
 //
 // Copy may use two bits of Markdown, `code` and [links](https://…): the
 // Markdown version uses it as it is, and src/lib/inline.ts turns it into HTML
-// for the page.
+// for the page. Shortcuts go in braces, like {Control–Shift–Space}: keycaps on
+// the page, plain names in the Markdown (see inline.ts).
 
 import landing from "../../demo/landing.json";
 
@@ -27,9 +28,9 @@ export const AUTHOR = {
 export const SUMMARY =
   "Open-source Mac menu bar app at appea.rs, made by Colin Armstrong, that proactively finds messages, notes, photos and documents relevant to what you're working on, using an on-device model; nothing leaves the computer.";
 
-export const TITLE = "Appears: let your Mac do the searching";
+export const TITLE = "Appears: your Mac remembers, so you don't have to";
 export const DESCRIPTION =
-  "Appears proactively finds messages, notes, photos and documents relevant to what you're working on. Everything stays on your Mac.";
+  "Appears brings back the messages, notes, photos and files you already have, when they matter to what you're doing. Private, offline, on your Mac.";
 
 export const OPERATING_SYSTEM = "macOS 26 or later";
 export const HARDWARE = "Mac with Apple silicon";
@@ -39,9 +40,9 @@ export const LICENSE_URL = "https://opensource.org/license/mit";
 
 // --- Hero --------------------------------------------------------------------------
 
-export const HEADLINE = "Let your Mac do the searching.";
+export const HEADLINE = "Your Mac remembers, so you don't have to.";
 export const LEDE =
-  "Appears proactively finds messages, notes, photos and documents relevant to what you're working on, so you can keep working without stopping to search. Everything stays on your Mac.";
+  "Appears notices what you're working on and brings back the messages, notes, photos and files that go with it. You don't need to search or remember where you put them. Everything stays on your Mac.";
 /** Where the Download buttons go. The release script puts the latest build here. */
 export const DOWNLOAD_URL = `${SITE}/app.dmg`;
 export const DOWNLOAD_LABEL = "Download for Mac";
@@ -54,8 +55,8 @@ export const RELATED_SUMMARY = "A short list of suggestions, each with a reason 
 
 export const SEARCH = {
   eyebrow: "Search by meaning",
-  heading: "You can ask, too.",
-  text: "Press Control–Shift–Space and describe what you remember. Appears searches your enabled sources together, even when you don't remember the exact words or file name.",
+  heading: "Or just ask.",
+  text: "Press {Control–Shift–Space} and describe it the way you remember it. Appears looks through your messages, notes, files and photos at once, so you don't need the exact words or the file name.",
   caption: "The Appears search window, shown with made-up Messages conversations.",
   alt: "Appears searching for ‘kitchen quote’, with matching messages from Dana Ruiz and Joan Lee and an excerpt below each result.",
 };
@@ -139,7 +140,7 @@ export const MOCK_SCENARIOS = [
 
 // --- How it works ------------------------------------------------------------------
 
-export const HOW_HEADING = "Keep working. Appears finds what's relevant.";
+export const HOW_HEADING = "You keep working. It finds what you'll need.";
 /** Each card's `scene` names its illustration in src/components/Scene.astro. */
 export const HOW = [
   {
@@ -166,7 +167,7 @@ export const HOW = [
 
 // --- Quiet -------------------------------------------------------------------------
 
-export const QUIET_HEADING = "Proactive help, without interruptions.";
+export const QUIET_HEADING = "It never interrupts you.";
 export const QUIET =
   "No notifications, no sounds, no pop-ups. When Appears finds something worth a look, the little ring in your menu bar gets a dot and keeps slowly rotating until you open it. Click it when you're ready, or press a shortcut to ask any time. Reduce Motion keeps the mark still.";
 /** The menu bar glyph's states (drawn in mac/App/Sources/Glyph.swift; src/components/Glyph.astro on the site). */
@@ -252,7 +253,7 @@ export const FAQ = [
     q: "How often will it suggest something?",
     a: [
       "When it finds a confident match, after five seconds reading or a two-second pause after typing. New suggestions are at least one minute apart, and the same item won't repeat in that conversation. The menu bar ring gets a dot and slowly rotates until you open or clear the result. Reduce Motion keeps it still; nothing pops up.",
-      "Press ⇧⌘Space to ask any time.",
+      "Press {Shift–Command–Space} to ask any time.",
     ],
   },
   {
@@ -275,8 +276,8 @@ export const FAQ = [
 
 // --- Get it ------------------------------------------------------------------------
 
-export const GET_HEADING = "Let Appears do the searching.";
-export const GET_TEXT = "Download Appears and choose which sources it can use. The on-device model downloads during setup. Once your sources are indexed, Appears can start finding useful information while you work.";
+export const GET_HEADING = "Get back what you already have.";
+export const GET_TEXT = "Download Appears and pick the apps and folders it can look through. The on-device model downloads during setup. Once everything is indexed, things start turning up while you work.";
 
 // --- Search guides -----------------------------------------------------------------
 // These pages describe capabilities in the public v0.1.0 release as well as
@@ -330,8 +331,8 @@ export const GUIDES: SearchGuide[] = [
     steps: [
       { title: "Enable Messages", text: "Open Appears Settings → Sources and turn on Include Messages and photos. Grant Full Disk Access in macOS System Settings so Appears can read the local Messages database. Follow any restart prompt from macOS." },
       { title: "Let the first index run", text: "Messages and their photos must already be downloaded to this Mac. Leave Appears running while it builds the index; results become available as items are indexed." },
-      { title: "Describe the conversation", text: "Press Control–Shift–Space to open search. Try a short description such as ‘the advice about yellow leaves’. Add a person's name or a distinctive number if you remember one." },
-      { title: "Check the source", text: "Read the result's excerpt, use the arrow keys to select it, and press Return to open it in Messages. Read the surrounding conversation before relying on a detail." },
+      { title: "Describe the conversation", text: "Press {Control–Shift–Space} to open search. Try a short description such as ‘the advice about yellow leaves’. Add a person's name or a distinctive number if you remember one." },
+      { title: "Check the source", text: "Read the result's excerpt, use the arrow keys to select it, and press {Return} to open it in Messages. Read the surrounding conversation before relying on a detail." },
     ],
     sections: [
       { heading: "Use the details you still remember", paragraphs: ["A description helps when the wording has changed in your memory: ‘the last rent payment’ can be more useful than guessing an exact sentence. Names, amounts and unusual phrases help narrow the search when you know them.", "Try one idea at a time. If a broad query returns several conversations, add what the conversation was about rather than repeatedly rephrasing the same vague request."] },
@@ -358,8 +359,8 @@ export const GUIDES: SearchGuide[] = [
     steps: [
       { title: "Choose the sources", text: "In Appears Settings → Sources, enable Include Apple Notes and grant Full Disk Access. Documents in your home folder are included by default, apart from skipped folders and file types." },
       { title: "Include other folders you need", text: "Add a folder to the Include list if your documents live outside your home folder or inside a normally skipped location. Download cloud-only files to this Mac to make their contents available." },
-      { title: "Search for the detail", text: "Once the model is ready and items are indexed, press Control–Shift–Space. Describe the subject, decision or instruction you want, such as ‘the plan for the team offsite’." },
-      { title: "Open the original", text: "Use the result's source and excerpt to check the match. Select it with the arrow keys and press Return to open the note or document in its app. For a file result, Command–Return reveals it in Finder." },
+      { title: "Search for the detail", text: "Once the model is ready and items are indexed, press {Control–Shift–Space}. Describe the subject, decision or instruction you want, such as ‘the plan for the team offsite’." },
+      { title: "Open the original", text: "Use the result's source and excerpt to check the match. Select it with the arrow keys and press {Return} to open the note or document in its app. For a file result, {Command–Return} reveals it in Finder." },
     ],
     sections: [
       { heading: "A subject works when a file name doesn't", paragraphs: ["Try ‘where we were going for the team offsite’ if you don't know whether the answer is in a meeting note, a venue list or a PDF. If you remember a name or a specific phrase, include it too.", "Search can return information with different wording, but a similar subject isn't proof that a result answers your question. Read the excerpt and open the original to check dates, decisions and surrounding context."] },
@@ -386,8 +387,8 @@ export const GUIDES: SearchGuide[] = [
     steps: [
       { title: "Make the image local", text: "Keep photos and screenshots in a folder Appears can read. For an image in Apple Photos, export it to a local folder first. For a Messages photo, download the attachment in Messages." },
       { title: "Include its source", text: "Images in your home folder are scanned by default. Add other folders in Settings → Sources. Messages photos also need Include Messages and photos enabled and Full Disk Access." },
-      { title: "Describe what you remember", text: "After indexing, press Control–Shift–Space. Try the subject of the picture, such as ‘the plant by the window’, or distinctive text, such as a quote number. Start with one recognizable detail." },
-      { title: "Preview and check", text: "Use the thumbnail and any matching text to choose a result. For a file result, press Command–Y to preview it, Return to open it, or Command–Return to reveal its location in Finder." },
+      { title: "Describe what you remember", text: "After indexing, press {Control–Shift–Space}. Try the subject of the picture, such as ‘the plant by the window’, or distinctive text, such as a quote number. Start with one recognizable detail." },
+      { title: "Preview and check", text: "Use the thumbnail and any matching text to choose a result. For a file result, press {Command–Y} to preview it, {Return} to open it, or {Command–Return} to reveal its location in Finder." },
     ],
     sections: [
       { heading: "Pictures and words give you different clues", paragraphs: ["A description of the subject can help find a photograph. A phrase, name or number can help find a screenshot, receipt or photographed document with readable text.", "The image model can return visually related pictures without an exact text match. Check the thumbnail or open the image rather than treating visual similarity as a factual answer."] },
@@ -400,7 +401,7 @@ export const GUIDES: SearchGuide[] = [
 // --- Share card --------------------------------------------------------------------
 
 export const CARD = {
-  summary: "Appears proactively finds relevant messages, notes, photos and documents while you work. Everything stays on your Mac.",
+  summary: "Appears brings back the messages, notes, photos and files you already have, when they matter. Private, offline, on your Mac.",
   footer: "appea.rs",
-  alt: "Appears: let your Mac do the searching. Proactive suggestions from Messages, notes and documents.",
+  alt: "Appears: your Mac remembers, so you don't have to. Suggestions from Messages, notes and documents.",
 };
