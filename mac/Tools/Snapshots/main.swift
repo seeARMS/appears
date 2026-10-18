@@ -443,6 +443,14 @@ let weaker = [
 }
 
 MainActor.assumeIsolated {
-    Task { await run(); exit(0) }
+    Task {
+        if CommandLine.arguments.contains("--glyph-preview") {
+            await verifyGlyphAnimation()
+            try renderGlyphPreview(to: out)
+        } else {
+            await run()
+        }
+        exit(0)
+    }
 }
 RunLoop.main.run()
