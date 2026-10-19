@@ -20,17 +20,21 @@ func item(_ id: Int64, _ path: String, _ kind: ItemKind, days: Double) -> Item {
                 title: (path as NSString).lastPathComponent, size: 1, created: date, modified: date, lastUsed: nil)
 }
 
-let features = Features(cosine: 0.8, zScore: 5, agreement: true, entityHit: true, daysSinceTouched: 500, fused: 0.05, forgotten: 1, novelty: 1)
+/// A result the decision model judged, with its probability (the ring) and the lookup's
+/// probability that one of its results is what's needed.
+func decided(_ probability: Double, answered: Double = 0.99) -> Features {
+    Features(cosine: 0.8, daysSinceTouched: 500, probability: probability, answered: answered)
+}
 let suggestions = [
     Suggestion(item: item(1, "Documents/House/Kitchen/IMG_4471.jpg", .image, days: 520), unit: Unit(kind: .image, locator: .whole, text: ""),
                reason: "Mentions Dana Ruiz · from May 2025", snippet: "Ruiz & Daughters Builders — Quote Q-2291 — Kitchen remodel. Cabinets (shaker, white oak) $9,800…",
-               score: 1, confidence: 0.98, features: features),
+               score: 1, confidence: 0.98, features: decided(0.98)),
     Suggestion(item: item(2, "Documents/House/Kitchen/permit-BLD-2024-0457.pdf", .pdf, days: 505), unit: Unit(kind: .text, locator: .page(3), text: ""),
                reason: "Related · from May 2025 · page 3", snippet: "Interior kitchen remodel. Replace cabinets and countertops, relocate sink 3 feet, add six (6) 20-amp GFCI outlets…",
-               score: 0.7, confidence: 0.75, features: features),
+               score: 0.7, confidence: 0.75, features: decided(0.75)),
     Suggestion(item: item(3, "Documents/House/Kitchen measurements.md", .document, days: 530), unit: Unit(kind: .text, locator: .chunk(0), text: ""),
                reason: "Related · from April 2025", snippet: "Back wall: 11' 4\" (sink wall). Window: 36\" wide, sill at 42\". Dana said the outlet by the window has to move for code",
-               score: 0.4, confidence: 0.02, features: features),
+               score: 0.4, confidence: 0.02, features: decided(0.02)),
 ]
 
 /// A result whose selected row quotes the line that answers: the demo's cabin card (as Vision
@@ -38,7 +42,7 @@ let suggestions = [
 func answering(_ asked: String, _ id: Int64, _ path: String, _ kind: ItemKind, days: Double, text: String, reason: String) -> Suggestion {
     let line = Question(ContextSnapshot(focusedText: asked)).flatMap { MatchedLine.find(in: text, for: $0) }
     return Suggestion(item: item(id, path, kind, days: days), unit: Unit(kind: kind == .image ? .image : .text, locator: kind == .pdf ? .page(1) : .whole, text: text),
-                      reason: reason, snippet: String(text.prefix(160)), score: 1, confidence: 0.97, features: features, line: line)
+                      reason: reason, snippet: String(text.prefix(160)), score: 1, confidence: 0.97, features: decided(0.97), line: line)
 }
 let cabin = answering(
     "Thanks Joan! What was the wifi password again?", 4, "Desktop/IMG_2031.jpg", .image, days: 470,
@@ -53,9 +57,9 @@ let invoice = answering(
 )
 let weaker = [
     Suggestion(item: item(6, "Documents/Travel/Lisbon 2023/itinerary.md", .document, days: 520), unit: Unit(kind: .text, locator: .chunk(0), text: ""),
-               reason: "Related · from May 2024", snippet: "", score: 0.1, confidence: 0.02, features: features),
+               reason: "Related · from May 2024", snippet: "", score: 0.1, confidence: 0.02, features: decided(0.02)),
     Suggestion(item: item(7, "Downloads/receipt-117.pdf", .pdf, days: 330), unit: Unit(kind: .text, locator: .page(1), text: ""),
-               reason: "Looks related · from November 2025 · page 1", snippet: "", score: 0.1, confidence: 0.01, features: features),
+               reason: "Looks related · from November 2025 · page 1", snippet: "", score: 0.1, confidence: 0.01, features: decided(0.01)),
 ]
 
 @MainActor func thumbnails() async {
@@ -93,32 +97,37 @@ let weaker = [
         return Suggestion(item: item(Int64(20 + index), path, .pdf, days: 400),
                           unit: Unit(kind: .text, locator: .page(1), text: text),
                           reason: "Related · from May 2025 · page 1", snippet: String(text.prefix(160)),
-                          score: 0.01, confidence: 0.01, features: features)
+                          score: 0.01, confidence: 0.01, features: decided(0.01))
     }
     let ten = suggestions + [invoice, cabin] + weaker + extra
     precondition(ten.count == AppModel.contextResultLimit)
     let policy = SurfacePolicy()
-    let ambient = AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident)
-    precondition(ambient.count == 10 && ambient.prefix(2).map(\.id) == [suggestions[0].id, suggestions[1].id])
-    precondition(AppModel.ambientPanelSuggestions(weaker + extra + suggestions, isConfident: policy.isConfident).isEmpty,
-                 "A strong result outside the first three must not trigger the ambient dot")
-    let reordered = suggestions.map { result in
-        Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
-                   score: result.score, confidence: result.confidence, features: result.features, ambientEligible: false)
+    let ambient = AppModel.ambientPanelSuggestions(ten, policy: policy)
+    precondition(ambient.count == 10 && ambient.first?.id == suggestions[0].id, "The most probable result leads the panel")
+    precondition(AppModel.ambientPanelSuggestions(weaker + extra, policy: policy).isEmpty,
+                 "Results the decision model thinks unlikely must not trigger the ambient dot")
+    let undecided = suggestions.map { result in
+        Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet, score: result.score,
+                   confidence: 0, features: Features(cosine: 0.8, daysSinceTouched: 500))
     }
-    precondition(AppModel.ambientPanelSuggestions(reordered, isConfident: policy.isConfident).isEmpty,
-                 "Passage refinement cannot promote a tail candidate into a new ambient signal")
+    precondition(AppModel.ambientPanelSuggestions(undecided, policy: policy).isEmpty,
+                 "Results the decision model didn't judge never signal on their own")
     var deduplication = SurfacePolicy()
     deduplication.didSurface(itemIDs: [suggestions[0].item.id], topic: "fixture")
-    let novel = AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident) {
+    let novel = AppModel.ambientPanelSuggestions(ten, policy: policy) {
         deduplication.maySuggest(itemID: $0.item.id, topic: "fixture")
     }
     precondition(!novel.isEmpty && !novel.contains { $0.item.id == suggestions[0].item.id },
                  "A different confident item can signal in the same conversation without repeating the first")
-    deduplication.didSurface(itemIDs: suggestions.map { $0.item.id }, topic: "fixture")
-    precondition(AppModel.ambientPanelSuggestions(ten, isConfident: policy.isConfident) {
+    // One lookup's real distribution: the answer, then near-misses. Once the answer has been
+    // shown here, what's left is too unlikely to signal in its place.
+    let lookup = [Suggestion(item: suggestions[0].item, unit: suggestions[0].unit, reason: suggestions[0].reason,
+                             snippet: suggestions[0].snippet, score: 1, confidence: 0.96, features: decided(0.96, answered: 0.98))]
+        + weaker.map { Suggestion(item: $0.item, unit: $0.unit, reason: $0.reason, snippet: $0.snippet, score: $0.score,
+                                  confidence: 0.01, features: decided(0.01, answered: 0.98)) }
+    precondition(AppModel.ambientPanelSuggestions(lookup, policy: policy) {
         deduplication.maySuggest(itemID: $0.item.id, topic: "fixture")
-    }.isEmpty, "Previously shown leading candidates cannot be replaced by a confident tail result to bypass the gate")
+    }.isEmpty, "A shown answer's probability cannot carry the leftover candidates past the gate")
     model.showForSnapshot(.init(mode: .pull, appName: "Mail", windowTitle: "Related files", fingerprint: "scroll",
                                 suggestions: ten, evidenceTerms: ["Dana", "Ruiz", "outlet", "cabinets"]), status: status)
     let host = NSHostingView(rootView: PanelView(model: model, close: {}).environment(\.colorScheme, .light))
@@ -224,7 +233,7 @@ let weaker = [
                         message: .init(rowID: Int64(index), guid: "fixture-\(index)", chatID: Int64(index), conversationURL: nil))
         return Suggestion(item: item, unit: Unit(kind: .text, locator: .whole, text: messagePassages[index]),
                           reason: "Related · from October 2026", snippet: messagePassages[index],
-                          score: 1, confidence: 0.8, features: features,
+                          score: 1, confidence: 0.8, features: decided(0.8),
                           line: index == 1 ? MatchedLine(segments: [.init("joan@example.test: Kitchen quote: "), .init("$2,400", emphasized: true)]) : nil)
     }
     var contactStatus = EngineStatus()
@@ -242,7 +251,7 @@ let weaker = [
                     size: 1, created: Date(), modified: Date(), lastUsed: nil)
     let noteResult = Suggestion(item: kitchenNote, unit: Unit(kind: .text, locator: .whole, text: "Ask Dana to include the kitchen outlet in the revised quote."),
                                 reason: "Mentions Dana Ruiz", snippet: "Ask Dana to include the kitchen outlet in the revised quote.",
-                                score: 0.7, confidence: 0.7, features: features)
+                                score: 0.7, confidence: 0.7, features: decided(0.7))
     contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults + [noteResult, suggestions[1]])
     render(SearchView(model: contactSearch, close: {}, finish: {}, openSettings: {}, resize: { _ in }), "search-excerpts", width: 640)
     contactSearch.showForSnapshot(query: "kitchen quote", results: contactResults)
@@ -354,11 +363,11 @@ let weaker = [
     let noteItem = Item(id: 101, source: .notes, path: "notes:demo-kitchen", kind: .note, title: "Kitchen measurements",
                         size: 120, created: Date().addingTimeInterval(-520 * 86_400), modified: Date(), lastUsed: nil)
     let note = Suggestion(item: noteItem, unit: Unit(kind: .text, locator: .chunk(0), text: "Back wall: 11′ 4″ (sink wall).\nWindow: 36″ wide, sill at 42″.\n\nDana said the outlet by the window has to move for code. Ask whether that work is included in the quote."),
-                          reason: "Mentions Dana", snippet: "Dana said the outlet by the window has to move for code.", score: 1, confidence: 0.9, features: features)
+                          reason: "Mentions Dana", snippet: "Dana said the outlet by the window has to move for code.", score: 1, confidence: 0.9, features: decided(0.9))
     let messageItem = Item(id: 102, source: .messages, path: "messages:demo", kind: .message, title: "Dana Ruiz",
                            size: 100, created: Date().addingTimeInterval(-500 * 86_400), modified: Date(), lastUsed: nil)
     let message = Suggestion(item: messageItem, unit: Unit(kind: .text, locator: .whole, text: "Me: Does the kitchen quote include moving the outlet?\nDana: Yes, moving the outlet by the window is included. The permit covers that work too.\nMe: Great, thank you. I’ll keep the quote with the permit."),
-                             reason: "Mentions outlet", snippet: "Moving the outlet is included.", score: 1, confidence: 0.9, features: features)
+                             reason: "Mentions outlet", snippet: "Moving the outlet is included.", score: 1, confidence: 0.9, features: decided(0.9))
     for (suggestion, name) in [(note, "note"), (message, "message")] {
         search.showForSnapshot(query: "does the quote include the outlet", results: [suggestion])
         search.toggleSourcePreview()

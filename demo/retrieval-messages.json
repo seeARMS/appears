@@ -5516,5 +5516,40 @@
     "chatID": 910,
     "text": "The winery tour includes the cellar and a tasting. We can go on outing number 80.",
     "age": 109
+  },
+  {
+    "path": "messages:retrieval-group-vineyard",
+    "title": "Ellis/Parkers & SOs",
+    "chatID": 940,
+    "text": "Yeah\nThe FedEx young man said his in-laws own Larkmoor Vineyards in Gilroy.",
+    "age": 8
+  },
+  {
+    "path": "messages:retrieval-open-winery-0",
+    "title": "Rowan Ellis",
+    "chatID": 941,
+    "text": "Asked the guy for recs and he kept pointing out the winery direct wines.",
+    "age": 400
+  },
+  {
+    "path": "messages:retrieval-open-winery-1",
+    "title": "Rowan Ellis",
+    "chatID": 941,
+    "text": "Took the gondola, long tour that explores entire winery",
+    "age": 490
+  },
+  {
+    "path": "messages:retrieval-open-winery-2",
+    "title": "Rowan Ellis",
+    "chatID": 941,
+    "text": "Halcyon Ridge Winery was my favorite stop",
+    "age": 580
+  },
+  {
+    "path": "messages:retrieval-open-winery-3",
+    "title": "Rowan Ellis",
+    "chatID": 941,
+    "text": "Yes! Their pinot is great",
+    "age": 670
   }
 ]

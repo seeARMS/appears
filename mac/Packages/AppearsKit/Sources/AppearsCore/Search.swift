@@ -13,9 +13,9 @@ public struct SearchRequest: Sendable, Codable {
     }
 }
 
-/// Searches the same text and image embeddings as recall, with exact-name matching too.
-/// Recent items count fully when the user asks for something explicitly. Queries and
-/// results are never journaled; source exclusions and "Never show this" still apply.
+/// Searches the same text and image embeddings as recall, with exact-name matching too, and
+/// the same decision model judges the results. Queries and results are never journaled;
+/// source exclusions and "Never show this" still apply.
 public struct Search: Sendable {
     public let recall: Recall
 
@@ -34,13 +34,6 @@ public struct Search: Sendable {
         if !sources.messages { excluded += try recall.store.itemIDs(source: .messages) }
         SearchTrace.current?.record(.preparation, since: prepared)
         try Task.checkCancellation()
-        var recall = recall
-        recall.settings.recentWeight = 1
-        recall.settings.recentMessageWeight = 1
-        recall.settings.olderWeight = 1
-        // Explicit search orders by relevance. Ambient diversity can otherwise promote an
-        // unrelated item ahead of a second close match (especially a photo of the same thing).
-        recall.settings.diversity = 1
         let context = ContextSnapshot(selection: text, origin: .text)
         return try await recall.run(
             RecallRequest(context: context, trigger: .pull, limit: min(max(request.limit, 1), 20), exclude: excluded),

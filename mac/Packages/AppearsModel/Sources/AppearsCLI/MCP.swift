@@ -31,6 +31,8 @@ struct MCP: AsyncParsableCommand {
     var model: String?
     @Option(help: "gemma (the real model) or hash (a fast stand-in that only matches words; for an index made with it).")
     var embedder: String = "gemma"
+    @Option(help: "The decision model folder (default: the one in this checkout, else the app's download). \"none\" leaves results without confidence.")
+    var decider: String?
 
     func run() async throws {
         // stdout carries protocol messages and nothing else. Keep the real stdout for them and
@@ -49,7 +51,9 @@ struct MCP: AsyncParsableCommand {
         let model = model
         if kind != "hash", (try? Common.modelFolder(model)) == nil { log("no model found; pass --model") }
 
-        let index = AgentIndex(folder: folder, sources: sources) {
+        let decider = Common.decider(self.decider)
+        log(decider == nil ? "no decision model found: results carry no confidence" : "decision model found")
+        let index = AgentIndex(folder: folder, sources: sources, decider: decider) {
             if kind == "hash" { return HashingEmbedder() }
             let started = Date()
             let embedder = try await GemmaEmbedder.load(from: try Common.modelFolder(model))

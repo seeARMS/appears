@@ -11,6 +11,9 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 VENDORED = ROOT / "mac/Packages/AppearsModel/ThirdParty/EmbeddingGemma2Swift"
 VENDORED_FILES = ["LICENSE", "NOTICE", "APACHE-2.0.txt", "UPSTREAM_MLX_VLM_LICENSE", "UPSTREAM_PILLOW_LICENSE"]
+# The answer model's Swift port: mlx-vlm's Qwen3.5 and mlx-lm's gated delta kernel.
+LIGHTNING = ROOT / "mac/Packages/AppearsModel/ThirdParty/Lightning"
+LIGHTNING_FILES = ["NOTICE", "UPSTREAM_MLX_VLM_LICENSE", "UPSTREAM_MLX_LM_LICENSE"]
 
 
 def checksum(path):
@@ -45,6 +48,7 @@ def bundle(checkouts, resolved, output, sparkle=None):
     folders = {p.name.lower(): p for p in checkouts.iterdir() if p.is_dir()}
     sources = [(ROOT / "LICENSE", Path("Appears-LICENSE.txt"))]
     sources += [(VENDORED / name, Path("EmbeddingGemma2Swift") / name) for name in VENDORED_FILES]
+    sources += [(LIGHTNING / name, Path("Lightning") / name) for name in LIGHTNING_FILES]
     dependencies = []
     for pin in sorted(pins, key=lambda p: p["identity"]):
         name = pin["identity"]

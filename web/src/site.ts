@@ -49,7 +49,7 @@ export const DOWNLOAD_LABEL = "Download for Mac";
 /** Under the Download buttons on the page. */
 export const NOTE = `Free and [open source](${SOURCE_URL}). ${PLATFORM_NOTE}.`;
 /** The Markdown version and llms.txt keep the system requirements for agents. */
-export const REQUIREMENTS = `${NOTE} The on-device model downloads during setup.`;
+export const REQUIREMENTS = `${NOTE} The on-device models download during setup.`;
 
 export const RELATED_SUMMARY = "A short list of suggestions, each with a reason to take a look. Open one, preview it, or drag it into what you're writing.";
 
@@ -211,7 +211,7 @@ export const PRIVACY = [
   {
     art: "local",
     label: "Everything happens on your Mac",
-    text: "No account, no cloud, nothing uploaded. During setup, a sandboxed helper that can't see your files or screen downloads the on-device model. After that, Appears works offline.",
+    text: "No account, no cloud, nothing uploaded. During setup, a sandboxed helper that can't see your files or screen downloads the on-device models. After that, Appears works offline.",
   },
   {
     art: "forget",
@@ -261,7 +261,7 @@ export const FAQ = [
   {
     q: "Why is there a separate download during setup?",
     a: [
-      "The model is about 900 MB, so the app downloads it while you set up, to keep the app itself small.",
+      "The models are about 3.3 GB together, so the app downloads them while you set up, to keep the app itself small. Search works once the first, smaller one is ready; the answer model, which decides what to suggest, follows.",
       "A sandboxed helper does the download. It can't see your files or screen, and every file is checked before use. After that, Appears works offline.",
     ],
   },
@@ -300,7 +300,7 @@ export const FAQ = [
 // --- Get it ------------------------------------------------------------------------
 
 export const GET_HEADING = "Get back what you already have.";
-export const GET_TEXT = "Download Appears and pick the apps and folders it can look through. The on-device model downloads during setup. Once everything is indexed, things start turning up while you work.";
+export const GET_TEXT = "Download Appears and pick the apps and folders it can look through. The on-device models download during setup. Once everything is indexed, things start turning up while you work.";
 
 // --- Search guides -----------------------------------------------------------------
 // These pages describe capabilities in the public v0.1.0 release as well as

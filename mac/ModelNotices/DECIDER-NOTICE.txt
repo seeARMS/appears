@@ -1,0 +1,16 @@
+H2O-Lightning-4B (text only, 4-bit)
+
+H2O.ai created the H2O-Lightning-4B decision model, fine-tuned from Qwen3.5-4B by the
+Qwen team (Alibaba Cloud).
+Source: https://huggingface.co/h2oai/h2o-lightning-4b
+Revision: acaf0d4ea251e54de928c75ef4352670d33192d3 (v1.2.3)
+License: Apache License 2.0; see LICENSE.txt in this distribution.
+
+Appears converts that checkpoint with mlx-vlm to MLX's 4-bit affine format (group size
+64) and keeps only the language model's tensors; the vision encoder is omitted. The
+conversion is quantization only, without training. Tokenizer and configuration files
+come from the same conversion. appears-model.json records the source, revision, tools
+and file checksums; the app pins and verifies the complete download.
+
+This packaging is maintained by the Appears project. It does not imply affiliation with
+or endorsement by H2O.ai or Alibaba Cloud.

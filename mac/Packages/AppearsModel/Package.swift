@@ -7,6 +7,7 @@ import PackageDescription
 // Targets:
 // - EmbeddingGemma2: a copy of Obscyra-app/EmbeddingGemma2Swift (MIT); licenses in ThirdParty/.
 // - GemmaEmbedder: adapts it to AppearsCore's `Embedder`.
+// - Lightning: H2O-Lightning-4B (on Qwen3.5-4B), AppearsCore's `Decider`.
 // - AppearsCLI: the `appears` command (index, related, eval, stats, mcp).
 //
 // swift-transformers' Tokenizers module links its Hub downloader, which Appears never
@@ -17,6 +18,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .library(name: "GemmaEmbedder", targets: ["GemmaEmbedder"]),
+        .library(name: "Lightning", targets: ["Lightning"]),
         .executable(name: "appears", targets: ["AppearsCLI"]),
     ],
     dependencies: [
@@ -38,10 +40,20 @@ let package = Package(
             name: "GemmaEmbedder",
             dependencies: ["EmbeddingGemma2", .product(name: "AppearsCore", package: "AppearsKit")]
         ),
+        .target(
+            name: "Lightning",
+            dependencies: [
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
+                .product(name: "Hub", package: "swift-transformers"),
+                .product(name: "AppearsCore", package: "AppearsKit"),
+            ]
+        ),
         .executableTarget(
             name: "AppearsCLI",
             dependencies: [
                 "GemmaEmbedder",
+                "Lightning",
                 .product(name: "AppearsCore", package: "AppearsKit"),
                 .product(name: "AppearsMCP", package: "AppearsKit"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -51,6 +63,11 @@ let package = Package(
             name: "GemmaEmbedderTests",
             dependencies: ["GemmaEmbedder", "EmbeddingGemma2", .product(name: "AppearsCore", package: "AppearsKit")],
             resources: [.copy("Resources/reference-vectors.json")]
+        ),
+        .testTarget(
+            name: "LightningTests",
+            dependencies: ["Lightning", .product(name: "AppearsCore", package: "AppearsKit")],
+            resources: [.copy("Resources/reference-decisions.json")]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -97,8 +97,7 @@ struct MessageContactsTests {
         Suggestion(item: item ?? self.item(), unit: Unit(kind: .text, locator: .whole, text: text),
                    reason: "Related", snippet: snippet ?? text.replacingOccurrences(of: "\n", with: " "),
                    score: 1, confidence: 0.8,
-                   features: Features(cosine: 0.8, zScore: 5, agreement: true, entityHit: true,
-                                      daysSinceTouched: 1, fused: 1, forgotten: 1, novelty: 1))
+                   features: Features(cosine: 0.8, daysSinceTouched: 1, probability: 0.8))
     }
 
     @Test func resolvesSpeakersInFlattenedSearchExcerptsAndMultilinePreviews() {

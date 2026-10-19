@@ -47,7 +47,7 @@ Appears reads the window in front of you, works out what it's about, and finds w
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/related-panel-dark.png">
         <img src="docs/screenshots/related-panel-light.png" alt="The Related panel for an email about a kitchen: a photo of a quote, a permit PDF and a note, each with the line that matched.">
       </picture>
-      <p><strong>Related, without asking.</strong> Up to ten results for whatever you're looking at, each with the line that matched and a confidence ring. It favours what you've forgotten over what you opened yesterday.</p>
+      <p><strong>Related, without asking.</strong> Up to ten results for whatever you're looking at, each with the line that matched and a confidence ring. An answer model on your Mac decides which one answers, or that none does.</p>
     </td>
     <td width="50%" valign="top">
       <picture>
@@ -122,15 +122,15 @@ Setup asks for:
 - **Calendar** (optional), to look ahead to meetings;
 - **Screen Recording** (optional), to OCR a window that has no readable text, only when you ask.
 
-The on-device model (about 914 MB) downloads in the background while you go through setup. After that, Appears works offline. Updates are checked once a day; you see the changelog and choose whether to install.
+The on-device models download in the background while you go through setup: the embedding model (about 914 MB) first, then the answer model (about 2.4 GB). Appears works once the first is ready; until the second is, results are listed without confidence and nothing is suggested on its own. After that, Appears works offline. Updates are checked once a day; you see the changelog and choose whether to install.
 
 ## How it works
 
 1. **Context.** When the front window changes, the app reads its title, the document it shows, the field you're typing in, the selection and the visible text, in memory only. Browser URLs come from Apple Events (Safari, Chrome) or Accessibility (Firefox). For a meeting, the event stands in for a window, minus join links, dial-ins and passcodes.
 2. **Index.** The engine embeds text, PDF pages and images with Google's [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) on [MLX](https://github.com/ml-explore/mlx-swift), into one vector space, next to an FTS5 full-text index.
-3. **Ranking.** A selection or draft is searched independently of the surrounding window, keeping meaningful words regardless of their part of speech. Global vector and full-text searches run alongside a conversation search when Messages can be resolved to one identity. Surrounding text helps discover candidates. Short source passages determine relevance to the active text; background discovery still favours forgotten material. Results are diversified before the display limit.
-4. **Confidence.** Each result gets a 0–1 score from how far its evidence stands above the other candidates. For active text, confidence is calculated from the passage being quoted. Conversation identity helps retrieval and ranking but never increases confidence. A match counts for more when what you're writing asks your memory ("what was the wifi password again?").
-5. **When to speak.** By default, Appears looks after one second in a window, document or conversation, or a one-second pause in typing. You can choose a longer wait in Settings → Suggestions. It marks the ring only for a confident match (0.6 by default), at most once a minute, and never twice for the same item in the same document or conversation.
+3. **Retrieval.** A selection or draft is searched independently of the surrounding window, keeping meaningful words regardless of their part of speech. Global vector and full-text searches run alongside a conversation search when Messages can be resolved to one identity. Surrounding text helps discover candidates. Each candidate's exact source passage is read, and up to 15 of them, chosen for variety, go on to the answer model.
+4. **Deciding.** The answer model, H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) (built on Qwen3.5-4B, run 4-bit on MLX), reads what you're asking or doing together with the candidates and says which one answers, or that none does, with a probability for each. That probability orders the results and fills each one's ring. It's told which conversation you have open; a picture with no words stays undecided.
+5. **When to speak.** By default, Appears looks after one second in a window, document or conversation, or a one-second pause in typing. You can choose a longer wait in Settings → Suggestions. It marks the ring only when the answer model is sure that one of the results is what's needed (0.8 by default), at most once a minute, and never twice for the same item in the same document or conversation.
 
 <details>
 <summary><strong>The details</strong></summary>
@@ -149,16 +149,15 @@ Settings has Include and Exclude lists. Added folders are watched immediately, i
 
 #### Ranking
 
-- **Forgotten:** background discovery favours what you haven't touched in months. Messages have only a small age penalty (up to 15%). Selections, drafts and explicit searches rank by their evidence without an age penalty. The open document is excluded.
-- **New:** what's in the same folder or repeats the window title counts less.
-- **Varied:** results are diversified.
+- **Evidence first:** candidates are ordered by their own evidence: similarity to what you're asking, and how many of its words they contain. Age never lowers a result. The open document is excluded.
+- **Varied:** the answer model reads up to 15 candidates, chosen for variety, so a run of near-identical passages (a year of receipts) takes one place. The same text twice (a screenshot sent to two conversations) is read once, from the conversation you have open.
 - **Discussions:** nearby messages in the same conversation can supply missing context when they share a numeric reference and their indexed text is semantically related. Expansion is bounded to a day and a limited number of neighbours. Combined quotes preserve both source ranges, open the later message, and are checked against the source again after scoring; hidden, edited or unsent messages cannot survive that check.
-- **Evidence:** an active query can return fewer results, including none, when its source passages lack sufficient semantic support. This relevance check is separate from the higher confidence needed to signal in the menu bar.
+- **None of these:** when the answer model says none of the candidates is what's needed, an ask still lists them, with near-empty rings, and nothing signals on its own. Short passages from documents reach it with the text around them, and pictures with their recognized text.
 - **Photos:** when the window shows a picture (a photo open in Preview), the picture itself is the query. The engine uses the vector it indexed for that file, or embeds it then, keeping that vector in memory only. Any words in the window are blended in, except a title that is just the file's name.
 
 #### The panel
 
-Clicking the ring or pressing the shortcut shows up to ten results in a scrolling list, with about five rows visible and the header and keyboard hints fixed. Hovering over the ring never opens the panel. Text results quote the exact source passage scored by the semantic model, with matching terms emphasized and the date and PDF page below. Overlapping Messages windows show that evidence once, and opening it goes to the message containing the quote. A small Orbit outline fills with the result's confidence; hover or VoiceOver gives the exact value. Images show text only when a clean OCR phrase matches; otherwise the thumbnail is the evidence. <kbd>Space</kbd> previews Notes and Messages inline; files and photos use Quick Look.
+Clicking the ring or pressing the shortcut shows up to ten results in a scrolling list, with about five rows visible and the header and keyboard hints fixed. Hovering over the ring never opens the panel. Text results quote the exact source passage scored by the semantic model, with matching terms emphasized and the date and PDF page below. Overlapping Messages windows show that evidence once, and opening it goes to the message containing the quote. A small Orbit outline fills with the answer model's probability for that result; hover or VoiceOver gives the exact value. A result it hasn't judged shows no outline. Images show text only when a clean OCR phrase matches; otherwise the thumbnail is the evidence. <kbd>Space</kbd> previews Notes and Messages inline; files and photos use Quick Look.
 
 #### Ambient timing
 
@@ -300,8 +299,9 @@ mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 | Date | Scenarios | recall@3 | MRR | Ambient hits | False surfaces |
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-16 | 23 positive, 22 negative | 0.99 | 1.00 | 23/23 | 0/22 |
+| 2026-10-18 | 28 positive, 26 negative, answer model | 0.94 | 0.98 | 22/28 | 0/26 |
 
-The confidence weights were fitted to these same scenarios, so treat the eval as a regression check, not a benchmark. Add scenarios before trusting the numbers.
+Nothing is fitted to these scenarios any more, but the answer model's framing and the 0.8 threshold were checked against them, so treat the eval as a regression check, not a benchmark. Add scenarios before trusting the numbers. The eval uses the answer model in `mac/Models/h2o-lightning-4b-q4` (made by `mac/scripts/fetch-decider.sh`), or `--decider none` to see the results undecided. `LightningTests` check the Swift model's tokens and probabilities against `mac/scripts/reference_decisions.py`.
 
 <details>
 <summary><strong>More checks and tools</strong></summary>
@@ -325,7 +325,7 @@ claude mcp add appears -- "$PWD/mac/build/ModelDerivedData/Build/Products/Releas
 ```
 
 - **Tools,** both read-only:
-  - `related`: `text` (required), `limit` (default 5, at most 20) and `prefer_forgotten` (default off). Each result has its path, title, kind, a one-line reason, the matching snippet, dates, the page for PDFs, and a 0–1 confidence.
+  - `related`: `text` (required) and `limit` (default 5, at most 20). Each result has its path, title, kind, a one-line reason, the matching snippet, dates, the page for PDFs, and, when the answer model is installed, its 0–1 confidence.
   - `related_to_file`: `path`, with the same options. It searches with that file's stored vectors, so it needs no model call.
 - **It does nothing unless you set it up.** Neither the app nor the engine starts it.
 - **Appears sends nothing anywhere, but the agent you connect may.** `appears mcp` has no networking code, reads the index read-only, stores nothing and logs no questions or results. But what it answers becomes part of the agent's conversation, and the agent may send that to its model provider: paths, snippets, and possibly the password on a photo of a wifi card. Connect only agents you'd show those files to.
@@ -366,7 +366,7 @@ mac/build/ModelDerivedData/Build/Products/Release/appears index --root demo/file
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"related","arguments":{"text":"what is the wifi password at the cabin"}}}' | mac/build/ModelDerivedData/Build/Products/Release/appears mcp --data /tmp/appears-demo
 ```
 
-Ranking is the app's, without the "forgotten" weighting, because an agent asking outright should get yesterday's file as readily as last year's; `prefer_forgotten: true` ranks as the menu bar does. Exclusions and "Never show this" apply exactly as in the app. The model loads on the first question (a couple of seconds); after that a question takes about 50 ms on the demo. It speaks MCP 2026-07-28 (stateless) and the `initialize` handshake from 2025-11-25 back to 2024-11-05.
+Results are found and judged as in the app: the answer model orders them when it's installed (in this checkout, or the app's download; `--decider none` leaves them undecided). Exclusions and "Never show this" apply exactly as in the app. The models load on the first question (a few seconds); after that a question takes about half a second on the demo with the answer model. It speaks MCP 2026-07-28 (stateless) and the `initialize` handshake from 2025-11-25 back to 2024-11-05.
 
 </details>
 
@@ -376,12 +376,12 @@ Ranking is the app's, without the "forgotten" weighting, because an agent asking
 mac/
   App/                    the menu bar app (AppKit + SwiftUI): status item, panel, search, settings, onboarding
   Engine/                 the sandboxed XPC service: files, model, index, journal
-  Downloader/             the sandboxed first-run model downloader
+  Downloader/             the sandboxed model downloader (the embedding model, then the answer model)
   Packages/AppearsKit/    core logic; builds and tests with the Command Line Tools
     AppearsCore/          sources, extractors, Notes and Messages readers, index, ranking, journal, surface policy
     AppearsContext/       Accessibility reader, browser URLs, exclusions, OCR fallback
     AppearsMCP/           `appears mcp`, read-only on the index
-  Packages/AppearsModel/  EmbeddingGemma 2 on MLX, and the `appears` CLI
+  Packages/AppearsModel/  EmbeddingGemma 2 and H2O-Lightning-4B on MLX, and the `appears` CLI
   Tools/                  appears-context, appears-snapshots
   scripts/                model download and preparation, privacy checks, release build
   project.yml             XcodeGen spec (the Xcode project is generated, not committed)
@@ -411,6 +411,7 @@ Appears is [MIT licensed](LICENSE). Upstream code and model files keep their own
 
 - the vendored model runtime's notices are in [`mac/Packages/AppearsModel/ThirdParty/EmbeddingGemma2Swift`](mac/Packages/AppearsModel/ThirdParty/EmbeddingGemma2Swift);
 - `mac/scripts/bundle-licenses.py` copies this project's license, Sparkle's, and the license files of every resolved Swift dependency into `Appears.app/Contents/Resources/Licenses`, with a manifest that CI and the release build verify;
-- the downloaded model carries Google DeepMind's `LICENSE.txt`, a `NOTICE.txt` with the source revision, and `appears-model.json` with provenance and checksums.
+- each downloaded model carries its `LICENSE.txt` (Apache 2.0 for both EmbeddingGemma 2 and H2O-Lightning-4B), a `NOTICE.txt` with the source revision, and `appears-model.json` with provenance and checksums;
+- the answer model's Swift port (`mac/Packages/AppearsModel/Sources/Lightning`) follows mlx-vlm's Qwen3.5 implementation, and its gated delta kernel is mlx-lm's (both MIT); their notices are in [`mac/Packages/AppearsModel/ThirdParty/Lightning`](mac/Packages/AppearsModel/ThirdParty/Lightning) and ship in the app's license bundle.
 
 Made by [Colin Armstrong](https://armstr.ng).

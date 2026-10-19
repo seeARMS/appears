@@ -66,7 +66,6 @@ actor EmbeddingScheduler {
 /// operation at a time. Images yield individually, even when a PDF contains many pages.
 final class ScheduledEmbedder: Embedder, UnloadsVision {
     var supportsPassageRefinement: Bool { base.supportsPassageRefinement }
-    var minimumPassageSimilarity: Double? { base.minimumPassageSimilarity }
     var supportsSemanticSimilarity: Bool { base.supportsSemanticSimilarity }
     let base: any Embedder
     let scheduler = EmbeddingScheduler()

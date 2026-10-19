@@ -21,6 +21,9 @@ public struct EngineStatus: Sendable, Codable, Equatable {
     /// Covers all enabled sources, even when indexing is already active.
     public var isScanning = false
     public var lastScanCompletedAt: Date?
+    /// Whether the decision model is installed and switched on: results get a confidence and
+    /// may signal on their own.
+    public var decisions = false
 
     public init() {}
 }
@@ -61,6 +64,8 @@ public struct FeedbackEvent: Sendable, Codable {
 /// The methods the app calls on the engine. Payloads and replies are JSON.
 public enum EngineMethod: String, Sendable {
     case status, related, search, cancelSearch, settings, feedback, log, stats, touch, rescan, deleteIndex, deleteJournal
+    /// Payload: a JSON Bool, whether to use the decision model when it's installed.
+    case decisions
 }
 
 /// The XPC interface. One generic call keeps the Objective-C surface tiny; the Swift types
@@ -77,13 +82,16 @@ public final class Engine: Sendable {
     public let embedder: any Embedder
     public let indexer: Indexer
     public let journal: Journal
-    public let recall: Recall
+    private let baseRecall: Recall
+    /// The decision model once it's installed, and whether it's switched on.
+    private let decisions = Mutex<(decider: (any Decider)?, enabled: Bool)>((nil, true))
     private let state = EngineState()
     private let searches = SearchCoordinator()
     private let sources: Mutex<(settings: SourceSettings, revision: UInt64)>
 
     public init(folder: URL, embedder: any Embedder, settings: SourceSettings,
-                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil, messagesURL: URL? = nil) throws {
+                fileWalk: (@Sendable (FileScanner) throws -> [Item])? = nil, messagesURL: URL? = nil,
+                decider: (any Decider)? = nil) throws {
         let embedder = ScheduledEmbedder(embedder)
         sources = Mutex((settings, 0))
         store = try IndexStore(url: folder.appending(path: "index.sqlite"))
@@ -91,7 +99,8 @@ public final class Engine: Sendable {
         vectors = VectorIndex(dimension: embedder.dimension)
         self.embedder = embedder
         indexer = Indexer(store: store, vectors: vectors, embedder: embedder, settings: settings, fileWalk: fileWalk)
-        recall = Recall(store: store, vectors: vectors, embedder: embedder, messages: messagesURL.map(MessagesReader.init(url:)))
+        baseRecall = Recall(store: store, vectors: vectors, embedder: embedder, messages: messagesURL.map(MessagesReader.init(url:)))
+        decisions.withLock { $0.decider = decider }
         // A new model can't share vectors with the old one: start over.
         if try store.meta("model_id") != embedder.modelID {
             try store.removeAll()
@@ -100,6 +109,17 @@ public final class Engine: Sendable {
         if !settings.messages { try store.remove(itemIDs: store.itemIDs(source: .messages)) }
         try store.loadVectors(into: vectors)
     }
+
+    /// Lookups as they run now: with the decision model when it's installed and switched on.
+    public var recall: Recall {
+        var recall = baseRecall
+        recall.decider = decisions.withLock { $0.enabled ? $0.decider : nil }
+        return recall
+    }
+
+    /// The decision model's files became available (after its download, for example).
+    public func setDecider(_ decider: (any Decider)?) { decisions.withLock { $0.decider = decider } }
+    public var hasDecider: Bool { decisions.withLock { $0.decider != nil } }
 
     // MARK: - Running
 
@@ -229,6 +249,7 @@ public final class Engine: Sendable {
         status.error = await state.error
         status.sources = (try? store.sourceStatuses()) ?? []
         status.watchedFolders = await state.watchedFolders
+        status.decisions = decisions.withLock { $0.enabled && $0.decider != nil }
         return status
     }
 
@@ -268,6 +289,10 @@ public final class Engine: Sendable {
                 _ = trace.finish(outcome: error is CancellationError ? "cancelled" : "failed")
                 throw error
             }
+        case .decisions:
+            let enabled = try decoder.decode(Bool.self, from: payload)
+            decisions.withLock { $0.enabled = enabled }
+            return Data("{}".utf8)
         case .cancelSearch:
             await searches.cancel(try decoder.decode(SearchToken.self, from: payload))
             return Data("{}".utf8)

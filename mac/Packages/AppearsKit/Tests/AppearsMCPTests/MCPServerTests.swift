@@ -227,7 +227,9 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
         let link = FileManager.default.temporaryDirectory.appending(path: "appears-link-\(UUID().uuidString)")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: demoFiles.appending(path: "Documents/House"))
         defer { try? FileManager.default.removeItem(at: link) }
-        let index = AgentIndex(folder: try await DemoIndex.shared.folder(), sources: SourceSettings()) { FileOnlyTestEmbedder() }
+        // The decision model orders what retrieval found; this one picks the kitchen photo.
+        let index = AgentIndex(folder: try await DemoIndex.shared.folder(), sources: SourceSettings(),
+                               decider: PickingDecider(text: "IMG_4471.jpg")) { FileOnlyTestEmbedder() }
         let answers = try await exchange([
             call(1, "related_to_file", #"{"path":"\#(file)","limit":5}"#),
             call(2, "related_to_file", #"{"path":"file://\#(file.replacingOccurrences(of: " ", with: "%20"))","limit":5}"#),
@@ -237,7 +239,7 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
             let found = results(try response(answers, id: id)).compactMap { $0["path"]?.string }
             #expect(!found.isEmpty)
             #expect(!found.contains(file), "never the file itself")
-            #expect(found.contains { $0.contains("/Documents/House/") }, "\(found)")
+            #expect(found.first?.contains("/Documents/House/") == true, "\(found)")
         }
     }
 
@@ -258,8 +260,9 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
         #expect(!results(try response(blocked, id: 1)).contains { $0["path"]?.string?.hasSuffix("IMG_2031.jpg") == true })
     }
 
-    @Test func recentFilesComeBackUnlessAskedToPreferForgotten() async throws {
-        // A note from today that matches closely, and a weaker one from last year.
+    @Test func recentFilesComeBack() async throws {
+        // A note from today that matches closely, and a weaker one from last year: age is not
+        // a reason to rank anything lower when an agent asks.
         let home = FileManager.default.temporaryDirectory.appending(path: "appears-recent-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -281,12 +284,11 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
 
         let answers = try await exchange([
             call(1, "related", #"{"text":"Pine Hollow cabin wifi password"}"#),
-            call(2, "related", #"{"text":"Pine Hollow cabin wifi password","prefer_forgotten":true}"#),
         ], index: AgentIndex(folder: data) { HashingEmbedder() })
         let asked = results(try response(answers, id: 1)).compactMap { $0["title"]?.string }
-        let forgotten = results(try response(answers, id: 2)).compactMap { $0["title"]?.string }
         #expect(asked.first == "today.txt", "\(asked)")
-        #expect(forgotten.first == "last year.txt", "\(forgotten)")
+        // Without the decision model installed, results carry no confidence.
+        #expect(results(try response(answers, id: 1)).allSatisfy { $0["confidence"] == nil })
     }
 
     @Test func dropsTheAnswerToACancelledCall() async throws {
@@ -347,5 +349,21 @@ private func results(_ answer: JSONValue) -> [JSONValue] {
         let later = try IndexStore(url: url, readOnly: true)
         #expect(try later.counts().units == 2)
         try? FileManager.default.removeItem(at: folder)
+    }
+}
+
+/// Puts 0.9 on the first option whose text contains `text`, the rest on "none".
+private struct PickingDecider: Decider {
+    let text: String
+    let modelID = "picking"
+    func decide(_ request: DecisionRequest) async throws -> [Double] {
+        var result = Array(repeating: 0.0, count: request.options.count)
+        if let index = request.options.dropLast().firstIndex(where: { $0.description.contains(text) }) {
+            result[index] = 0.9
+            result[result.count - 1] = 0.1
+        } else {
+            result[result.count - 1] = 1
+        }
+        return result
     }
 }

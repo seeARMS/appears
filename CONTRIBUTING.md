@@ -54,7 +54,7 @@ This needs an Apple silicon Mac with Metal. Set `APPEARS_MODEL` to use an existi
 
 The separate `Model tests and eval` workflow can run the same script manually from `main` on a dedicated runner labelled `appears-model`. It needs that runner to be configured first. Never connect a personal daily-use Mac to public PR jobs; this workflow has no PR trigger and accepts only `main`.
 
-For changes to `Recall`, `QueryBuilder` or `Confidence`, run `appears eval --verbose` before and after. Include the results in the PR and eventual commit message. Add a synthetic scenario for each failure you fix, including negative cases where silence is correct. The current eval is small and helped tune the current weights; it is not an independent quality benchmark.
+For changes to `Recall`, `QueryBuilder`, `DecisionFraming` or the answer model, run `appears eval --verbose` before and after (it needs `mac/Models/h2o-lightning-4b-q4` from `mac/scripts/fetch-decider.sh`). Include the results in the PR and eventual commit message. Add a synthetic scenario for each failure you fix, including negative cases where silence is correct. The current eval is small and was used to check the answer model's framing and threshold; it is not an independent quality benchmark.
 
 ## Pull requests
 

@@ -11,7 +11,7 @@ import Testing
                        created: date, modified: date, lastUsed: nil),
             unit: Unit(kind: image ? .image : .text, locator: .page(3), text: text), reason: reason, snippet: snippet ?? text,
             score: 1, confidence: 0.02,
-            features: Features(cosine: 0.6, zScore: 1, agreement: false, entityHit: false, daysSinceTouched: 500, fused: 0.01, forgotten: 1, novelty: 1),
+            features: Features(cosine: 0.6, daysSinceTouched: 500, probability: 0.02),
             line: line
         )
     }

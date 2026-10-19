@@ -6,9 +6,8 @@ import Foundation
 /// while the app keeps it up to date, and the model, loaded on the first call and kept for
 /// the life of the process.
 ///
-/// An agent asking is not an ambient suggestion, so ranking keeps relevance, entity matches
-/// and variety but drops the "forgotten" weighting unless asked (`preferForgotten`). Nothing
-/// is journaled: agent questions mustn't count toward the pull, shadow or ambient numbers, and
+/// When the decision model is installed it judges the results, as in the app. Nothing is
+/// journaled: agent questions mustn't count toward the pull, shadow or ambient numbers, and
 /// the query text is never stored or logged.
 public actor AgentIndex {
     /// The folder holding `index.sqlite`.
@@ -17,14 +16,18 @@ public actor AgentIndex {
     /// applying them again covers changes it hasn't caught up with.
     public let sources: SourceSettings
     private let loadEmbedder: @Sendable () async throws -> any Embedder
+    /// The decision model, if installed. Loading it is deferred to its first decision.
+    private let decider: (any Decider)?
     private var embedderTask: Task<any Embedder, Error>?
     private var store: IndexStore?
     private var vectors: VectorIndex?
     private var stamp: String?
 
-    public init(folder: URL, sources: SourceSettings = SourceSettings(), loadEmbedder: @escaping @Sendable () async throws -> any Embedder) {
+    public init(folder: URL, sources: SourceSettings = SourceSettings(), decider: (any Decider)? = nil,
+                loadEmbedder: @escaping @Sendable () async throws -> any Embedder) {
         self.folder = folder
         self.sources = sources
+        self.decider = decider
         self.loadEmbedder = loadEmbedder
     }
 
@@ -54,17 +57,16 @@ public actor AgentIndex {
     // MARK: - Searching
 
     /// What the user already has about `text`: a question, a topic, names, or a passage.
-    public func related(text: String, limit: Int, preferForgotten: Bool) async throws -> [Suggestion] {
+    public func related(text: String, limit: Int) async throws -> [Suggestion] {
         let (store, vectors, embedder) = try await ready()
-        var recall = Recall(store: store, vectors: vectors, embedder: embedder)
-        recall.settings = Self.ranking(preferForgotten: preferForgotten)
+        let recall = Recall(store: store, vectors: vectors, embedder: embedder, decider: decider)
         let request = RecallRequest(context: Self.context(text), trigger: .pull, limit: limit, exclude: try excluded(store))
         return try await recall.run(request).suggestions
     }
 
     /// What relates to a file Appears has indexed, searched with the file's own stored vectors,
     /// so it needs no model call.
-    public func related(toFile path: String, limit: Int, preferForgotten: Bool) async throws -> (item: Item, suggestions: [Suggestion]) {
+    public func related(toFile path: String, limit: Int) async throws -> (item: Item, suggestions: [Suggestion]) {
         let (store, vectors, embedder) = try await ready()
         let excluded = try excluded(store)
         // The index has paths as the scanner found them; an agent may come by way of a symlink
@@ -86,8 +88,7 @@ public actor AgentIndex {
         // with almost no text (a photo) gets its folder's name, so Recall has enough to go on.
         var text = ([item.title] + units.map(\.unit.text)).joined(separator: "\n")
         if QueryBuilder.clean(text).count < 12 { text += "\n" + (item.folder as NSString).lastPathComponent }
-        var recall = Recall(store: store, vectors: vectors, embedder: FileQueryEmbedder(base: embedder, vector: mean))
-        recall.settings = Self.ranking(preferForgotten: preferForgotten)
+        let recall = Recall(store: store, vectors: vectors, embedder: FileQueryEmbedder(base: embedder, vector: mean), decider: decider)
         let request = RecallRequest(
             context: .text(String(text.prefix(4_000))), trigger: .pull, limit: limit,
             exclude: excluded + [item.id]
@@ -99,19 +100,6 @@ public actor AgentIndex {
     /// window title or open document enter its embedding.
     static func context(_ text: String) -> ContextSnapshot {
         return ContextSnapshot(selection: text, origin: .text)
-    }
-
-    /// The app's ranking, without the "forgotten" weighting unless asked: when an agent asks
-    /// outright, yesterday's file is as good an answer as last year's.
-    static func ranking(preferForgotten: Bool) -> RankingSettings {
-        var settings = RankingSettings()
-        settings.preferForgottenForActiveText = preferForgotten
-        if !preferForgotten {
-            settings.recentWeight = 1
-            settings.recentMessageWeight = 1
-            settings.olderWeight = 1
-        }
-        return settings
     }
 
     /// Items the app's settings exclude (folders, kinds, Notes) that may still be in the index.

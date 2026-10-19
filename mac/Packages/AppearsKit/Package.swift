@@ -30,7 +30,7 @@ let package = Package(
         .target(
             name: "AppearsCore",
             dependencies: ["AppearsMessages", .product(name: "GRDB", package: "GRDB.swift")],
-            resources: [.copy("Resources/model-download.json")]
+            resources: [.copy("Resources/model-download.json"), .copy("Resources/decider-download.json")]
         ),
         .target(name: "AppearsMessages", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
         .target(

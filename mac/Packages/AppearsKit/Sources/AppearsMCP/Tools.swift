@@ -5,17 +5,12 @@ import Foundation
 enum Tools {
     static let names = ["related", "related_to_file"]
 
-    /// Advisory confidence label in MCP output; the panel shows confidence with an Orbit ring.
+    /// Under this probability, a decided result is labelled less likely in the text answer.
     static let likely = 0.15
 
     private static let limit: JSONValue = [
         "type": "integer", "minimum": 1, "maximum": 20, "default": 5,
         "description": "How many results, at most (1–20).",
-    ]
-
-    private static let preferForgotten: JSONValue = [
-        "type": "boolean", "default": false,
-        "description": "Rank as the menu bar does: favour what the user hasn't opened in months, and rank anything opened or changed in the last 3 days lower. Off by default, so recent files come back too.",
     ]
 
     private static let output: JSONValue = [
@@ -35,9 +30,9 @@ enum Tools {
                         "lastOpened": ["type": ["string", "null"], "description": "When the user last opened it (from Spotlight, or Appears seeing it on screen), ISO 8601; null if unknown."],
                         "modified": ["type": "string", "description": "ISO 8601."],
                         "page": ["type": "integer", "description": "The matching page, for PDFs."],
-                        "confidence": ["type": "number", "description": "0–1. Under 0.15 is a less likely match."],
+                        "confidence": ["type": "number", "description": "0–1: the on-device decision model's probability that this is what was asked for. Absent when that model isn't installed."],
                     ],
-                    "required": ["path", "url", "title", "kind", "reason", "snippet", "lastOpened", "modified", "confidence"],
+                    "required": ["path", "url", "title", "kind", "reason", "snippet", "lastOpened", "modified"],
                 ],
             ],
         ],
@@ -58,7 +53,6 @@ enum Tools {
                 "properties": [
                     "text": ["type": "string", "description": "What to look for, in a few words or a few paragraphs."],
                     "limit": limit,
-                    "prefer_forgotten": preferForgotten,
                 ],
                 "required": ["text"],
                 "additionalProperties": false,
@@ -75,7 +69,6 @@ enum Tools {
                 "properties": [
                     "path": ["type": "string", "description": "The file's path."],
                     "limit": limit,
-                    "prefer_forgotten": preferForgotten,
                 ],
                 "required": ["path"],
                 "additionalProperties": false,
@@ -101,20 +94,19 @@ enum Tools {
 
     static func call(_ name: String, arguments: [String: JSONValue], index: AgentIndex) async -> Answer {
         let limit = min(max(arguments["limit"]?.int ?? Int(arguments["limit"]?.string ?? "") ?? 5, 1), 20)
-        let preferForgotten = arguments["prefer_forgotten"]?.bool ?? false
         do {
             switch name {
             case "related":
                 guard let text = arguments["text"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
                     return Answer(text: "related needs `text`: what to look for, such as a question, a topic or names.", isError: true)
                 }
-                let found = try await index.related(text: String(text.prefix(20_000)), limit: limit, preferForgotten: preferForgotten)
+                let found = try await index.related(text: String(text.prefix(20_000)), limit: limit)
                 return answer(found, heading: "about this")
             default:
                 guard let raw = arguments["path"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
                     return Answer(text: "related_to_file needs `path`: the file's absolute path.", isError: true)
                 }
-                let (item, found) = try await index.related(toFile: path(raw), limit: limit, preferForgotten: preferForgotten)
+                let (item, found) = try await index.related(toFile: path(raw), limit: limit)
                 return answer(found, heading: "related to \(item.title)")
             }
         } catch let failure as AgentIndex.Failure {
@@ -141,7 +133,7 @@ enum Tools {
         for (number, suggestion) in suggestions.enumerated() {
             let item = suggestion.item
             lines.append("")
-            lines.append("\(number + 1). \(item.title) (\(item.kind.label.lowercased())\(suggestion.confidence < likely ? ", less likely" : ""))")
+            lines.append("\(number + 1). \(item.title) (\(item.kind.label.lowercased())\(suggestion.decided && suggestion.confidence < likely ? ", less likely" : ""))")
             lines.append("   \(item.path)")
             lines.append("   \(suggestion.reason)")
             if !suggestion.snippet.isEmpty { lines.append("   “\(suggestion.snippet)”") }
@@ -161,8 +153,8 @@ enum Tools {
             "snippet": .string(suggestion.snippet),
             "lastOpened": item.lastUsed.map { .string(dates.string(from: $0)) } ?? .null,
             "modified": .string(dates.string(from: item.modified)),
-            "confidence": .double((suggestion.confidence * 100).rounded() / 100),
         ]
+        if suggestion.decided { result["confidence"] = .double((suggestion.confidence * 100).rounded() / 100) }
         if item.kind == .pdf, let page = suggestion.unit.locator.page { result["page"] = .int(page) }
         return .object(result)
     }

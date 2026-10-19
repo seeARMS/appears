@@ -36,4 +36,16 @@ for i in range(80):
     ]
     messages.append(dict(path=f"messages:retrieval-winery-topic-{i}", title="Morgan Hale", chatID=910,
                          text=topics[i % len(topics)] + f" We can go on outing number {i+1}.", age=30+i))
+# A reported failure: the answer is worded differently ("young man", "in-laws own",
+# "Vineyards") in a group chat, while the open chat talks about wineries in words much
+# closer to the question. Surface similarity can't tell them apart; reading them can.
+messages.append(dict(path="messages:retrieval-group-vineyard", title="Ellis/Parkers & SOs", chatID=940,
+                     text="Yeah\nThe FedEx young man said his in-laws own Larkmoor Vineyards in Gilroy.", age=8))
+for i, text in enumerate([
+    "Asked the guy for recs and he kept pointing out the winery direct wines.",
+    "Took the gondola, long tour that explores entire winery",
+    "Halcyon Ridge Winery was my favorite stop",
+    "Yes! Their pinot is great",
+]):
+    messages.append(dict(path=f"messages:retrieval-open-winery-{i}", title="Rowan Ellis", chatID=941, text=text, age=400 + i * 90))
 Path(__file__).with_name("retrieval-messages.json").write_text(json.dumps(messages, indent=2)+"\n")

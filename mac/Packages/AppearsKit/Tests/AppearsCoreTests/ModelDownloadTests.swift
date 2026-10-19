@@ -25,6 +25,16 @@ import Testing
         throw NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Download test timed out"])
     }
 
+    @Test func bundledAnswerModelPinsValidate() throws {
+        let descriptor = try ModelDescriptor.bundledDecider()
+        try descriptor.validate()
+        #expect(descriptor != (try ModelDescriptor.bundled()))
+        #expect(Set(descriptor.files.map(\.name)).isSuperset(of: ["LICENSE.txt", "NOTICE.txt", "config.json", "tokenizer.json"]))
+        #expect(descriptor.files.contains { $0.name.hasPrefix("model") && $0.name.hasSuffix(".safetensors") })
+        // Small enough that a failed checksum re-downloads one shard, not the whole model.
+        #expect(descriptor.files.allSatisfy { $0.size < 400_000_000 })
+    }
+
     @Test func bundledPinsAndPathValidation() throws {
         let descriptor = try ModelDescriptor.bundled()
         try descriptor.validate()

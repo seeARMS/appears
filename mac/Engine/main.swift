@@ -2,6 +2,7 @@ import AppearsCore
 import AppearsMessages
 import Foundation
 import GemmaEmbedder
+import Lightning
 
 // AppearsEngine: the sandboxed XPC service that reads your files, runs the model, keeps the
 // index and the journal, and answers the app. It has no network entitlement, so macOS blocks
@@ -14,6 +15,7 @@ actor EngineHost {
     private var loading: Task<Engine, Error>?
     private var pendingSettings: SourceSettings?
     private var loadError: String?
+    private var lastDeciderCheck = ContinuousClock.now - .seconds(60)
 
     /// The app's data lives in this service's container.
     static var dataFolder: URL {
@@ -21,7 +23,10 @@ actor EngineHost {
     }
 
     func get() async throws -> Engine {
-        if let engine { return engine }
+        if let engine {
+            attachDecider(to: engine)
+            return engine
+        }
         if let loading { return try await loading.value }
         let settings = pendingSettings ?? SourceSettings()
         let task = Task<Engine, Error> {
@@ -32,7 +37,8 @@ actor EngineHost {
             // Demo mode keeps its own index, apart from your real one.
             let data = settings.homeOverride == nil ? Self.dataFolder : Self.dataFolder.deletingLastPathComponent().appending(path: "Appears-Demo")
             let engine = try Engine(folder: data, embedder: embedder, settings: settings,
-                                    messagesURL: settings.homeOverride == nil ? ChatDatabase.defaultURL : nil)
+                                    messagesURL: settings.homeOverride == nil ? ChatDatabase.defaultURL : nil,
+                                    decider: Self.installedDecider())
             engine.start()
             return engine
         }
@@ -47,6 +53,22 @@ actor EngineHost {
             loadError = error.localizedDescription
             throw error
         }
+    }
+
+    /// The decision model, when its verified files are installed. It loads its weights on its
+    /// first decision and releases them when idle.
+    static func installedDecider() -> (any Decider)? {
+        guard let descriptor = try? ModelDescriptor.bundledDecider(), ModelAssets.isInstalled(descriptor) else { return nil }
+        let folder = ModelAssets.folder(for: descriptor)
+        return LightningDecider.isUsable(folder) ? LightningDecider(folder: folder) : nil
+    }
+
+    /// The decision model usually finishes downloading after the engine has started; look
+    /// for it at most once a minute until it's there.
+    private func attachDecider(to engine: Engine) {
+        guard !engine.hasDecider, ContinuousClock.now - lastDeciderCheck >= .seconds(60) else { return }
+        lastDeciderCheck = .now
+        if let decider = Self.installedDecider() { engine.setDecider(decider) }
     }
 
     /// Settings can arrive before the engine has loaded; keep them for the load.
