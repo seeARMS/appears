@@ -4,7 +4,8 @@ import Foundation
 
 /// Larger independent corpus: split discussions, repeated keyword matches, and distractors.
 /// Source files are fictional; this evaluator never opens personal Messages.
-func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, decider: (any Decider)?, threshold: Double, verbose: Bool) async throws {
+func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, decider: (any Decider)?, policy: SurfacePolicy.Settings, verbose: Bool) async throws {
+    let threshold = policy.threshold, surface = SurfacePolicy(settings: policy)
     struct Scenario: Decodable {
         var name: String
         var title: String
@@ -57,8 +58,8 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, decider: (a
             : Array(response.suggestions.prefix(3))
         let passed: Bool
         if scenario.silent == true {
-            // As SurfacePolicy decides: one of the candidates is what's needed.
-            passed = !response.suggestions.prefix(3).contains { $0.decided && ($0.features.answered ?? 0) >= threshold }
+            // As the app decides, over the same ten results.
+            passed = surface.signalable(response.suggestions).isEmpty
         } else {
             passed = scenario.expect.allSatisfy(paths.contains)
                 && (scenario.first.map { paths.first == $0 } ?? true)

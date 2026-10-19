@@ -396,9 +396,9 @@ final class AppModel {
         let snapshot = event.snapshot()
         guard let response = try? await engine.related(RecallRequest(context: retrievalContext(snapshot), trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         policy.settings = settings.policySettings
-        let confident = response.suggestions.filter { policy.isConfident($0) }
-        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
-        guard !confident.isEmpty, event.start > Date() else { return }
+        let signal = policy.signalable(response.suggestions)
+        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(signal.count, privacy: .public) could signal")
+        guard !signal.isEmpty, event.start > Date() else { return }
 
         await queueAmbient(response.suggestions, context: snapshot, evidenceTerms: response.query.entities + response.query.rareTerms, meeting: event)
     }

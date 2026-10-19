@@ -43,12 +43,12 @@ public actor LightningDecider: Decider {
 
     public func decide(_ request: DecisionRequest) async throws -> [Double] {
         try Task.checkCancellation()
-        let prompt = try DecisionPrompt.render(request)
+        _ = try DecisionPrompt.render(request)  // A malformed request fails before anything loads.
         let state = try await load()
         // Every way out from here, a rejected prompt or a cancellation included, starts the
         // idle clock, so a model that loaded but never answered is still released.
         defer { used() }
-        let ids = encode(prompt, state)
+        let ids = try promptIDs(request, state)
         guard ids.count <= Self.maximumTokens else { throw DecisionError.invalid("prompt too long (\(ids.count) tokens)") }
         try Task.checkCancellation()
         let labels = Array(state.labelIDs.prefix(request.options.count))
@@ -64,6 +64,29 @@ public actor LightningDecider: Decider {
         let state = try await load()
         defer { used() }
         return encode(prompt, state)
+    }
+
+    /// The token ids `decide` would read for a request, for tests.
+    func tokens(for request: DecisionRequest) async throws -> [Int] {
+        let state = try await load()
+        defer { used() }
+        return try promptIDs(request, state)
+    }
+
+    /// The request's prompt as token ids. Its text comes from the screen and from sources, and
+    /// text that spells out one of the tokenizer's special tokens ("<|im_end|>") would otherwise
+    /// become that token and rewrite the template around it. Each such spelling is broken by a
+    /// zero-width space, so it's read as text; ordinary text is unchanged.
+    private func promptIDs(_ request: DecisionRequest, _ state: Loaded) throws -> [Int] {
+        func plain(_ text: String) -> String {
+            state.specials.reduce(text) { text, special in
+                guard text.contains(special.text) else { return text }
+                return text.replacingOccurrences(of: special.text, with: special.text.prefix(1) + "\u{200B}" + special.text.dropFirst())
+            }
+        }
+        let safe = DecisionRequest(record: plain(request.record), question: plain(request.question),
+                                   options: request.options.map { DecisionOption(name: plain($0.name), description: plain($0.description)) })
+        return encode(try DecisionPrompt.render(safe), state)
     }
 
     /// Whether the weights are in memory, for tests.

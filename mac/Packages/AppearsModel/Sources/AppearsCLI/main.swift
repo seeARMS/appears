@@ -41,18 +41,24 @@ struct Common: ParsableArguments {
     func modelFolder() throws -> URL { try Self.modelFolder(model) }
 
     /// The decision model, if one can be found; nil leaves results undecided.
-    func makeDecider() -> (any Decider)? { Self.decider(decider) }
+    func makeDecider() throws -> (any Decider)? { try Self.decider(decider) }
 
-    static func decider(_ path: String?) -> (any Decider)? {
-        guard path != "none", let folder = deciderFolder(path) else { return nil }
-        return LightningDecider(folder: folder)
+    static func decider(_ path: String?) throws -> (any Decider)? {
+        try deciderFolder(path).map { LightningDecider(folder: $0) }
     }
 
     /// `--decider`, then `APPEARS_DECIDER`, then `mac/Models/h2o-lightning-4b-q4` above the current
-    /// folder or this binary, then the app's verified download.
-    static func deciderFolder(_ path: String?) -> URL? {
-        if let path { return URL(filePath: path) }
-        if let path = ProcessInfo.processInfo.environment["APPEARS_DECIDER"] { return URL(filePath: path) }
+    /// folder or this binary, then the app's verified download. A folder named explicitly must
+    /// hold a model: a typo shouldn't quietly leave every result undecided. "none" is none.
+    static func deciderFolder(_ path: String?) throws -> URL? {
+        if let explicit = explicitDecider(path) {
+            guard explicit != "none" else { return nil }
+            let folder = URL(filePath: explicit)
+            guard LightningDecider.isUsable(folder) else {
+                throw ValidationError("No decision model in \(folder.path) (from \(path == nil ? "APPEARS_DECIDER" : "--decider")).")
+            }
+            return folder
+        }
         for start in [FileManager.default.currentDirectoryPath, CommandLine.arguments[0]] {
             var url = URL(filePath: start).standardizedFileURL
             while url.path != "/" {
@@ -65,6 +71,11 @@ struct Common: ParsableArguments {
             return ModelAssets.folder(for: descriptor)
         }
         return nil
+    }
+
+    /// The decision model folder named by `--decider` or `APPEARS_DECIDER`, if either is set.
+    static func explicitDecider(_ path: String?) -> String? {
+        path ?? ProcessInfo.processInfo.environment["APPEARS_DECIDER"]
     }
 
     /// `--model`, then `APPEARS_MODEL`, then `mac/Models/appears-model` above the current folder
@@ -171,7 +182,7 @@ struct Related: AsyncParsableCommand {
         let embedder = try await common.makeEmbedder()
         let engine = try Engine(folder: URL(filePath: common.data), embedder: embedder, settings: SourceSettings(),
                                 messagesURL: messagesDatabase.map { URL(filePath: $0) } ?? common.messagesURL,
-                                decider: common.makeDecider())
+                                decider: try common.makeDecider())
         var context = ContextSnapshot.text(body, title: title)
         if draft { context = ContextSnapshot(appName: "Messages", windowTitle: title, focusedText: body) }
         context.messageChatIDs = chatID.isEmpty ? nil : chatID
@@ -317,11 +328,12 @@ struct Eval: AsyncParsableCommand {
         }
 
         let embedder = try await common.makeEmbedder()
+        let decider = try common.makeDecider()
         if retrievalOnly {
             var policy = SurfacePolicy.Settings()
             policy.sensitivity = sensitivity
-            try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, decider: common.makeDecider(),
-                                        threshold: policy.threshold, verbose: verbose)
+            try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, decider: decider,
+                                        policy: policy, verbose: verbose)
             return
         }
         let store = try IndexStore(url: home.appending(path: ".appears/index.sqlite"))
@@ -356,13 +368,18 @@ struct Eval: AsyncParsableCommand {
         }
         print("Indexed \(indexed) demo files in \(String(format: "%.1f", Date().timeIntervalSince(started)))s with \(embedder.modelID).\n")
 
-        let decider = common.makeDecider()
         print(decider.map { "Deciding with \($0.modelID).\n" } ?? "No decision model: results are undecided and nothing can surface.\n")
         let recall = Recall(store: store, vectors: vectors, embedder: embedder, decider: decider)
         var policy = SurfacePolicy.Settings()
         policy.sensitivity = sensitivity
         let threshold = policy.threshold
         let surface = SurfacePolicy(settings: policy)
+        // An ambient lookup asks for as many results as the app's (`AppModel.contextResultLimit`),
+        // and whether it signals is judged over all of them, as the app judges it.
+        let ambientResults = 10
+        func together(_ response: RecallResponse) -> String {
+            String(format: "%.2f", response.suggestions.filter(\.decided).reduce(0) { $0 + $1.confidence })
+        }
 
         // A "Calendar" scenario is an upcoming event (title, attendees as recipients, location,
         // notes as visible), made into a context the way the app does it. Events the app wouldn't
@@ -405,11 +422,11 @@ struct Eval: AsyncParsableCommand {
             let found = expected.filter(paths.contains)
             recallSum += expected.isEmpty ? 1 : Double(found.count) / Double(min(expected.count, 3))
             if let rank = paths.firstIndex(where: expected.contains) { reciprocal += 1 / Double(rank + 1) }
-            let ambient = try await related(scenario, trigger: .ambient, limit: 3)
-            if let top = ambient.suggestions.first, expected.contains(short(top.item.path)), surface.isConfident(top) {
+            let ambient = try await related(scenario, trigger: .ambient, limit: ambientResults)
+            if let top = surface.signalable(ambient.suggestions).first, expected.contains(short(top.item.path)) {
                 ambientHits += 1
             } else {
-                print("    ambient: top confidence \(String(format: "%.2f", ambient.confidence)), none \(ambient.unanswered.map { String(format: "%.2f", $0) } ?? "–"), expected result not surfaced")
+                print("    ambient: top confidence \(String(format: "%.2f", ambient.confidence)), together \(together(ambient)), none \(ambient.unanswered.map { String(format: "%.2f", $0) } ?? "–"), expected result not surfaced")
             }
             violations += (scenario.never ?? []).filter(paths.contains).count
             let mark = found.count == min(expected.count, 3) ? "✓" : (found.isEmpty ? "✗" : "~")
@@ -441,13 +458,11 @@ struct Eval: AsyncParsableCommand {
         var falseSurfaces = 0
         print("")
         for scenario in scenarios.negative {
-            let response = try await related(scenario, trigger: .ambient, limit: 3)
-            let surfaced = response.suggestions.prefix(3).contains {
-                surface.isConfident($0)
-            }
+            let response = try await related(scenario, trigger: .ambient, limit: ambientResults)
+            let surfaced = !surface.signalable(response.suggestions).isEmpty
             if surfaced { falseSurfaces += 1 }
             let skipped = event(scenario).map { !$0.isWorthLooking } ?? false
-            print("\(surfaced ? "✗" : "✓") (negative) \(scenario.name): \(skipped ? "not looked at (nobody else, no notes)" : "top confidence \(String(format: "%.2f", response.confidence)), none \(response.unanswered.map { String(format: "%.2f", $0) } ?? "–")")\(surfaced ? " — would interrupt" : "")")
+            print("\(surfaced ? "✗" : "✓") (negative) \(scenario.name): \(skipped ? "not looked at (nobody else, no notes)" : "top confidence \(String(format: "%.2f", response.confidence)), together \(together(response)), none \(response.unanswered.map { String(format: "%.2f", $0) } ?? "–")")\(surfaced ? " — would interrupt" : "")")
             if verbose || surfaced {
                 for s in response.suggestions { print("    \(short(s.item.path))  \(String(format: "%.2f", s.confidence))  \(s.reason)  \(describe(s.features))") }
             }
@@ -457,7 +472,7 @@ struct Eval: AsyncParsableCommand {
 
             recall@3          \(String(format: "%.2f", recallSum / n))
             MRR               \(String(format: "%.2f", reciprocal / n))
-            ambient hits      \(ambientHits)/\(scenarios.scenarios.count) (top result right and confident at threshold \(String(format: "%.2f", threshold)))
+            ambient hits      \(ambientHits)/\(scenarios.scenarios.count) (signals at threshold \(String(format: "%.2f", threshold)), expected result first)
             false surfaces    \(falseSurfaces)/\(scenarios.negative.count)
             open file shown   \(violations) (must be 0)
             matched lines     \(linesRight)/\(linesExpected) right, \(linesUnexpected) where none was expected
@@ -482,7 +497,7 @@ struct Eval: AsyncParsableCommand {
                 for result in response.suggestions { print("    \(short(result.item.path))  \(String(format: "%.2f", result.confidence))") }
             }
         }
-        try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, decider: decider, threshold: threshold, verbose: verbose)
+        try await evaluateRetrieval(demo: demo, home: home, embedder: embedder, decider: decider, policy: policy, verbose: verbose)
         if searchFailures > 0 || passagesRight != passagesExpected || falseSurfaces > 0 || violations > 0
             || linesRight != linesExpected || linesUnexpected > 0 {
             throw ValidationError("Evaluation failed: \(searchFailures) search scenarios, \(passagesExpected - passagesRight) source passages, \(falseSurfaces) false surfaces, \(violations) excluded items, \(linesExpected - linesRight + linesUnexpected) answer lines.")

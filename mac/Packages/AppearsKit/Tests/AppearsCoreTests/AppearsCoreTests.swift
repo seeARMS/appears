@@ -221,6 +221,20 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         #expect(background.reason.hasPrefix("Mentions Dana Ruiz"))
     }
 
+    @Test func resultsTheModelDidntReadStayListedUndecided() async throws {
+        var (recall, _, _) = try await makeIndex((1...20).map {
+            ("receipt-\($0).txt", "Hardware store receipt number \($0): lumber, screws and paint for the deck, total $\($0 * 11).00", Double($0 * 10))
+        })
+        recall.decider = ScriptedDecider.picking("number 3:", probability: 0.8)
+        let response = try await recall.run(RecallRequest(context: .text("hardware store receipt lumber screws paint deck"), trigger: .pull, limit: 20))
+        // The model reads at most 15; a typed search asking for 20 still gets the rest, after them.
+        let decided = response.suggestions.prefix { $0.decided }
+        #expect(decided.count == DecisionFraming.candidates)
+        #expect(response.suggestions.count > DecisionFraming.candidates)
+        #expect(response.suggestions.dropFirst(decided.count).allSatisfy { !$0.decided && $0.confidence == 0 })
+        #expect(Set(response.suggestions.map(\.id)).count == response.suggestions.count)
+    }
+
     @Test func journalFeaturesFromBeforeTheDecisionModelStillDecode() throws {
         let old = #"{"cosine":0.7,"zScore":3,"agreement":true,"entityHit":false,"daysSinceTouched":10,"fused":0.02,"forgotten":0.8,"novelty":1}"#
         let decoded = try JSONDecoder().decode(Features.self, from: Data(old.utf8))

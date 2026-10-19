@@ -58,17 +58,13 @@ public struct SurfacePolicy: Sendable {
         confidence >= settings.threshold
     }
 
-    /// Whether a lookup's results could signal on their own, before anything is suppressed: the
-    /// decision model judged them and is sure enough that one of them is what's needed. When two
-    /// items both fit, their probabilities split, but the chance that one of them fits doesn't.
-    public func isConfident(_ suggestion: Suggestion) -> Bool {
-        suggestion.decided && isConfident(suggestion.features.answered ?? 0)
-    }
-
-    /// The results an ambient lookup may signal with, most probable first, or none. Only the
-    /// results that may still signal here count toward the threshold: an answer already shown
-    /// or dismissed in this document or conversation doesn't lend its probability to the rest.
-    public func signalable(_ candidates: [Suggestion], maySuggest: (Suggestion) -> Bool) -> [Suggestion] {
+    /// The results an ambient lookup may signal with, most probable first, or none: the decision
+    /// model's probabilities for them must together reach the threshold. When two items both
+    /// fit, their probabilities split, but the chance that one of them fits doesn't. Only the
+    /// results that may still signal here count: an answer already shown or dismissed in this
+    /// document or conversation doesn't lend its probability to the rest. This is the one rule
+    /// for a signal; the meeting look-ahead and `appears eval` use it too.
+    public func signalable(_ candidates: [Suggestion], maySuggest: (Suggestion) -> Bool = { _ in true }) -> [Suggestion] {
         let eligible = candidates.filter { $0.decided && maySuggest($0) }
         guard isConfident(eligible.reduce(0) { $0 + $1.confidence }) else { return [] }
         return eligible.sorted { $0.confidence > $1.confidence }

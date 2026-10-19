@@ -294,7 +294,7 @@ cd mac/Packages/AppearsModel && xcodebuild -scheme appears -destination 'platfor
 mac/build/ModelDerivedData/Build/Products/Release/appears eval --verbose
 ```
 
-`appears eval` indexes `demo/files` in a temporary folder and scores [`demo/scenarios.json`](demo/scenarios.json): recall@3, MRR, ambient hits (right and confident), false surfaces on negative scenarios (where the right answer is silence), and whether anything recent was shown.
+`appears eval` indexes `demo/files` in a temporary folder and scores [`demo/scenarios.json`](demo/scenarios.json): recall@3, MRR, ambient hits (an ambient lookup signals, as the app decides it over its ten results, with the right result first), false surfaces on negative scenarios (where the right answer is silence), and whether anything recent was shown.
 
 | Date | Scenarios | recall@3 | MRR | Ambient hits | False surfaces |
 | --- | --- | --- | --- | --- | --- |

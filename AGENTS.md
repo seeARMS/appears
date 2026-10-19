@@ -66,7 +66,7 @@ EmbeddingGemma 2 expects:
 
 ## The answer model
 
-Retrieval finds candidates; H2O-Lightning-4B decides. It reads a record (where the person is, and for a meeting or a window the details), a question (the draft or selection itself when there is one) and up to 15 candidates plus "none", and returns a probability for each. That probability is each result's order and ring; one minus "none" is what an ambient signal needs.
+Retrieval finds candidates; H2O-Lightning-4B decides. It reads a record (where the person is, and for a meeting or a window the details), a question (the draft or selection itself when there is one) and up to 15 candidates plus "none", and returns a probability for each. That probability is each result's order and ring. An ambient lookup signals when the probabilities of the results it would show reach the threshold together (`SurfacePolicy.signalable`, which the meeting look-ahead and `appears eval` use too).
 
 - **The prompt is the model's contract.** `DecisionPrompt` in `Decider.swift` reproduces H2O's shim (v1.2.3, `serve_config.json`) exactly: the chat template, `record:`/`question:`/`options:`, the letters, `Answer:` and temperature 0.75. Don't edit those strings; `LightningTests` will fail if you do.
 - **Change what it reads in `DecisionFraming`**, never by adding score multipliers. It needs to see what a person would: the open conversation marked, the text around a short document passage, a picture's recognized text.

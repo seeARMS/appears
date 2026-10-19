@@ -41,7 +41,7 @@ import Testing
                             decider: ScriptedDecider.picking("Harbor Oaks", probability: 0.9))
         let ambient = try await recall.run(RecallRequest(context: context, trigger: .ambient), now: now)
         #expect(ambient.suggestions.filter { $0.item.title == "Jordan Vale" }.count == 1)
-        #expect(SurfacePolicy().isConfident(ambient.suggestions[0]))
+        #expect(SurfacePolicy().signalable(ambient.suggestions).first?.item.title == "Jordan Vale")
         let pull = try await recall.run(RecallRequest(context: context, trigger: .pull), now: now)
         #expect(pull.suggestions.map(\.confidence) == ambient.suggestions.map(\.confidence))
 

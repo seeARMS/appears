@@ -33,7 +33,8 @@ public struct Features: Sendable, Codable, Hashable {
     /// The decision model's probability that this is the item; nil when no decision ran.
     public var probability: Double?
     /// The decision model's probability that one of the lookup's candidates is what's needed
-    /// (one minus "none"). The same for every result of a lookup; what an ambient signal needs.
+    /// (one minus "none"). The same for every result of a lookup, and journaled; a signal goes by
+    /// the probabilities of the results it would show instead (`SurfacePolicy.signalable`).
     public var answered: Double?
     /// Which decision model and prompt gave `probability` (`Decider.modelID`), so journaled
     /// outcomes from different models can be told apart.
@@ -440,8 +441,12 @@ public struct Recall: Sendable {
                 let probabilities = try await decider.decide(decision)
                 guard probabilities.count == pool.count + 1 else { throw DecisionError.invalid("wrong number of answers") }
                 unanswered = probabilities[pool.count]
-                ordered = zip(pool, probabilities).map { $0.withProbability($1, answered: 1 - probabilities[pool.count], decider: decider.modelID) }
+                let decided = zip(pool, probabilities).map { $0.withProbability($1, answered: 1 - probabilities[pool.count], decider: decider.modelID) }
                     .sorted { $0.confidence == $1.confidence ? $0.score > $1.score : $0.confidence > $1.confidence }
+                // Results the model didn't read follow, undecided, so a longer list (typed search,
+                // agents) keeps them; copies of a passage it did read don't come back.
+                let read = Set(pool.map(\.id)), readTexts = Set(pool.compactMap(Self.comparable))
+                ordered = decided + ordered.filter { !read.contains($0.id) && !(Self.comparable($0).map(readTexts.contains) ?? false) }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -472,6 +477,13 @@ public struct Recall: Sendable {
         )
     }
 
+    /// A result's evidence with case and spacing ignored, to find copies of one passage; nil
+    /// when it has no text.
+    static func comparable(_ result: Suggestion) -> String? {
+        let text = (result.evidence?.text ?? result.unit.text).lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return text.isEmpty ? nil : text
+    }
+
     /// The candidates the decision model reads. The same text twice (a screenshot sent to two
     /// conversations) is one candidate, kept from the open conversation. Then the strongest
     /// first and the rest by maximal marginal relevance, so a run of near-identical passages (a
@@ -481,9 +493,7 @@ public struct Recall: Sendable {
         var kept: [String: Int] = [:]
         var unique: [Suggestion] = []
         for result in ranked {
-            let text = (result.evidence?.text ?? result.unit.text).lowercased()
-                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-            guard !text.isEmpty else { unique.append(result); continue }
+            guard let text = Self.comparable(result) else { unique.append(result); continue }
             if let index = kept[text] {
                 let open = { (s: Suggestion) in openConversations.contains(s.item.message?.chatID ?? -1) }
                 if open(result), !open(unique[index]) { unique[index] = result }
