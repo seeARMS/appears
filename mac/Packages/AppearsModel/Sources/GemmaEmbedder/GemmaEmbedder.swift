@@ -14,9 +14,6 @@ public final class GemmaEmbedder: Embedder {
     public let modelID: String
     public let dimension: Int
     public var supportsImages: Bool { true }
-    /// Calibrated with the synthetic positive and missing-evidence retrieval cases.
-    /// Query and document prompts, weights and dimensions remain unchanged.
-    public var minimumPassageSimilarity: Double? { 0.70 }
     /// Soft tokens per image: 280 (default), 140 or 70. Fewer is faster and coarser.
     public let imageTokens: Int
     let encoder: TextEncoder

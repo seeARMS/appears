@@ -158,8 +158,7 @@ struct PassageTestEmbedder: Embedder {
         let stored = try #require(try store.item(path: item.path))
         let unit = try #require(try store.units(itemID: id).first?.unit)
         return Suggestion(item: stored, unit: unit, reason: "Related", snippet: text, score: 1, confidence: 0.9,
-                          features: Features(cosine: 0.95, zScore: 5, agreement: true, entityHit: true,
-                                             daysSinceTouched: 100, fused: 0.05, forgotten: 1, novelty: 1))
+                          features: Features(cosine: 0.95, daysSinceTouched: 100))
     }
 
     @Test(arguments: ["replaced", "hidden", "modified", "removed"])
@@ -231,7 +230,7 @@ struct PassageTestEmbedder: Embedder {
             #expect(selected.evidence?.text.contains(example.1) == true)
             #expect(selected.line?.text == example.1)
             #expect(selected.evidence?.text.contains(selected.line?.text ?? "missing") == true)
-            #expect(selected.confidence == 0, "A value constraint cannot bypass weak semantic support")
+            #expect(selected.confidence == 0 && !selected.decided, "Passages carry no confidence until the decision")
         }
     }
 
@@ -287,8 +286,7 @@ struct PassageTestEmbedder: Embedder {
         return Suggestion(item: try #require(try store.item(path: entry.item.path)),
                           unit: try #require(try store.units(itemID: id).first?.unit),
                           reason: "Related", snippet: text, score: 1, confidence: 0.9,
-                          features: Features(cosine: 0.95, zScore: 5, agreement: true, entityHit: true,
-                                             daysSinceTouched: 100, fused: 0.05, forgotten: 1, novelty: 1))
+                          features: Features(cosine: 0.95, daysSinceTouched: 100))
     }
 
     @Test func photoOnlyMessageRetainsItsOwnOCRAndAttachment() async throws {
@@ -304,25 +302,19 @@ struct PassageTestEmbedder: Embedder {
     }
 
     @Test(arguments: [UnitKind.text, .image])
-    func conversationScopeRaisesPhotoRankWithoutRaisingConfidence(_ kind: UnitKind) async throws {
+    func conversationScopeIsADiscoveryRouteNotAScoreBoost(_ kind: UnitKind) async throws {
         let fixture = try MessageFixture()
         defer { try? FileManager.default.removeItem(at: fixture.folder) }
         let store = try IndexStore(url: fixture.folder.appending(path: "evidence/index.sqlite"))
         let original = try photo(fixture, store: store, kind: kind)
         let lexical = try LexicalTerms("Silverbrook tasting invitation", store: store)
         let selector = PassageSelector()
-        let global = try await selector.select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
-                                                store: store, messages: MessagesReader(url: fixture.url), excluded: [],
-                                                question: nil, terms: [], lexical: lexical)
-        let scoped = try await selector.select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
-                                                store: store, messages: MessagesReader(url: fixture.url), excluded: [],
-                                                question: nil, terms: [], lexical: lexical,
-                                                scopedChats: [try #require(original.item.message?.chatID)])
-        let unscopedResult = try #require(global.first)
-        let scopedResult = try #require(scoped.first)
-        #expect(scopedResult.score > unscopedResult.score)
-        #expect(scopedResult.confidence == unscopedResult.confidence)
-        #expect(scopedResult.item.message == unscopedResult.item.message)
+        let results = try await selector.select([original], query: [1, 0, 0], embedder: PassageTestEmbedder(),
+                                                 store: store, messages: MessagesReader(url: fixture.url), excluded: [],
+                                                 question: nil, terms: [], lexical: lexical)
+        let result = try #require(results.first)
+        #expect(result.item.message == original.item.message)
+        #expect(result.confidence == 0 && !result.decided)
     }
 
     @Test(arguments: [UnitKind.text, .image])

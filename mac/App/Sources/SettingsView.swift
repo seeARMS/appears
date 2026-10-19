@@ -271,8 +271,25 @@ struct SuggestionsPane: View {
             } header: {
                 Text("When you ask")
             }
+            Section {
+                Toggle(isOn: $model.settings.answerModel) {
+                    Titled("Use the answer model", caption: "A model on this Mac reads what you’re asking or working on together with each match, and decides which one answers. Without it, Appears lists matches but never suggests on its own.")
+                }
+                if model.settings.answerModel, let download = model.modelDownload.answerModel, download.phase != .ready {
+                    if download.phase == .failed {
+                        PermissionRow(text: download.error ?? "Couldn’t download the answer model.", button: "Retry") { model.retryModelDownload() }
+                    } else {
+                        LabeledContent("Downloading (\(ByteCountFormatter.string(fromByteCount: download.total, countStyle: .file)))") {
+                            ProgressView(value: download.fraction).frame(width: 120)
+                        }
+                    }
+                }
+            } header: {
+                Text("Answers")
+            }
         }
         .formStyle(.grouped)
+        .onChange(of: model.settings.answerModel) { model.answerModelChanged() }
         .onChange(of: model.settings.sensitivity) { model.ambientSettingsChanged() }
         .onChange(of: model.settings.dwell) { model.ambientSettingsChanged() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

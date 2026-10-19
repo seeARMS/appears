@@ -4,7 +4,8 @@ import Foundation
 
 /// Larger independent corpus: split discussions, repeated keyword matches, and distractors.
 /// Source files are fictional; this evaluator never opens personal Messages.
-func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: Double, verbose: Bool) async throws {
+func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, decider: (any Decider)?, policy: SurfacePolicy.Settings, verbose: Bool) async throws {
+    let threshold = policy.threshold, surface = SurfacePolicy(settings: policy)
     struct Scenario: Decodable {
         var name: String
         var title: String
@@ -16,6 +17,8 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
         var silent: Bool?
         var rejectQuotes: [String]?
         var first: String?
+        /// The answer must also be confident enough to signal on its own.
+        var confident: Bool?
     }
     struct Suite: Decodable { var retrieval: [Scenario]? }
     let scenarios = try JSONDecoder().decode(Suite.self, from: Data(contentsOf: demo.appending(path: "scenarios.json"))).retrieval ?? []
@@ -37,7 +40,7 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
             for unit in update.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: embedded[offset]) }
         }
     }
-    let recall = Recall(store: store, vectors: vectors, embedder: embedder)
+    let recall = Recall(store: store, vectors: vectors, embedder: embedder, decider: decider)
     var failures = 0
     for scenario in scenarios {
         var context = ContextSnapshot(appName: "Messages", windowTitle: scenario.title, focusedText: scenario.focused, visibleText: scenario.visible)
@@ -48,13 +51,22 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
         if let diagnostics = response.retrieval {
             print("    candidates \(expectedIDs.filter { diagnostics.candidateItemIDs.contains($0) }.count)/\(expectedIDs.count), shortlist \(expectedIDs.filter { diagnostics.shortlistedItemIDs.contains($0) }.count)/\(expectedIDs.count)")
         }
+        // A rejected passage must never be offered as the answer: first, or confident. Without a
+        // decision model there's no confidence, so the first three stand in for it.
+        let presented = response.suggestions.first?.decided == true
+            ? Array(response.suggestions.prefix(1)) + response.suggestions.dropFirst().filter { $0.confidence >= threshold }
+            : Array(response.suggestions.prefix(3))
         let passed: Bool
         if scenario.silent == true {
-            passed = !response.suggestions.prefix(3).contains { $0.ambientEligible != false && $0.confidence >= threshold }
+            // As the app decides, over the same ten results.
+            passed = surface.signalable(response.suggestions).isEmpty
         } else {
             passed = scenario.expect.allSatisfy(paths.contains)
                 && (scenario.first.map { paths.first == $0 } ?? true)
-                && !(scenario.rejectQuotes ?? []).contains { rejected in response.suggestions.prefix(3).contains {
+                && (scenario.confident != true || response.suggestions.first.map {
+                    scenario.expect.contains($0.item.path) && $0.decided && $0.confidence >= threshold
+                } == true)
+                && !(scenario.rejectQuotes ?? []).contains { rejected in presented.contains {
                     ($0.evidence?.text ?? $0.snippet).localizedCaseInsensitiveContains(rejected)
                 } }
                 && (scenario.quote.map { quote in response.suggestions.prefix(3).contains {
@@ -62,10 +74,13 @@ func evaluateRetrieval(demo: URL, home: URL, embedder: any Embedder, threshold: 
                 } } ?? true)
         }
         if !passed { failures += 1 }
-        print("\(passed ? "✓" : "✗") retrieval: \(scenario.name) (\(Int(response.milliseconds)) ms)")
+        let expected = response.suggestions.first { scenario.expect.contains($0.item.path) }
+        let confidence = scenario.silent == true ? "top \(String(format: "%.2f", response.confidence))"
+            : expected.map { $0.decided ? "answer p \(String(format: "%.2f", $0.confidence))" : "answer undecided" } ?? "answer missing"
+        print("\(passed ? "✓" : "✗") retrieval: \(scenario.name) (\(Int(response.milliseconds)) ms, \(confidence))")
         if verbose || !passed {
             for result in response.suggestions.prefix(10) {
-                print("    \(result.item.path) \(String(format: "%.3f", result.confidence)) score \(String(format: "%.3f", result.score)) cosine \(String(format: "%.3f", result.evidence?.cosine ?? 0)) \(result.evidence?.text ?? result.snippet)")
+                print("    \(result.item.path) \(result.decided ? String(format: "p %.3f", result.confidence) : "undecided") score \(String(format: "%.3f", result.score)) cosine \(String(format: "%.3f", result.evidence?.cosine ?? 0)) \(result.evidence?.text ?? result.snippet)")
             }
         }
     }

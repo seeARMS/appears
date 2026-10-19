@@ -3,7 +3,7 @@ import Testing
 @testable import AppearsCore
 
 @Suite struct RecentMessagesTests {
-    @Test func activeQuestionsRankRecentMessagesEquallyAndDiscoveryCanPreferOlderOnes() async throws {
+    @Test func ageNeverDemotesAnAnswerAndOnlyTheDraftDecides() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "appears-recent-messages-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
@@ -26,29 +26,35 @@ import Testing
             ])
             for unit in update.added { vectors.upsert(id: unit.id, kind: unit.kind, vector: vector) }
         }
-        let recall = Recall(store: store, vectors: vectors, embedder: embedder)
         let context = ContextSnapshot(appName: "Messages", windowTitle: "Jordan Vale", focusedText: text,
                                       visibleText: "Jordan: Want to walk around the lake on Saturday?")
-        let ambient = try await recall.run(RecallRequest(context: context, trigger: .ambient), now: now)
-        let recent = try #require(ambient.suggestions.first { $0.item.path == "messages:0" })
-        let old = try #require(ambient.suggestions.first { $0.item.path == "messages:1" })
-        #expect(recent.confidence >= SurfacePolicy.Settings().threshold)
+        // Discovery: the same words two days or a hundred days old score the same.
+        let undecided = try await Recall(store: store, vectors: vectors, embedder: embedder)
+            .run(RecallRequest(context: context, trigger: .pull), now: now)
+        let recent = try #require(undecided.suggestions.first { $0.item.path == "messages:0" })
+        let old = try #require(undecided.suggestions.first { $0.item.path == "messages:1" })
         #expect(recent.score == old.score, "Age cannot demote equally relevant answers to an active question")
+
+        // The decision reads the same text once (identical copies are one candidate) and its
+        // probability lets the answer signal, the same for an ambient lookup as for an ask.
+        let recall = Recall(store: store, vectors: vectors, embedder: embedder,
+                            decider: ScriptedDecider.picking("Harbor Oaks", probability: 0.9))
+        let ambient = try await recall.run(RecallRequest(context: context, trigger: .ambient), now: now)
+        #expect(ambient.suggestions.filter { $0.item.title == "Jordan Vale" }.count == 1)
+        #expect(SurfacePolicy().signalable(ambient.suggestions).first?.item.title == "Jordan Vale")
         let pull = try await recall.run(RecallRequest(context: context, trigger: .pull), now: now)
-        let pulled = try #require(pull.suggestions.first { $0.item.path == "messages:0" })
-        #expect(recent.confidence == pulled.confidence)
-        var discovery = recall
-        discovery.settings.preferForgottenForActiveText = true
-        let forgotten = try await discovery.run(RecallRequest(context: context, trigger: .pull), now: now)
-        let recentDiscovery = try #require(forgotten.suggestions.first { $0.item.path == "messages:0" })
-        let oldDiscovery = try #require(forgotten.suggestions.first { $0.item.path == "messages:1" })
-        #expect(recentDiscovery.score < oldDiscovery.score)
+        #expect(pull.suggestions.map(\.confidence) == ambient.suggestions.map(\.confidence))
 
         // The chat name and old visible text must not turn the rent message into an
-        // answer to a new, unrelated draft in that same conversation.
+        // answer to a new, unrelated draft in that same conversation: the decision reads
+        // the draft as the question, and the screen only as where the person is.
         let unrelated = ContextSnapshot(appName: "Messages", windowTitle: "Jordan Vale",
                                          focusedText: "Have you picked a movie for tonight?", visibleText: text)
-        let other = try await recall.run(RecallRequest(context: unrelated, trigger: .ambient), now: now)
-        #expect(!other.suggestions.contains { $0.item.path == "messages:0" && $0.confidence >= SurfacePolicy.Settings().threshold })
+        let decider = ScriptedDecider.picking("Harbor Oaks")
+        let checking = Recall(store: store, vectors: vectors, embedder: embedder, decider: decider)
+        _ = try await checking.run(RecallRequest(context: unrelated, trigger: .ambient), now: now)
+        let asked = try #require(decider.requests.first)
+        #expect(asked.question.contains("Have you picked a movie for tonight?"))
+        #expect(!asked.record.contains("Harbor Oaks") && !asked.question.contains("Harbor Oaks"))
     }
 }

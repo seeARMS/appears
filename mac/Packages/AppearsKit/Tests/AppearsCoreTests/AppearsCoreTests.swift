@@ -117,25 +117,83 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
 }
 
 @Suite struct RecallTests {
-    @Test func ranksRecentLowerWithoutHidingIt() async throws {
-        let (recall, _, _) = try await makeIndex([
+    @Test func theDecisionOrdersResultsAndIsTheirConfidence() async throws {
+        var (recall, _, _) = try await makeIndex([
             ("quote.txt", "Ruiz Builders quote for kitchen cabinets and countertops, $18,400", 400),
             ("notes-today.txt", "Kitchen cabinets countertops quote, Ruiz Builders, edited today", 0.5),
             ("hiking.txt", "Zion hiking itinerary for three days, Angels Landing permit", 300),
         ])
-        let response = try await recall.run(RecallRequest(
-            context: .text("Replying to Ruiz Builders about the kitchen cabinets and countertops quote"), trigger: .pull
-        ))
-        #expect(response.suggestions.first?.item.title == "quote.txt")
-        // Recent things still show when you ask, just lower.
-        let recent = try #require(response.suggestions.first { $0.item.title == "notes-today.txt" })
-        #expect(recent.score < response.suggestions[0].score)
-        // On its own, Appears needs much more evidence for something you just touched.
-        let ambient = try await recall.run(RecallRequest(
-            context: .text("Replying to Ruiz Builders about the kitchen cabinets and countertops quote"), trigger: .ambient
-        ))
-        let ambientRecent = try #require(ambient.suggestions.first { $0.item.title == "notes-today.txt" })
-        #expect(ambientRecent.confidence <= recent.confidence * 0.5 + 1e-9)
+        let context = ContextSnapshot(appName: "Mail", focusedText: "How much was the Ruiz Builders quote for the kitchen?")
+        // Without a decision model, results are listed but undecided: no confidence to signal with.
+        let undecided = try await recall.run(RecallRequest(context: context, trigger: .pull, limit: 3))
+        #expect(!undecided.suggestions.isEmpty && undecided.suggestions.allSatisfy { !$0.decided && $0.confidence == 0 })
+        #expect(undecided.unanswered == nil)
+
+        let decider = ScriptedDecider.picking("$18,400", probability: 0.85)
+        recall.decider = decider
+        let response = try await recall.run(RecallRequest(context: context, trigger: .pull, limit: 3))
+        let first = try #require(response.suggestions.first)
+        #expect(first.item.title == "quote.txt" && first.decided && abs(first.confidence - 0.85) < 1e-9)
+        // Each decided result records which model decided it, for the journal.
+        #expect(response.suggestions.allSatisfy { $0.features.decider == decider.modelID })
+        #expect(response.suggestions.dropFirst().allSatisfy { $0.decided && $0.confidence == 0 })
+        #expect(abs((response.unanswered ?? 0) - 0.15) < 1e-9)
+        // The model reads the draft as a question, the candidates and a way to say none.
+        let asked = try #require(decider.requests.first)
+        #expect(asked.question.contains("How much was the Ruiz Builders quote"))
+        #expect(asked.options.last?.name == "none")
+        #expect(asked.options.count <= DecisionPrompt.maximumOptions)
+
+        // A failing model leaves the results undecided rather than failing the lookup.
+        recall.decider = FailingDecider()
+        let failed = try await recall.run(RecallRequest(context: context, trigger: .pull, limit: 3))
+        #expect(!failed.suggestions.isEmpty && failed.suggestions.allSatisfy { !$0.decided })
+    }
+
+    @Test func hidingAnItemWhileTheModelDecidesDropsIt() async throws {
+        var (recall, store, folder) = try await makeIndex([
+            ("quote.txt", "Ruiz Builders quote for kitchen cabinets and countertops, $18,400", 400),
+            ("permit.txt", "Building permit for the kitchen remodel: cabinets, countertops and outlets", 300),
+        ])
+        let quote = try #require(try store.item(path: folder.appending(path: "quote.txt").path))
+        // "Never show this" arrives from the panel while the decision is being made.
+        recall.decider = ScriptedDecider { [store] request in
+            try? store.setNeverShow(itemID: quote.id)
+            var result = Array(repeating: 0.0, count: request.options.count)
+            let index = request.options.firstIndex { $0.description.contains("$18,400") } ?? 0
+            result[index] = 0.9
+            result[result.count - 1] = 0.1
+            return result
+        }
+        let context = ContextSnapshot(appName: "Mail", focusedText: "How much was the Ruiz Builders kitchen quote?")
+        let response = try await recall.run(RecallRequest(context: context, trigger: .pull, limit: 3))
+        #expect(!response.suggestions.contains { $0.id == quote.id })
+    }
+
+    @Test func aMessagesPhotoIsReadByItsOwnTextNotItsConversation() async throws {
+        let folder = try temporaryFolder()
+        let store = try IndexStore(url: folder.appending(path: "index.sqlite"))
+        let embedder = HashingEmbedder()
+        let date = Date(timeIntervalSince1970: 1_000)
+        let reference = MessageReference(rowID: 3, guid: "photo-guid", chatID: 9, conversationURL: nil, attachmentPath: "/demo/photo.jpg")
+        let photo = Item(source: .messages, path: "messages:3:photo:photo-guid", kind: .image, title: "Photo · Rowan Ellis",
+                         size: 1, created: date, modified: date, lastUsed: nil, message: reference)
+        let (id, _) = try store.record(photo, signature: "test")
+        let vector = try await embedder.embed(queries: ["kestrel"])[0]
+        let units = try store.replaceUnits(itemID: id, title: photo.title, units: [
+            (Unit(kind: .image, locator: .whole, text: ""), vector),
+            (Unit(kind: .text, locator: .whole, text: "Kestrel maintenance case K-417"), vector),
+            (Unit(kind: .text, locator: .chunk(0), text: "Rowan: an unsent message beside the photo"), vector),
+        ]).added
+        let image = try #require(units.first { $0.kind == .image })
+        var stored = photo
+        stored.id = id
+        let recall = Recall(store: store, vectors: VectorIndex(dimension: embedder.dimension), embedder: embedder)
+        let candidate = Suggestion(item: stored, unit: image, reason: "Looks related", snippet: "", score: 1, confidence: 0,
+                                   features: Features(cosine: 0.9, daysSinceTouched: 1))
+        let text = try #require(try recall.readable([candidate])[id])
+        #expect(text.contains("K-417"))
+        #expect(!text.contains("unsent"))
     }
 
     @Test func skipsTheOpenDocument() async throws {
@@ -158,27 +216,33 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         let response = try await recall.run(RecallRequest(context: writing, trigger: .pull))
         let first = try #require(response.suggestions.first)
         #expect(first.reason.hasPrefix("Mentions Dana Ruiz"))
-        #expect(first.features.entityHit)
         // The same name only elsewhere in the window still explains the match, but counts for less.
         let background = try #require(try await recall.run(RecallRequest(context: .text("Email to Dana Ruiz about next week"), trigger: .pull)).suggestions.first)
         #expect(background.reason.hasPrefix("Mentions Dana Ruiz"))
-        #expect(!background.features.entityHit)
     }
 
-    @Test func recallIntentOnlyLiftsAClearMatch() throws {
-        // A match that stands out: asking your memory makes Appears surer of it.
-        var clear = Features(cosine: 0.75, zScore: 4.5, agreement: true, entityHit: false, daysSinceTouched: 400, fused: 0.03, forgotten: 1, novelty: 1)
-        let plain = Confidence.estimate(clear)
-        clear.recallIntent = true
-        #expect(Confidence.estimate(clear) > plain)
-        // Nothing stands out ("what's the weather again?"): asking changes nothing.
-        var weak = Features(cosine: 0.64, zScore: 2.4, agreement: false, entityHit: false, daysSinceTouched: 400, fused: 0.02, forgotten: 1, novelty: 1)
-        let weakPlain = Confidence.estimate(weak)
-        weak.recallIntent = true
-        #expect(Confidence.estimate(weak) == weakPlain)
-        // Journal rows written before the signal existed still decode.
+    @Test func resultsTheModelDidntReadStayListedUndecided() async throws {
+        var (recall, _, _) = try await makeIndex((1...20).map {
+            ("receipt-\($0).txt", "Hardware store receipt number \($0): lumber, screws and paint for the deck, total $\($0 * 11).00", Double($0 * 10))
+        })
+        recall.decider = ScriptedDecider.picking("number 3:", probability: 0.8)
+        let response = try await recall.run(RecallRequest(context: .text("hardware store receipt lumber screws paint deck"), trigger: .pull, limit: 20))
+        // The model reads at most 15; a typed search asking for 20 still gets the rest, after them.
+        let decided = response.suggestions.prefix { $0.decided }
+        #expect(decided.count == DecisionFraming.candidates)
+        #expect(response.suggestions.count > DecisionFraming.candidates)
+        #expect(response.suggestions.dropFirst(decided.count).allSatisfy { !$0.decided && $0.confidence == 0 })
+        #expect(Set(response.suggestions.map(\.id)).count == response.suggestions.count)
+    }
+
+    @Test func journalFeaturesFromBeforeTheDecisionModelStillDecode() throws {
         let old = #"{"cosine":0.7,"zScore":3,"agreement":true,"entityHit":false,"daysSinceTouched":10,"fused":0.02,"forgotten":0.8,"novelty":1}"#
-        #expect(try !JSONDecoder().decode(Features.self, from: Data(old.utf8)).recallIntent)
+        let decoded = try JSONDecoder().decode(Features.self, from: Data(old.utf8))
+        #expect(decoded.cosine == 0.7 && decoded.daysSinceTouched == 10 && !decoded.recallIntent && decoded.probability == nil)
+        #expect(decoded.decider == nil)
+        let current = Features(cosine: 0.5, daysSinceTouched: 2, recallIntent: true, probability: 0.9, answered: 0.95,
+                               decider: "scripted")
+        #expect(try JSONDecoder().decode(Features.self, from: JSONEncoder().encode(current)) == current)
     }
 
     @Test func recallIntentDoesNotReorder() async throws {
@@ -249,7 +313,6 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         let first = try #require(response.suggestions.first)
         #expect(!response.query.rareTerms.isEmpty)
         #expect(first.unit.kind == .image)
-        #expect(first.features.agreement)
     }
 }
 
@@ -294,9 +357,29 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         #expect(policy.signalDelay(now: now.addingTimeInterval(60)) == 0)
     }
 
+    @Test func suppressedAnswersDontLendTheirProbability() {
+        func result(_ id: Int64, _ probability: Double?, answered: Double?) -> Suggestion {
+            let date = Date(timeIntervalSince1970: 0)
+            return Suggestion(item: Item(id: id, source: .file, path: "/demo/\(id)", kind: .document, title: "\(id)", size: 1,
+                                         created: date, modified: date, lastUsed: nil),
+                              unit: Unit(kind: .text, locator: .whole, text: "text"), reason: "Related", snippet: "text",
+                              score: 1, confidence: probability ?? 0,
+                              features: Features(cosine: 0.7, daysSinceTouched: 10, probability: probability, answered: answered))
+        }
+        let policy = SurfacePolicy()
+        let lookup = [result(1, 0.98, answered: 0.99), result(2, 0.01, answered: 0.99)]
+        #expect(policy.signalable(lookup) { _ in true }.map(\.id) == [1, 2])
+        // The answer was already shown or dismissed here: what's left is only 0.01 likely.
+        #expect(policy.signalable(lookup) { $0.id != 1 }.isEmpty)
+        // Two answers that share the probability can signal together.
+        #expect(policy.signalable([result(3, 0.45, answered: 0.9), result(4, 0.45, answered: 0.9)]) { _ in true }.count == 2)
+        // Without a decision nothing signals.
+        #expect(policy.signalable([result(5, nil, answered: nil)]) { _ in true }.isEmpty)
+    }
+
     @Test func sensitivityMovesThreshold() {
         var settings = SurfacePolicy.Settings()
-        #expect(abs(settings.threshold - 0.6) < 0.000_001)
+        #expect(abs(settings.threshold - 0.8) < 0.000_001)
         settings.sensitivity = 0
         let strict = settings.threshold
         settings.sensitivity = 1

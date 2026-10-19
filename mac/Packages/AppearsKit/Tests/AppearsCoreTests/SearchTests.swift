@@ -46,8 +46,6 @@ private struct SearchTestEmbedder: Embedder {
         let payload = try JSONEncoder().encode(SearchRequest(text: "renovation budget", limit: 2))
         let response = try JSONDecoder().decode(RecallResponse.self, from: await engine.handle(.search, payload: payload))
         #expect(Set(response.suggestions.map(\.id)) == [document, image])
-        #expect(response.suggestions.allSatisfy { $0.features.forgotten == 1 })
-        #expect(response.suggestions.allSatisfy { !$0.features.entityHit })
         #expect(response.suggestions.contains { $0.features.daysSinceTouched < 1 })
         let stats = try engine.journal.stats(days: 7)
         #expect(stats.pulls == 0 && stats.ambient == 0 && stats.shadow == 0)

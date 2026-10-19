@@ -10,12 +10,13 @@ public struct SearchTimings: Sendable, Codable, Equatable {
     public var vectorMilliseconds = 0.0
     public var fullTextMilliseconds = 0.0
     public var rankingMilliseconds = 0.0
+    public var decisionMilliseconds = 0.0
     public var totalMilliseconds = 0.0
 }
 
 final class SearchTrace: Sendable {
     @TaskLocal static var current: SearchTrace?
-    enum Phase { case preparation, embeddingQueue, embedding, vector, fullText, ranking }
+    enum Phase { case preparation, embeddingQueue, embedding, vector, fullText, ranking, decision }
     private let started = ContinuousClock.now
     private let timings = Mutex(SearchTimings())
     private static let log = Logger(subsystem: "rs.appea.appears", category: "search")
@@ -30,6 +31,7 @@ final class SearchTrace: Sendable {
             case .vector: $0.vectorMilliseconds += ms
             case .fullText: $0.fullTextMilliseconds += ms
             case .ranking: $0.rankingMilliseconds += ms
+            case .decision: $0.decisionMilliseconds += ms
             }
         }
     }
@@ -39,7 +41,7 @@ final class SearchTrace: Sendable {
             $0.totalMilliseconds = Self.milliseconds(since: started)
             return $0
         }
-        Self.log.info("Search \(outcome, privacy: .public): prepare \(value.preparationMilliseconds, privacy: .public)ms, model wait \(value.embeddingQueueMilliseconds, privacy: .public)ms, model \(value.embeddingMilliseconds, privacy: .public)ms, vectors \(value.vectorMilliseconds, privacy: .public)ms, full text \(value.fullTextMilliseconds, privacy: .public)ms, ranking \(value.rankingMilliseconds, privacy: .public)ms, total \(value.totalMilliseconds, privacy: .public)ms")
+        Self.log.info("Search \(outcome, privacy: .public): prepare \(value.preparationMilliseconds, privacy: .public)ms, model wait \(value.embeddingQueueMilliseconds, privacy: .public)ms, model \(value.embeddingMilliseconds, privacy: .public)ms, vectors \(value.vectorMilliseconds, privacy: .public)ms, full text \(value.fullTextMilliseconds, privacy: .public)ms, ranking \(value.rankingMilliseconds, privacy: .public)ms, decision \(value.decisionMilliseconds, privacy: .public)ms, total \(value.totalMilliseconds, privacy: .public)ms")
         return value
     }
 

@@ -23,46 +23,43 @@ public struct RecallRequest: Sendable, Codable {
     }
 }
 
-/// The measurements behind one suggestion: logged in the journal so the threshold can be
-/// fitted later, and shown in debug builds.
+/// The measurements behind one suggestion, logged in the journal (numbers only, never text).
 public struct Features: Sendable, Codable, Hashable {
-    /// Cosine of the best unit to the dense query.
+    /// Similarity of the matched unit (or its verified passage) to the query: how it was found.
     public var cosine: Double
-    /// How far that cosine stands above this context's other candidates, in standard deviations.
-    public var zScore: Double
-    /// The same part of it was found by both the vector and full-text searches.
-    public var agreement: Bool
-    /// A person, organization or identifier from the context appears in it.
-    public var entityHit: Bool
     public var daysSinceTouched: Double
-    public var fused: Double
-    public var forgotten: Double
-    public var novelty: Double
     /// The context asks your own memory for something ("what was the wifi password again?").
-    /// The same for every suggestion in a context.
     public var recallIntent: Bool
+    /// The decision model's probability that this is the item; nil when no decision ran.
+    public var probability: Double?
+    /// The decision model's probability that one of the lookup's candidates is what's needed
+    /// (one minus "none"). The same for every result of a lookup, and journaled; a signal goes by
+    /// the probabilities of the results it would show instead (`SurfacePolicy.signalable`).
+    public var answered: Double?
+    /// Which decision model and prompt gave `probability` (`Decider.modelID`), so journaled
+    /// outcomes from different models can be told apart.
+    public var decider: String?
 
-    public init(cosine: Double, zScore: Double, agreement: Bool, entityHit: Bool, daysSinceTouched: Double, fused: Double, forgotten: Double, novelty: Double, recallIntent: Bool = false) {
+    public init(cosine: Double, daysSinceTouched: Double, recallIntent: Bool = false, probability: Double? = nil,
+                answered: Double? = nil, decider: String? = nil) {
         self.cosine = cosine
-        self.zScore = zScore
-        self.agreement = agreement
-        self.entityHit = entityHit
         self.daysSinceTouched = daysSinceTouched
-        self.fused = fused
-        self.forgotten = forgotten
-        self.novelty = novelty
         self.recallIntent = recallIntent
+        self.probability = probability
+        self.answered = answered
+        self.decider = decider
     }
 
-    // Journal rows written before `recallIntent` existed don't have it.
+    // Journal rows from before the decision model carry other measurements and no probability.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            cosine: try c.decode(Double.self, forKey: .cosine), zScore: try c.decode(Double.self, forKey: .zScore),
-            agreement: try c.decode(Bool.self, forKey: .agreement), entityHit: try c.decode(Bool.self, forKey: .entityHit),
-            daysSinceTouched: try c.decode(Double.self, forKey: .daysSinceTouched), fused: try c.decode(Double.self, forKey: .fused),
-            forgotten: try c.decode(Double.self, forKey: .forgotten), novelty: try c.decode(Double.self, forKey: .novelty),
-            recallIntent: try c.decodeIfPresent(Bool.self, forKey: .recallIntent) ?? false
+            cosine: try c.decode(Double.self, forKey: .cosine),
+            daysSinceTouched: try c.decode(Double.self, forKey: .daysSinceTouched),
+            recallIntent: try c.decodeIfPresent(Bool.self, forKey: .recallIntent) ?? false,
+            probability: try c.decodeIfPresent(Double.self, forKey: .probability),
+            answered: try c.decodeIfPresent(Double.self, forKey: .answered),
+            decider: try c.decodeIfPresent(String.self, forKey: .decider)
         )
     }
 }
@@ -76,19 +73,23 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
     public let reason: String
     /// A short excerpt of the matching text.
     public let snippet: String
+    /// Discovery order: how strongly retrieval found it. Never shown as confidence.
     public let score: Double
-    /// 0–1: how sure Appears is that this is worth your attention.
+    /// 0–1: the decision model's probability that this is what you need. 0 when no decision
+    /// ran (no model yet, or a picture with no words); see `decided`.
     public let confidence: Double
     public let features: Features
     /// When the context asks for a value ("what was the wifi password?"), the unit's line
     /// that holds it.
     public let line: MatchedLine?
     public let evidence: PassageEvidence?
-    /// Refining a longer panel cannot broaden the original first-three ambient gate.
-    public let ambientEligible: Bool?
+
+    /// Whether the decision model judged it. Undecided results are listed when asked for, but
+    /// show no confidence and never signal on their own.
+    public var decided: Bool { features.probability != nil }
 
     public init(item: Item, unit: Unit, reason: String, snippet: String, score: Double, confidence: Double, features: Features,
-                line: MatchedLine? = nil, evidence: PassageEvidence? = nil, ambientEligible: Bool? = nil) {
+                line: MatchedLine? = nil, evidence: PassageEvidence? = nil) {
         self.item = item
         self.unit = unit
         self.reason = reason
@@ -98,7 +99,17 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
         self.features = features
         self.line = line
         self.evidence = evidence
-        self.ambientEligible = ambientEligible
+    }
+
+    /// The same result with the decision model's probability for it, and that some candidate
+    /// of the lookup is what's needed, as decided by `decider` (its `modelID`).
+    func withProbability(_ probability: Double, answered: Double, decider: String) -> Suggestion {
+        var features = features
+        features.probability = probability
+        features.answered = answered
+        features.decider = decider
+        return Suggestion(item: item, unit: unit, reason: reason, snippet: snippet, score: score, confidence: probability,
+                          features: features, line: line, evidence: evidence)
     }
 }
 
@@ -108,6 +119,9 @@ public struct RecallResponse: Sendable, Codable {
     public var milliseconds: Double
     public var timings: SearchTimings? = nil
     public var retrieval: RetrievalDiagnostics? = nil
+    /// The decision model's probability that none of the candidates is what's needed; nil
+    /// when no decision ran.
+    public var unanswered: Double? = nil
 
     /// The best suggestion's confidence, or 0.
     public var confidence: Double { suggestions.first?.confidence ?? 0 }
@@ -123,37 +137,13 @@ extension Query {
     var summary: Summary { Summary(entities: entities + contextEntities + identifiers, rareTerms: rareTerms, denseCharacters: dense.count) }
 }
 
-/// Tunable numbers for ranking. The defaults are starting points; the journal and the eval
-/// harness are how they get better.
+/// Tunable numbers for discovery: how candidates are found and fused. Which of them answers
+/// is the decision model's job, not a setting.
 public struct RankingSettings: Sendable, Codable, Equatable {
-    /// Opened or changed this recently: probably something you remember, so it ranks lower (it
-    /// isn't hidden; sometimes it's exactly what you need). Ambient suggestions mostly skip it.
-    public var recentDays = 3.0
-    /// The forgotten weight of something recent, and of something just past `recentDays`.
-    public var recentWeight = 0.35
-    /// A recent conversation can answer today's question. Age is only a small ranking
-    /// preference for Messages, fading from this weight to 1 over `forgottenDays`.
-    public var recentMessageWeight = 0.85
-    public var olderWeight = 0.5
-    /// Ambient confidence multiplier for recent files and Notes. Messages are exempt.
-    public var recentAmbientConfidence = 0.5
-    /// Where "forgotten" reaches full weight.
-    public var forgottenDays = 90.0
     public var rrfK = 60.0
     public var textWeight = 1.0
     public var imageWeight = 0.9
     public var fullTextWeight = 0.8
-    /// A name you're writing to or about (selection, the field you're typing in, the title,
-    /// recipients) found in the item.
-    public var entityBoost = 1.5
-    /// A name found only elsewhere in the window: weaker evidence.
-    public var contextEntityBoost = 1.15
-    public var sameFolderPenalty = 0.6
-    public var sameTitlePenalty = 0.5
-    /// MMR: 1 is pure relevance, 0 pure variety.
-    public var diversity = 0.6
-    /// Explicit callers can retain discovery's preference for older material.
-    public var preferForgottenForActiveText = false
     /// When the window shows a picture and has words too, the picture's share of the blended
     /// query vector. With no words, the picture is the whole query.
     public var pictureWeight = 0.7
@@ -161,22 +151,27 @@ public struct RankingSettings: Sendable, Codable, Equatable {
     public init() {}
 }
 
-/// Finds what you already have that relates to a context, and ranks it for being relevant,
-/// forgotten, new and varied.
+/// Finds what you already have that relates to a context. Retrieval discovers candidates and
+/// reads their exact passages; the decision model then judges which one answers, or none, and
+/// its probability is both the order and the confidence.
 public struct Recall: Sendable {
     public let store: IndexStore
     public let vectors: VectorIndex
     public let embedder: any Embedder
+    /// Nil until its model is installed: results are then listed undecided.
+    public var decider: (any Decider)?
     public var settings = RankingSettings()
     private let pictures = PictureCache()
     private let passages = PassageSelector()
     private let messages: MessagesReader?
 
-    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, messages: MessagesReader? = nil) {
+    public init(store: IndexStore, vectors: VectorIndex, embedder: any Embedder, messages: MessagesReader? = nil,
+                decider: (any Decider)? = nil) {
         self.store = store
         self.vectors = vectors
         self.embedder = embedder
         self.messages = messages
+        self.decider = decider
     }
 
     public func run(_ request: RecallRequest, now: Date = Date()) async throws -> RecallResponse {
@@ -257,16 +252,7 @@ public struct Recall: Sendable {
         add(surroundingHits.map(\.unitID), weight: settings.fullTextWeight * 0.25)
         for hit in textHits + imageHits { cosine[hit.id] = Double(hit.score) }
 
-        // How unusual the best matches are for this context: z-scores within each list.
-        // Keep the calibrated confidence population stable when retrieval budgets grow.
-        let textStats = Stats(textHits.prefix(200).map { Double($0.score) })
-        let imageStats = Stats(imageHits.map { Double($0.score) })
-
         var units = try store.units(ids: Array(fused.keys))
-        // Agreement counts per part (a chunk, a page, an image): an image's words are in the
-        // full-text index under its OCR text unit, at the same locator.
-        func part(_ unit: Unit) -> [String] { [String(unit.itemID), unit.locator.encoded] }
-        let fullTextParts = Set((fullTextHits + scopedHits + recentHits).compactMap { units[$0.unitID].map(part) })
         var items = try store.items(ids: Array(Set(units.values.map(\.itemID))))
         let neverShow = try store.neverShown()
         let excluded = Set(request.exclude)
@@ -298,134 +284,63 @@ public struct Recall: Sendable {
             cosine[id] = Double(VectorMath.dot(queryVector, vector))
         }
 
-        // Roll units up to items: the best unit, plus a little for each other matching unit.
+        // Roll units up to items. The best-fused unit represents the item; the evidence is all
+        // of its matched units: a photo's picture and its words are separate units.
         struct Candidate {
             var item: Item
             var unit: Unit
             var fused: Double
-            var extra: Double
+            var cosine: Double
+            var texts: [String]
         }
         var candidates: [Int64: Candidate] = [:]
         for (id, score) in fused {
             guard let unit = units[id], let item = items[unit.itemID] else { continue }
-            if var existing = candidates[item.id] {
-                if score > existing.fused {
-                    existing.extra += existing.fused * 0.1
-                    existing.unit = unit
-                    existing.fused = score
-                } else {
-                    existing.extra += score * 0.1
-                }
-                candidates[item.id] = existing
-            } else {
-                candidates[item.id] = Candidate(item: item, unit: unit, fused: score, extra: 0)
-            }
+            var candidate = candidates[item.id] ?? Candidate(item: item, unit: unit, fused: score, cosine: 0, texts: [])
+            if score > candidate.fused { candidate.unit = unit; candidate.fused = score }
+            candidate.cosine = max(candidate.cosine, cosine[id] ?? 0)
+            if !unit.text.isEmpty { candidate.texts.append(unit.text) }
+            candidates[item.id] = candidate
         }
 
-        let messageQuery = query
-        let messageCosine = cosine
-        let messageTextStats = textStats
-        let messageImageStats = imageStats
-        let messageFullTextParts = fullTextParts
-        let passageQueryVector = queryVector
         let passageQuestion = Question(plan.primary)
 
-        let titleWords = Self.words(QueryBuilder.cleanTitle(context.windowTitle, app: context.appName))
-        let documentFolder = context.documentPath.map { ($0 as NSString).deletingLastPathComponent }
-
-        var scored: [(candidate: Candidate, score: Double, features: Features, matched: String?, confidence: Double)] = []
+        // Discovery order only: it decides which candidates get their passages read and reach
+        // the decision model. It never claims that anything answers.
+        var scored: [(candidate: Candidate, score: Double, features: Features, matched: String?)] = []
         for var candidate in candidates.values {
             let item = candidate.item
             // Hard filters: what's open and what you've ruled out.
             if item.path == context.documentPath || excluded.contains(item.id) || neverShow.contains(item.id) { continue }
-            if (!ranksPassages || settings.preferForgottenForActiveText), item.source == .file,
+            if !ranksPassages, item.source == .file,
                let spotlight = LastUsed.date(path: item.path),
                spotlight > (item.lastUsed ?? .distantPast) {
                 candidate.item.lastUsed = spotlight
                 try? store.touch(path: item.path, at: spotlight)
             }
             let days = max(0, now.timeIntervalSince(candidate.item.lastTouched) / 86_400)
-            let recent = days < settings.recentDays
-            let forgotten: Double
-            if item.source == .messages {
-                forgotten = settings.recentMessageWeight + (1 - settings.recentMessageWeight) * min(1, days / settings.forgottenDays)
-            } else {
-                forgotten = recent
-                    ? settings.recentWeight
-                    : settings.olderWeight + (1 - settings.olderWeight) * min(1, log(days / settings.recentDays) / log(settings.forgottenDays / settings.recentDays))
-            }
-            var novelty = 1.0
-            if let documentFolder, item.folder == documentFolder { novelty *= settings.sameFolderPenalty }
-            let itemWords = Self.words((item.title as NSString).deletingPathExtension)
-            if !plan.hasActiveText, !titleWords.isEmpty, !itemWords.isEmpty,
-               Double(titleWords.intersection(itemWords).count) / Double(itemWords.count) >= 0.6 {
-                novelty *= settings.sameTitlePenalty
-            }
             let haystack = (candidate.unit.text + " " + item.title).lowercased()
-            let strongMatch = query.matchable.first { haystack.contains($0) }
-            let contextMatch = strongMatch == nil ? query.contextMatchable.first { haystack.contains($0) } : nil
-            let matched = strongMatch ?? contextMatch
-            let relevance = candidate.fused + min(candidate.extra, candidate.fused * 0.5)
-            let boost = strongMatch != nil ? settings.entityBoost : (contextMatch != nil ? settings.contextEntityBoost : 1)
-            let rankScore = relevance * forgotten * novelty * boost
-
-            // The draft is the question for every source. Visible history may discover
-            // a candidate, but cannot make a file (or a message) confidently answer an
-            // unrelated draft merely because its topic is still on screen.
-            let evidence = messageCosine
-            let unitCosine = evidence[candidate.unit.id] ?? 0
-            let stats = candidate.unit.kind == .image ? messageImageStats : messageTextStats
-            let matchedParts = messageFullTextParts
-            let entityHit = messageQuery.matchable.contains(where: haystack.contains)
-            let features = Features(
-                cosine: unitCosine,
-                zScore: evidence[candidate.unit.id] == nil ? 0 : stats.z(unitCosine),
-                agreement: evidence[candidate.unit.id] != nil && matchedParts.contains(part(candidate.unit)),
-                entityHit: entityHit,
-                daysSinceTouched: days,
-                fused: relevance,
-                forgotten: forgotten,
-                novelty: novelty,
-                recallIntent: query.recallIntent
-            )
-            // Rank fusion alone rewards whatever tops each list, however weak (the best image
-            // match for a text-only context is usually noise), so weigh in how convincing it is.
-            let recentFactor = recent && item.source != .messages && request.trigger == .ambient ? settings.recentAmbientConfidence : 1
-            var confidence = Confidence.estimate(features) * recentFactor
-            if item.source != .messages {
-                var surrounding = features
-                surrounding.cosine = cosine[candidate.unit.id] ?? 0
-                let originalStats = candidate.unit.kind == .image ? imageStats : textStats
-                surrounding.zScore = cosine[candidate.unit.id].map(originalStats.z) ?? 0
-                surrounding.agreement = cosine[candidate.unit.id] != nil && fullTextParts.contains(part(candidate.unit))
-                surrounding.entityHit = strongMatch != nil
-                confidence = min(confidence, Confidence.estimate(surrounding) * recentFactor)
-            }
-            // Recall intent is about the context, not any one item: it makes Appears surer
-            // without ranking anything higher.
-            var unasked = features
-            unasked.recallIntent = false
+            let matched = query.matchable.first { haystack.contains($0) } ?? query.contextMatchable.first { haystack.contains($0) }
+            let unitCosine = cosine[candidate.unit.id] ?? 0
+            let features = Features(cosine: unitCosine, daysSinceTouched: days, recallIntent: query.recallIntent)
             // A reply can omit every topic word. Its connected source supplies a
-            // discovery cue only; the combined verbatim passage must still win scoring.
+            // discovery cue only; the combined verbatim passage is what gets judged.
             let supportUnits = (connections[candidate.unit.id] ?? []).compactMap { units[$0] }
-            let discoveryCosine = max(unitCosine, supportUnits.compactMap { cosine[$0.id] }.max() ?? 0)
-            let discoveryCoverage = lexical.coverage(([candidate.unit.text] + supportUnits.map(\.text)).joined(separator: "\n"))
-            let score = ranksPassages
-                ? max(0, discoveryCosine) * (1 + discoveryCoverage)
-                    * (settings.preferForgottenForActiveText ? forgotten * novelty : 1)
-                : rankScore * (0.25 + Confidence.estimate(unasked) * recentFactor)
-            scored.append((candidate, score, features, matched, confidence))
+            let discoveryCosine = max(candidate.cosine, supportUnits.compactMap { cosine[$0.id] }.max() ?? 0)
+            let discoveryCoverage = lexical.coverage((candidate.texts + supportUnits.map(\.text) + [item.title]).joined(separator: "\n"))
+            // Rank fusion chose the candidates; their order is their own evidence.
+            let score = max(0, discoveryCosine) * (1 + discoveryCoverage)
+            scored.append((candidate, score, features, matched))
         }
-        scored.sort { $0.score > $1.score }
+        scored.sort { $0.score == $1.score ? $0.candidate.item.id < $1.candidate.item.id : $0.score > $1.score }
 
         let question = passageQuestion
         let terms = query.matchable + query.contextMatchable + query.rareTerms
-        let broad = scored.enumerated().map { position, entry in
+        let broad = scored.map { entry in
             Suggestion(item: entry.candidate.item, unit: entry.candidate.unit,
                        reason: Self.reason(entry.candidate.item, unit: entry.candidate.unit, matched: entry.matched, query: query, now: now),
                        snippet: Self.snippet(entry.candidate.unit.text, around: entry.matched ?? query.rareTerms.first),
-                       score: entry.score, confidence: entry.confidence, features: entry.features,
-                       ambientEligible: request.trigger == .ambient && !ranksPassages ? position < 3 : nil)
+                       score: entry.score, confidence: 0, features: entry.features)
         }
         // Index-only lookups can collapse identical whole windows. With live source
         // provenance, equal text from distinct messages must reach identity dedup.
@@ -434,7 +349,7 @@ public struct Recall: Sendable {
             guard messages == nil, result.unit.kind == .text, let chat = result.item.message?.chatID else { return true }
             return windows.insert("\(chat)\u{0}\(result.unit.text)").inserted
         }
-        // Reserve refinement capacity for independently discovered scoped discussions
+        // Reserve passage-reading capacity for independently discovered scoped discussions
         // and connected follow-ups. One prolific global route cannot consume every slot.
         var shortlist: [Suggestion] = []
         var admittedIDs = Set<Int64>()
@@ -464,13 +379,12 @@ public struct Recall: Sendable {
         }
         let chats = Set(context.messageChatIDs ?? [])
         if plan.hasActiveText {
-            // At discovery time, the open conversation gets its own route instead of
-            // multiplying scores. Keep global coverage before the scoped budgets.
+            // The open conversation gets its own route rather than a score multiplier, and
+            // global coverage comes first.
             try admit(distinct, limit: 8)
             if ranksPassages {
                 // Aggregate topic similarity can bury the only match for a specific
-                // clue. Give each of the rarest query terms bounded representation,
-                // then let the source passages compete on their actual evidence.
+                // clue. Give each of the rarest query terms bounded representation.
                 let tokens = Dictionary(uniqueKeysWithValues: distinct.map {
                     ($0.id, Set(LexicalTerms.tokens($0.unit.text + " " + $0.item.title)))
                 })
@@ -489,21 +403,19 @@ public struct Recall: Sendable {
             try admit(distinct.filter { connections[$0.unit.id] != nil }, limit: 8)
         }
         try admit(distinct, limit: PassageSelector.maximumCandidates - shortlist.count)
-        // Bound source reads/inference, then collapse identical evidence before applying
-        // the result limit. Both related results and typed search use the same passages.
-        let refined: [Suggestion]
+        // Bound source reads and inference, then collapse identical evidence. Related results
+        // and typed search read the same passages.
+        var ordered: [Suggestion]
         if embedder.supportsPassageRefinement {
-            refined = try await passages.select(shortlist, query: passageQueryVector, embedder: embedder,
-                                                 store: store, messages: messages, excluded: excluded,
-                                                 question: question, terms: terms, lexical: ranksPassages ? lexical : nil,
-                                                 connections: connections, scopedChats: Set(context.messageChatIDs ?? []),
-                                                 ranking: settings, confidenceStats: ranksPassages ? textStats : nil,
-                                                 entities: query.matchable)
+            ordered = try await passages.select(shortlist, query: queryVector, embedder: embedder,
+                                                store: store, messages: messages, excluded: excluded,
+                                                question: question, terms: terms, lexical: ranksPassages ? lexical : nil,
+                                                connections: connections)
         } else {
             // For file-to-file similarity, the indexed unit itself is the exact text
             // scored by the stored vector. Preserve that evidence without new inference.
             let unchanged = try store.unchangedVisibleUnits(distinct.map { ($0.item, $0.unit) })
-            refined = distinct.compactMap { result in
+            ordered = distinct.compactMap { result in
                 guard unchanged.contains(result.unit.id) else { return nil }
                 guard result.unit.kind == .text, result.item.kind != .image, !result.unit.text.isEmpty else { return result }
                 let evidence = PassageEvidence(text: result.unit.text, sources: [
@@ -511,74 +423,136 @@ public struct Recall: Sendable {
                           utf16Location: 0, utf16Length: (result.unit.text as NSString).length),
                 ], cosine: result.features.cosine)
                 return Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
-                                  score: result.score, confidence: result.confidence, features: result.features,
-                                  line: result.line, evidence: evidence, ambientEligible: result.ambientEligible)
+                                  score: result.score, confidence: 0, features: result.features,
+                                  line: result.line, evidence: evidence)
             }
         }
 
-        // Variety: maximal marginal relevance over the top few, with a nudge away from a
-        // second item from the same folder.
-        let pool = Array(refined.prefix(PassageSelector.maximumCandidates))
-        let poolVectors = (try? store.vectors(unitIDs: pool.map(\.unit.id))) ?? [:]
-        let evidenceVectors = passages.vectors(for: pool)
-        let evidenceClues = pool.map { result in
-            Set(lexical.terms).intersection(LexicalTerms.tokens(result.evidence?.text ?? result.unit.text))
-        }
-        let topScore = max(pool.first?.score ?? 1, .leastNormalMagnitude)
-        var chosen: [Int] = []
-        var usedFolders: Set<String> = []
-        while chosen.count < request.limit {
-            var best: (index: Int, value: Double)?
-            for (index, entry) in pool.enumerated() where !chosen.contains(index) {
-                let folder = entry.item.folder
-                let folderPenalty = !folder.isEmpty && usedFolders.contains(folder) ? 0.85 : 1
-                let similarities = chosen.map { other -> Double in
-                    let previous = pool[other]
-                    func similarity(_ a: [Float]?, _ b: [Float]?) -> Double {
-                        guard let a, let b else { return 0 }
-                        return Double(VectorMath.dot(a, b))
-                    }
-                    let passage = similarity(evidenceVectors[entry.id] ?? poolVectors[entry.unit.id],
-                                             evidenceVectors[previous.id] ?? poolVectors[previous.unit.id])
-                    // Different sentence crops must not make repeated source windows
-                    // look diverse. Preserve both levels of evidence for redundancy.
-                    guard ranksPassages else { return passage }
-                    let semantic = max(passage, similarity(poolVectors[entry.unit.id], poolVectors[previous.unit.id]))
-                    let clues = evidenceClues[index]
-                    guard !clues.isEmpty else { return semantic }
-                    // Same topic is not necessarily the same evidence. A passage that
-                    // supplies a still-missing query clue should not be penalized as
-                    // a duplicate of a generic topic match. Use only verified evidence.
-                    return !evidenceClues[other].isEmpty && clues.isDisjoint(with: evidenceClues[other]) ? 0 : semantic
-                }
-                let similarity = ranksPassages ? similarities.reduce(0, +) : similarities.max() ?? 0
-                let diversity = settings.diversity
-                let value = diversity * (ranksPassages ? 1 : folderPenalty) * entry.score / topScore - (1 - diversity) * similarity
-                if best == nil || value > best!.value { best = (index, value) }
+        // The decision: which of the leading candidates is what's needed, or none. Its
+        // probabilities order the results and are their confidence. A picture with no words
+        // gives the model nothing to read, so it stays undecided.
+        var unanswered: Double?
+        if let decider, hasText, !ordered.isEmpty {
+            let pool = try diversePool(ordered, count: DecisionFraming.candidates, openConversations: chats)
+            let decisionStarted = ContinuousClock.now
+            do {
+                let decision = DecisionFraming.request(textContext, plan: plan, query: query, candidates: pool,
+                                                       openConversations: chats, texts: try readable(pool))
+                let probabilities = try await decider.decide(decision)
+                guard probabilities.count == pool.count + 1 else { throw DecisionError.invalid("wrong number of answers") }
+                unanswered = probabilities[pool.count]
+                let decided = zip(pool, probabilities).map { $0.withProbability($1, answered: 1 - probabilities[pool.count], decider: decider.modelID) }
+                    .sorted { $0.confidence == $1.confidence ? $0.score > $1.score : $0.confidence > $1.confidence }
+                // Results the model didn't read follow, undecided, so a longer list (typed search,
+                // agents) keeps them; copies of a passage it did read don't come back.
+                let read = Set(pool.map(\.id)), readTexts = Set(pool.compactMap(Self.comparable))
+                ordered = decided + ordered.filter { !read.contains($0.id) && !(Self.comparable($0).map(readTexts.contains) ?? false) }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // An unavailable or failing model leaves the results undecided: listed in
+                // discovery order, with no confidence and no ambient signal.
             }
-            guard let best else { break }
-            chosen.append(best.index)
-            let folder = pool[best.index].item.folder
-            if !folder.isEmpty { usedFolders.insert(folder) }
+            SearchTrace.current?.record(.decision, since: decisionStarted)
+            // Hiding, unsending or editing a source while the model read it drops that result.
+            ordered = try PassageSelector.revalidate(ordered, store: store, messages: messages, excluded: excluded)
         }
 
-        let suggestions = chosen.map { index in
-            let result = pool[index]
-            // Passage refinement already formats its verified source range. Images
-            // and stored-vector lookups need the original unit's line, but only after
+        let suggestions = ordered.prefix(request.limit).map { result in
+            // Passage refinement already formats its verified source range. Images and
+            // stored-vector lookups need the original unit's line, but only after
             // selection: formatting every discovery candidate cannot affect ranking.
             guard let question, result.evidence == nil || !embedder.supportsPassageRefinement else { return result }
             return Suggestion(item: result.item, unit: result.unit, reason: result.reason, snippet: result.snippet,
                               score: result.score, confidence: result.confidence, features: result.features,
                               line: MatchedLine.find(in: result.unit.text, for: question, terms: terms),
-                              evidence: result.evidence, ambientEligible: result.ambientEligible)
+                              evidence: result.evidence)
         }
         try Task.checkCancellation()
         return RecallResponse(
-            suggestions: suggestions, query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000,
+            suggestions: Array(suggestions), query: query.summary, milliseconds: Date().timeIntervalSince(started) * 1000,
             retrieval: RetrievalDiagnostics(candidateItemIDs: candidates.keys.sorted(), shortlistedItemIDs: shortlist.map(\.id),
-                                            rankedItemIDs: distinct.map(\.id), refinedItemIDs: refined.map(\.id))
+                                            rankedItemIDs: distinct.map(\.id), refinedItemIDs: ordered.map(\.id)),
+            unanswered: unanswered
         )
+    }
+
+    /// A result's evidence with case and spacing ignored, to find copies of one passage; nil
+    /// when it has no text.
+    static func comparable(_ result: Suggestion) -> String? {
+        let text = (result.evidence?.text ?? result.unit.text).lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return text.isEmpty ? nil : text
+    }
+
+    /// The candidates the decision model reads. The same text twice (a screenshot sent to two
+    /// conversations) is one candidate, kept from the open conversation. Then the strongest
+    /// first and the rest by maximal marginal relevance, so a run of near-identical passages (a
+    /// year of receipts) takes one slot, not all of them, and every distinct kind of evidence
+    /// retrieval found gets read.
+    func diversePool(_ ranked: [Suggestion], count: Int, openConversations: Set<Int64> = []) throws -> [Suggestion] {
+        var kept: [String: Int] = [:]
+        var unique: [Suggestion] = []
+        for result in ranked {
+            guard let text = Self.comparable(result) else { unique.append(result); continue }
+            if let index = kept[text] {
+                let open = { (s: Suggestion) in openConversations.contains(s.item.message?.chatID ?? -1) }
+                if open(result), !open(unique[index]) { unique[index] = result }
+                continue
+            }
+            kept[text] = unique.count
+            unique.append(result)
+        }
+        let ranked = unique
+        guard ranked.count > count else { return ranked }
+        let stored = try store.vectors(unitIDs: ranked.map(\.unit.id))
+        let passageVectors = passages.vectors(for: ranked)
+        let vectors = ranked.map { passageVectors[$0.id] ?? stored[$0.unit.id] }
+        let top = max(ranked.first?.score ?? 1, .leastNormalMagnitude)
+        var chosen: [Int] = []
+        var nearest = [Double](repeating: 0, count: ranked.count)
+        while chosen.count < count {
+            var best: (index: Int, value: Double)?
+            for index in ranked.indices where !chosen.contains(index) {
+                let value = 0.5 * ranked[index].score / top - 0.5 * nearest[index]
+                if best == nil || value > best!.value { best = (index, value) }
+            }
+            guard let best else { break }
+            chosen.append(best.index)
+            guard let selected = vectors[best.index] else { continue }
+            for index in ranked.indices {
+                if let vector = vectors[index], vector.count == selected.count {
+                    nearest[index] = max(nearest[index], Double(VectorMath.dot(selected, vector)))
+                }
+            }
+        }
+        return chosen.map { ranked[$0] }
+    }
+
+    /// What the decision model should read for each candidate when the matched passage alone
+    /// is too little: a picture's recognized text (its picture and its words are separate
+    /// units), or the stretch of a document around a short passage.
+    func readable(_ pool: [Suggestion]) throws -> [Int64: String] {
+        var texts: [Int64: String] = [:]
+        for result in pool where result.item.source != .messages || result.item.kind == .image {
+            let passage = result.evidence?.text ?? result.unit.text
+            if passage.isEmpty || result.unit.kind == .image {
+                // A Messages photo's .chunk(0) is the conversation around it, not the picture's
+                // own text, and isn't revalidated here: only its recognized text speaks for it.
+                let words = try store.units(itemID: result.item.id).filter {
+                    $0.unit.kind == .text && !$0.unit.text.isEmpty
+                        && !(result.item.source == .messages && $0.unit.locator == .chunk(0))
+                }.map(\.unit.text).joined(separator: "\n")
+                if !words.isEmpty { texts[result.id] = String(words.prefix(500)) }
+            } else if passage.count < 200, let range = result.unit.text.range(of: passage) {
+                // Center a window of about 500 characters on the passage.
+                let source = result.unit.text
+                let before = source[..<range.lowerBound].suffix(max(0, (500 - passage.count) / 2))
+                let after = source[range.upperBound...].prefix(max(0, 500 - passage.count - before.count))
+                texts[result.id] = (before.startIndex == source.startIndex ? "" : "…") + before + passage + after
+                    + (after.endIndex == source.endIndex ? "" : "…")
+            }
+        }
+        return texts
     }
 
     /// The vector of the picture the window shows: the one it was indexed with, or, for a
@@ -663,44 +637,5 @@ final class PictureCache: Sendable {
 
     func keep(_ vector: [Float], path: String, modified: Date?) {
         entry.withLock { $0 = Entry(path: path, modified: modified, vector: vector) }
-    }
-}
-
-/// Mean and spread of one list's scores.
-struct Stats {
-    let mean: Double
-    let deviation: Double
-
-    init(_ values: [Double]) {
-        guard values.count > 1 else { mean = values.first ?? 0; deviation = 1; return }
-        let mean = values.reduce(0, +) / Double(values.count)
-        self.mean = mean
-        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count - 1)
-        deviation = max(variance.squareRoot(), 0.01)
-    }
-
-    func z(_ value: Double) -> Double { (value - mean) / deviation }
-}
-
-/// How sure Appears is that a suggestion is worth interrupting for. Hand-set to start; the
-/// plan is to fit these weights to the journal (opened vs. dismissed) once there's enough.
-public enum Confidence {
-    public static func estimate(_ f: Features) -> Double {
-        // EmbeddingGemma 2's cosines run high: unrelated text scores around 0.55–0.65 against
-        // a context. What separates a real hit is how far it stands above that context's other
-        // candidates (z), then a cosine clearly above the baseline, then an exact name match.
-        // Fitted by eye to `appears eval` (demo/scenarios.json): hits had z ≥ 4, negatives ≤ 2.6.
-        var logit = -6.5
-        logit += 1.1 * min(f.zScore, 6)
-        logit += 12 * max(0, f.cosine - 0.62)
-        logit += f.agreement ? 0.5 : 0
-        logit += f.entityHit ? 1.0 : 0
-        logit += 0.4 * (f.forgotten - 0.5)
-        logit += f.novelty < 1 ? -0.6 : 0
-        // Asking your own memory makes a clear match more likely to be what you're after, but
-        // says nothing about whether you have it. So it only adds to a match that already stands
-        // out: nothing from z 4 down (negatives that ask peaked at 3.3), the full amount from z 5.
-        if f.recallIntent { logit += 1.0 * min(max(f.zScore - 4, 0), 1) }
-        return 1 / (1 + exp(-logit))
     }
 }

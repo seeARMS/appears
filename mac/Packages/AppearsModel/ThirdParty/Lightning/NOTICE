@@ -1,0 +1,13 @@
+Lightning (mac/Packages/AppearsModel/Sources/Lightning)
+
+Qwen35.swift is a Swift port of the Qwen3.5 text model in mlx-vlm
+(https://github.com/Blaizzy/mlx-vlm, mlx_vlm/models/qwen3_5), version 0.7.8.
+Copyright © 2025 Prince Canuma. MIT License; see UPSTREAM_MLX_VLM_LICENSE.
+
+GatedDelta.swift contains the gated delta rule Metal kernel from mlx-lm
+(https://github.com/ml-explore/mlx-lm, mlx_lm/models/gated_delta.py), as vendored in
+mlx-vlm 0.7.8. Copyright © 2025 Apple Inc. MIT License; see UPSTREAM_MLX_LM_LICENSE.
+
+The model weights it runs, H2O-Lightning-4B by H2O.ai (built on Qwen3.5-4B by the Qwen
+team), are Apache-2.0 and ship with their own LICENSE.txt and NOTICE.txt in the
+downloaded model folder.

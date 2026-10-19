@@ -16,15 +16,17 @@ public struct SurfacePolicy: Sendable {
     public struct Settings: Sendable, Codable, Equatable {
         /// Seconds in one context before Appears looks.
         public var dwell: TimeInterval = 1
-        /// 0 (strict) to 1 (broad). The default maps to a confidence threshold of 0.6.
+        /// 0 (strict) to 1 (broad). The default maps to a threshold of 0.8.
         public var sensitivity: Double = 5.0 / 7.0
         /// The minimum interval between menu bar signals. There is no hourly budget.
         public var baseGap: TimeInterval = 60
 
         public init() {}
 
-        /// The confidence a suggestion needs, from the sensitivity slider.
-        public var threshold: Double { 0.85 - 0.35 * min(max(sensitivity, 0), 1) }
+        /// The decision model's probability a suggestion needs, from the sensitivity slider:
+        /// 0.95 at strict, 0.8 by default, 0.74 at broad. At 0.8, H2O measured 2.6% of its
+        /// held-out decisions confidently wrong.
+        public var threshold: Double { 0.95 - 0.21 * min(max(sensitivity, 0), 1) }
     }
 
     public var settings: Settings
@@ -51,9 +53,21 @@ public struct SurfacePolicy: Sendable {
         dismissedItems[topic]?.contains(itemID) ?? false
     }
 
-    /// Whether a result is good enough to show.
+    /// Whether a probability is high enough to signal.
     public func isConfident(_ confidence: Double) -> Bool {
         confidence >= settings.threshold
+    }
+
+    /// The results an ambient lookup may signal with, most probable first, or none: the decision
+    /// model's probabilities for them must together reach the threshold. When two items both
+    /// fit, their probabilities split, but the chance that one of them fits doesn't. Only the
+    /// results that may still signal here count: an answer already shown or dismissed in this
+    /// document or conversation doesn't lend its probability to the rest. This is the one rule
+    /// for a signal; the meeting look-ahead and `appears eval` use it too.
+    public func signalable(_ candidates: [Suggestion], maySuggest: (Suggestion) -> Bool = { _ in true }) -> [Suggestion] {
+        let eligible = candidates.filter { $0.decided && maySuggest($0) }
+        guard isConfident(eligible.reduce(0) { $0 + $1.confidence }) else { return [] }
+        return eligible.sorted { $0.confidence > $1.confidence }
     }
 
     public mutating func didSurface(itemIDs: [Int64], topic: String, at now: Date = Date()) {

@@ -7,22 +7,29 @@ public actor ModelInstaller {
     typealias Fetch = @Sendable (URL, Data?, @Sendable (Int64) -> Void) async throws -> (URL, URLResponse)
     private let descriptor: ModelDescriptor
     private let root: URL
+    /// How errors name this download.
+    private let name: String
     private var current: ModelDownloadStatus
     private var task: Task<Void, Never>?
     private let fetchOverride: Fetch?
 
-    public init(descriptor: ModelDescriptor, root: URL = ModelAssets.root) {
-        self.descriptor = descriptor; self.root = root
+    public init(descriptor: ModelDescriptor, root: URL = ModelAssets.root, name: String = "the on-device model") {
+        self.descriptor = descriptor; self.root = root; self.name = name
         fetchOverride = nil
         current = ModelDownloadStatus(total: descriptor.totalBytes)
     }
     /// Test transport; production always uses the restricted URLSession below.
-    init(descriptor: ModelDescriptor, root: URL, fetch: @escaping Fetch) {
-        self.descriptor = descriptor; self.root = root; fetchOverride = fetch
+    init(descriptor: ModelDescriptor, root: URL, name: String = "the on-device model", fetch: @escaping Fetch) {
+        self.descriptor = descriptor; self.root = root; self.name = name; fetchOverride = fetch
         current = ModelDownloadStatus(total: descriptor.totalBytes)
     }
 
     public func status() -> ModelDownloadStatus { current }
+    /// Waits for a running install to end, then reports how it ended.
+    public func finished() async -> ModelDownloadStatus {
+        await task?.value
+        return current
+    }
     @discardableResult public func start(retry: Bool = false) -> ModelDownloadStatus {
         guard task == nil, current.phase != .ready, current.phase != .failed || retry else { return current }
         current.error = nil
@@ -112,7 +119,7 @@ public actor ModelInstaller {
             current = ModelDownloadStatus(phase: .ready, received: descriptor.totalBytes, total: descriptor.totalBytes)
         } catch {
             current.phase = .failed
-            current.error = "Couldn't finish downloading the on-device model. \(error.localizedDescription)"
+            current.error = "Couldn't finish downloading \(name). \(error.localizedDescription)"
         }
     }
 }

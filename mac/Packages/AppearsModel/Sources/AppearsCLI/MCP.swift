@@ -3,6 +3,8 @@ import AppearsMCP
 import ArgumentParser
 import Foundation
 import GemmaEmbedder
+import Lightning
+import Synchronization
 
 /// `appears mcp`: a Model Context Protocol server on stdin and stdout, so local agents can ask
 /// what you already have about something. It runs only when an agent you set up starts it.
@@ -31,6 +33,8 @@ struct MCP: AsyncParsableCommand {
     var model: String?
     @Option(help: "gemma (the real model) or hash (a fast stand-in that only matches words; for an index made with it).")
     var embedder: String = "gemma"
+    @Option(help: "The decision model folder (default: the one in this checkout, else the app's download). \"none\" leaves results without confidence.")
+    var decider: String?
 
     func run() async throws {
         // stdout carries protocol messages and nothing else. Keep the real stdout for them and
@@ -49,7 +53,17 @@ struct MCP: AsyncParsableCommand {
         let model = model
         if kind != "hash", (try? Common.modelFolder(model)) == nil { log("no model found; pass --model") }
 
-        let index = AgentIndex(folder: folder, sources: sources) {
+        // A folder named explicitly is used as it is (and must hold a model). Otherwise the
+        // server looks again on later calls, so an agent started before the app's download
+        // finished gets decisions once it has.
+        let decider: (any Decider)? = Common.explicitDecider(self.decider) != nil
+            ? try Common.decider(self.decider) : EventualDecider()
+        if let decider = decider as? EventualDecider {
+            log(decider.find() == nil ? "no decision model yet: results carry no confidence until one is installed" : "decision model found")
+        } else {
+            log(decider == nil ? "no decision model: results carry no confidence" : "decision model found")
+        }
+        let index = AgentIndex(folder: folder, sources: sources, decider: decider) {
             if kind == "hash" { return HashingEmbedder() }
             let started = Date()
             let embedder = try await GemmaEmbedder.load(from: try Common.modelFolder(model))
@@ -66,5 +80,26 @@ struct MCP: AsyncParsableCommand {
         }, log: log)
         log("ready, reading \(folder.path)")
         await server.serve(FileHandle.standardInput)
+    }
+}
+
+/// The decision model found where `appears` looks by default, once it's there. Until then a
+/// decision fails, which leaves results undecided, and each later call looks again.
+final class EventualDecider: Decider {
+    private let found = Mutex<LightningDecider?>(nil)
+
+    var modelID: String { found.withLock { $0?.modelID } ?? "none" }
+
+    func decide(_ request: DecisionRequest) async throws -> [Double] {
+        guard let decider = find() else { throw DecisionError.invalid("no decision model installed yet") }
+        return try await decider.decide(request)
+    }
+
+    /// The model, looking for it if it hasn't been found yet.
+    func find() -> LightningDecider? {
+        found.withLock { found in
+            if found == nil, let folder = try? Common.deciderFolder(nil) { found = LightningDecider(folder: folder) }
+            return found
+        }
     }
 }

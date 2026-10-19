@@ -558,6 +558,17 @@
       "quote": "Silverbrook Cellars in Oak Hollow"
     },
     {
+      "name": "A differently worded answer in a group chat, with winery talk in the open chat",
+      "title": "Rowan Ellis",
+      "focused": "what was the name of that winery that the FedEx guy recommended",
+      "visible": "",
+      "chatIDs": [941],
+      "expect": ["messages:retrieval-group-vineyard"],
+      "first": "messages:retrieval-group-vineyard",
+      "quote": "Larkmoor Vineyards",
+      "confident": true
+    },
+    {
       "name": "A familiar winery topic cannot answer an unrelated question",
       "title": "Morgan Hale",
       "focused": "what was the garage door access code from the courier",

@@ -289,7 +289,7 @@ struct ResultRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
-                    ConfidenceRing(confidence: suggestion.confidence)
+                    if suggestion.decided { ConfidenceRing(confidence: suggestion.confidence) }
                 }
                 if !evidence.segments.isEmpty {
                     evidenceText

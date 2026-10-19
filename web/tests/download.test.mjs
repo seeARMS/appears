@@ -196,6 +196,14 @@ test("R2 downloads, redirects and resumable transfers", async (t) => {
     assert.equal(await response.text(), "made-up");
     assert.equal((await fetch("/models/other/private.json")).status, 404);
   });
+  await t.test("the pinned answer model's shards are served", async () => {
+    const prefix = "/models/h2o-lightning-4b-acaf0d4e-q4/";
+    for (const name of ["model-00001-of-00010.safetensors", "tokenizer.json", "NOTICE.txt"]) {
+      await bucket.put((prefix + name).slice(1), "made-up answer model bytes");
+      assert.equal((await fetch(prefix + name)).status, 200);
+    }
+    assert.equal((await fetch("/models/h2o-lightning-4b-other/model.safetensors")).status, 404);
+  });
   await t.test("model license files are downloadable without exposing arbitrary text files", async () => {
     const prefix = "/models/embeddinggemma-2-914f7f89142e-licenses1/";
     for (const name of ["LICENSE.txt", "NOTICE.txt"]) {

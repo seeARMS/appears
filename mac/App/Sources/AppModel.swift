@@ -96,19 +96,12 @@ final class AppModel {
     @ObservationIgnored var onShow: ((_ makeKey: Bool) -> Void)?
 
     static let contextResultLimit = 10
-    /// Keep the ambient discovery gate on the same first three candidates. A longer list
-    /// must not make the menu bar dot appear for a context that used to stay quiet.
-    private static let ambientCandidateLimit = 3
 
-    /// Broaden the panel only after the original ambient candidates clear the policy.
-    /// Keep those confident matches first, followed by the other ranked candidates.
-    static func ambientPanelSuggestions(_ candidates: [Suggestion], isConfident: (Double) -> Bool,
+    /// What an ambient lookup shows when it signals: the results that may still signal in this
+    /// topic, most probable first, or nothing when their probability together is too low.
+    static func ambientPanelSuggestions(_ candidates: [Suggestion], policy: SurfacePolicy,
                                         maySuggest: (Suggestion) -> Bool = { _ in true }) -> [Suggestion] {
-        let confident = candidates.prefix(ambientCandidateLimit).filter { $0.ambientEligible != false && isConfident($0.confidence) && maySuggest($0) }
-        guard !confident.isEmpty else { return [] }
-        let confidentIDs = Set(confident.map(\.id))
-        let remaining = candidates.filter { maySuggest($0) && !confidentIDs.contains($0.id) }
-        return Array((confident + remaining).prefix(contextResultLimit))
+        Array(policy.signalable(candidates, maySuggest: maySuggest).prefix(contextResultLimit))
     }
 
     /// `-demo <folder>`: index that folder (demo/files) instead of your home folder, in a
@@ -155,7 +148,10 @@ final class AppModel {
         statusTask = Task { [weak self] in
             if let self { self.modelDownload = await self.modelDownloader.update(.start) }
             // Settings first, so the engine loads with them.
-            if let self { await self.engine.send(.settings, self.engineSources) }
+            if let self {
+                await self.engine.send(.settings, self.engineSources)
+                await self.engine.send(.decisions, self.settings.answerModel)
+            }
             if let text = Self.scriptedAsk {
                 Task { [weak self] in await self?.scriptedPull(text) }
             }
@@ -177,9 +173,15 @@ final class AppModel {
         let wasReady = modelDownload.phase == .ready
         modelDownload = await modelDownloader.update(.status)
         if modelDownload.phase == .waiting { modelDownload = await modelDownloader.update(.start) }
+        // The answer model follows the embedder. If it's still waiting (an install interrupted
+        // by a relaunch, say), ask again; starting is idempotent, and failures wait for Retry.
+        if modelDownload.phase == .ready, settings.answerModel, modelDownload.answerModel?.phase == .waiting {
+            modelDownload = await modelDownloader.update(.start)
+        }
         if modelDownload.phase == .ready {
             if !wasReady {
                 await engine.send(.settings, engineSources)
+                await engine.send(.decisions, settings.answerModel)
                 contextChanged()
             }
             do {
@@ -205,6 +207,17 @@ final class AppModel {
             }
         }
         updateGlyph()
+    }
+
+    /// Whether the answer model decides lookups once it's installed. Without it, results are
+    /// listed with no confidence and nothing signals on its own.
+    func answerModelChanged() {
+        if !settings.answerModel {
+            // Nothing decided before the switch may still signal after it.
+            signalTask?.cancel()
+            pendingAmbient = nil
+        }
+        Task { await engine.send(.decisions, settings.answerModel) }
     }
 
     func retryModelDownload() {
@@ -323,6 +336,8 @@ final class AppModel {
     private func surfacePending() async {
         guard let pending = pendingAmbient, !Task.isCancelled,
               settings.ambientMode != .off, !settings.isPaused else { return }
+        // A lookup in flight when the answer model was switched off can't signal after it.
+        guard settings.answerModel else { pendingAmbient = nil; return }
         let context = pending.context
         let fingerprint = context.fingerprint(salt: settings.salt)
         if let meeting = pending.meeting {
@@ -337,7 +352,7 @@ final class AppModel {
             }
         }
         policy.settings = settings.policySettings
-        let suggestions = Self.ambientPanelSuggestions(pending.suggestions, isConfident: policy.isConfident) {
+        let suggestions = Self.ambientPanelSuggestions(pending.suggestions, policy: policy) {
             policy.maySuggest(itemID: $0.item.id, topic: pending.topic)
         }
         guard !suggestions.isEmpty else { pendingAmbient = nil; return }
@@ -381,9 +396,9 @@ final class AppModel {
         let snapshot = event.snapshot()
         guard let response = try? await engine.related(RecallRequest(context: retrievalContext(snapshot), trigger: .ambient, limit: Self.contextResultLimit)) else { return }
         policy.settings = settings.policySettings
-        let confident = response.suggestions.filter { policy.isConfident($0.confidence) }
-        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(confident.count, privacy: .public) confident")
-        guard !confident.isEmpty, event.start > Date() else { return }
+        let signal = policy.signalable(response.suggestions)
+        Self.log.info("Looked ahead to a meeting: top confidence \(response.confidence, format: .fixed(precision: 2), privacy: .public), \(signal.count, privacy: .public) could signal")
+        guard !signal.isEmpty, event.start > Date() else { return }
 
         await queueAmbient(response.suggestions, context: snapshot, evidenceTerms: response.query.entities + response.query.rareTerms, meeting: event)
     }

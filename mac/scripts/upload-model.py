@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Upload only the model pinned in the app; no real user files or remote manifests."""
+"""Upload only a model pinned in the app; no real user files or remote manifests.
+
+    mac/scripts/upload-model.py            # the embedding model (mac/Models/appears-model)
+    mac/scripts/upload-model.py --decider  # the decision model (mac/Models/h2o-lightning-4b-q4)
+
+Credentials: a bucket-scoped R2 key, from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or the
+`appears-r2` profile (`aws configure --profile appears-r2`, region `auto`).
+"""
+import argparse
 import hashlib
 import json
 import os
@@ -7,12 +15,28 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--decider", action="store_true", help="Upload the decision model instead of the embedder.")
+args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
-descriptor_path = root / "mac/Packages/AppearsKit/Sources/AppearsCore/Resources/model-download.json"
+resource, folder = ("decider-download.json", "h2o-lightning-4b-q4") if args.decider else ("model-download.json", "appears-model")
+descriptor_path = root / "mac/Packages/AppearsKit/Sources/AppearsCore/Resources" / resource
 descriptor = json.loads(descriptor_path.read_text())
-source = root / "mac/Models/appears-model"
-bucket = os.environ["R2_BUCKET"]
-account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+source = root / "mac/Models" / folder
+# Same personal account and bucket as web/wrangler.jsonc and the release workflow.
+bucket = os.environ.get("R2_BUCKET", "appears-downloads")
+account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "68d615b353a7fe2663d3e7154366864a")
+if not os.environ.get("AWS_ACCESS_KEY_ID") and not os.environ.get("AWS_PROFILE"):
+    import configparser
+    sections = set()
+    for name in ("credentials", "config"):
+        parser_ = configparser.ConfigParser()
+        parser_.read(Path.home() / ".aws" / name)
+        sections |= {section.removeprefix("profile ") for section in parser_.sections()}
+    if "appears-r2" not in sections:
+        raise SystemExit("No R2 credentials. Create a bucket-scoped R2 API token for appears-downloads, then run "
+                         "`aws configure --profile appears-r2` (region `auto`), or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.")
+    os.environ["AWS_PROFILE"] = "appears-r2"
 prefix = f"models/{descriptor['id']}/"
 os.environ.update(AWS_DEFAULT_REGION="auto", AWS_REQUEST_CHECKSUM_CALCULATION="when_required", AWS_RESPONSE_CHECKSUM_VALIDATION="when_required")
 

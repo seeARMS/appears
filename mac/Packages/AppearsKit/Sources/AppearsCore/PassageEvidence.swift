@@ -67,9 +67,7 @@ final class PassageSelector: Sendable {
     func select(_ candidates: [Suggestion], query: [Float], embedder: any Embedder,
                 store: IndexStore, messages: MessagesReader?, excluded: Set<Int64>,
                 question: Question?, terms: [String], lexical: LexicalTerms? = nil,
-                connections: [Int64: [Int64]] = [:], scopedChats: Set<Int64> = [],
-                ranking: RankingSettings = RankingSettings(), confidenceStats: Stats? = nil,
-                entities: [String] = []) async throws -> [Suggestion] {
+                connections: [Int64: [Int64]] = [:]) async throws -> [Suggestion] {
         let forbidden = try store.neverShown().union(excluded)
         func usesImageEvidence(_ result: Suggestion) -> Bool {
             // Messages photos have their own OCR at .whole; only .chunk(0) is the
@@ -240,23 +238,13 @@ final class PassageSelector: Sendable {
             if candidate.unit.kind == .image || usesImageEvidence(candidate)
                 || candidate.unit.text.isEmpty {
                 var result = candidate
-                if lexical != nil {
-                    // Image vectors have a different similarity distribution. Keep
-                    // their existing calibrated confidence test, then put their raw
-                    // relevance on the same score scale as refined text passages.
-                    if let minimum = embedder.minimumPassageSimilarity,
-                       candidate.features.cosine < minimum,
-                       candidate.confidence < SurfacePolicy.Settings().threshold { continue }
+                if let lexical {
+                    // Put a picture's raw relevance on the same scale as refined text passages.
                     let similarity = embedder.supportsSemanticSimilarity ? max(0, candidate.features.cosine)
-                        : lexical?.coverage(candidate.unit.text + " " + candidate.item.title) ?? 0
-                    let score = similarity
-                        * (candidate.features.entityHit ? ranking.entityBoost : 1)
-                        * (ranking.preferForgottenForActiveText ? candidate.features.forgotten * candidate.features.novelty : 1)
-                        * (scopedChats.contains(candidate.item.message?.chatID ?? -1) ? ranking.entityBoost : 1)
+                        : lexical.coverage(candidate.unit.text + " " + candidate.item.title)
                     result = Suggestion(item: candidate.item, unit: candidate.unit, reason: candidate.reason,
-                                        snippet: candidate.snippet, score: score, confidence: candidate.confidence,
-                                        features: candidate.features, line: candidate.line, evidence: candidate.evidence,
-                                        ambientEligible: candidate.ambientEligible)
+                                        snippet: candidate.snippet, score: similarity, confidence: 0,
+                                        features: candidate.features, line: candidate.line, evidence: candidate.evidence)
                 }
                 results.append(result)
                 continue
@@ -273,37 +261,25 @@ final class PassageSelector: Sendable {
                 return a.1 == b.1 ? a.0.text.count > b.0.text.count : a.1 < b.1
             }) else { continue }
             let passage = best.0
-            if lexical != nil, let minimum = embedder.minimumPassageSimilarity, best.1 < minimum { continue }
             let evidence = PassageEvidence(text: passage.text, sources: passage.sources, cosine: best.1)
-            // Background discovery keeps its original confidence ceiling. For an active
-            // question, confidence describes the quoted passage, using the same calibrated
-            // estimator and retrieval distribution. A chat hint never raises confidence.
+            // Discovery order only; the decision model judges the quoted passage itself.
             let support = min(1, max(0, best.1) / max(0.05, candidate.features.cosine))
             var features = candidate.features
-            var confidence = candidate.confidence * support
-            if let stats = confidenceStats, let lexical {
-                features.cosine = best.1
-                features.zScore = stats.z(best.1)
-                features.agreement = lexical.coverage(evidence.text) > 0
-                let haystack = (evidence.text + " " + passage.item.title).lowercased()
-                features.entityHit = entities.contains(where: haystack.contains)
-                confidence = Confidence.estimate(features)
-            }
+            features.cosine = best.1
             var unit = passage.unit
             // The indexed window can contain a now-hidden or unsent neighbour. Return
             // only the source text just validated above, including for inline previews.
             if passage.item.source == .messages, contexts != nil { unit.text = evidence.text }
-            let relevance = lexical.map { terms in (embedder.supportsSemanticSimilarity ? max(0, best.1) : terms.coverage(evidence.text + " " + passage.item.title))
-                * (features.entityHit ? ranking.entityBoost : 1)
-                * (ranking.preferForgottenForActiveText ? candidate.features.forgotten * candidate.features.novelty : 1)
-                * (scopedChats.contains(passage.item.message?.chatID ?? -1) ? ranking.entityBoost : 1) }
+            let relevance = lexical.map { terms in
+                embedder.supportsSemanticSimilarity ? max(0, best.1) : terms.coverage(evidence.text + " " + passage.item.title)
+            }
             let result = Suggestion(item: passage.item, unit: unit, reason: candidate.reason,
                                     snippet: evidence.text, score: relevance ?? candidate.score * support,
-                                    confidence: confidence, features: features,
+                                    confidence: 0, features: features,
                                     line: question.flatMap {
                                         MatchedLine.find(in: evidence.text, for: $0, terms: terms)
                                     },
-                                    evidence: evidence, ambientEligible: candidate.ambientEligible)
+                                    evidence: evidence)
             if candidate.item.source == .messages, candidate.item.kind == .image {
                 photoOrigins[results.count] = candidate.item
             }
@@ -312,7 +288,28 @@ final class PassageSelector: Sendable {
 
         // Revalidate source versions after inference: deletion, unsend or an edit while
         // the encoder worked cannot leave a stale quote in the response.
-        if let messages, contexts != nil {
+        results = try Self.revalidate(results, store: store, messages: messages, excluded: excluded, photoOrigins: photoOrigins)
+        results.sort { $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score }
+        var unique: [Suggestion] = []
+        for result in results {
+            let duplicate = unique.contains { previous in
+                if previous.id == result.id { return true }
+                guard let a = previous.evidence, let b = result.evidence else { return false }
+                return a.overlaps(b)
+            }
+            if !duplicate { unique.append(result) }
+        }
+        return unique
+    }
+
+    /// Keeps only results whose sources still stand: nothing hidden ("Never show this") or
+    /// excluded, no message unsent, deleted or edited, and every quote still the source's own
+    /// text. Run after anything that waits on a model, so a change made meanwhile can't leave a
+    /// stale quote. `photoOrigins` (by position) are photos whose conversation text was promoted.
+    static func revalidate(_ results: [Suggestion], store: IndexStore, messages: MessagesReader?, excluded: Set<Int64>,
+                           photoOrigins: [Int: Item] = [:]) throws -> [Suggestion] {
+        var results = results
+        if let messages {
             let references = results.compactMap { $0.item.source == .messages ? $0.item.message : nil }
                 + results.flatMap { $0.evidence?.sources.compactMap(\.message) ?? [] }
                 + photoOrigins.values.compactMap(\.message)
@@ -365,17 +362,7 @@ final class PassageSelector: Sendable {
             }
             return valid && (indexedQuotes.isEmpty || indexedQuotes.joined(separator: "\n") == result.evidence?.text)
         }
-        results.sort { $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score }
-        var unique: [Suggestion] = []
-        for result in results {
-            let duplicate = unique.contains { previous in
-                if previous.id == result.id { return true }
-                guard let a = previous.evidence, let b = result.evidence else { return false }
-                return a.overlaps(b)
-            }
-            if !duplicate { unique.append(result) }
-        }
-        return unique
+        return results
     }
 
     /// All offsets address the unmodified source string. Sentence boundaries are generic;

@@ -120,6 +120,8 @@ targets:
         product: AppearsCore
       - package: AppearsModel
         product: GemmaEmbedder
+      - package: AppearsModel
+        product: Lightning
     settings:
       base:
         PRODUCT_NAME: AppearsEngine

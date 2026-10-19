@@ -77,6 +77,10 @@ final class AppSettings {
     var calendarLead: Double {
         didSet { defaults.set(calendarLead, forKey: "calendarLead") }
     }
+    /// Let the answer model (H2O-Lightning-4B, on this Mac) judge which result answers.
+    var answerModel: Bool {
+        didSet { defaults.set(answerModel, forKey: "answerModel") }
+    }
     /// Development builds can keep context snippets in the journal for labelling (14 days).
     var keepDebugContext: Bool {
         didSet { defaults.set(keepDebugContext, forKey: "keepDebugContext") }
@@ -100,6 +104,7 @@ final class AppSettings {
         calendarContext = defaults.object(forKey: "calendarContext") as? Bool ?? true
         calendarLead = defaults.object(forKey: "calendarLead") as? Double ?? 600
         keepDebugContext = defaults.bool(forKey: "keepDebugContext")
+        answerModel = defaults.object(forKey: "answerModel") as? Bool ?? true
         if let salt = defaults.string(forKey: "salt") {
             self.salt = salt
         } else {

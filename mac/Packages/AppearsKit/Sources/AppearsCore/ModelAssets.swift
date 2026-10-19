@@ -19,8 +19,14 @@ public struct ModelDescriptor: Codable, Sendable, Equatable {
     public init(id: String, baseURL: URL, files: [File]) {
         self.id = id; self.baseURL = baseURL; self.files = files
     }
-    public static func bundled() throws -> Self {
-        let url = Bundle.module.url(forResource: "model-download", withExtension: "json")!
+    /// The embedding model: required before Appears can index or look anything up.
+    public static func bundled() throws -> Self { try resource("model-download") }
+    /// The decision model (H2O-Lightning-4B): downloaded after the embedder. Until it's
+    /// installed, results are listed undecided and nothing signals on its own.
+    public static func bundledDecider() throws -> Self { try resource("decider-download") }
+
+    private static func resource(_ name: String) throws -> Self {
+        let url = Bundle.module.url(forResource: name, withExtension: "json")!
         return try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
     }
     public func validate() throws {
@@ -76,13 +82,26 @@ public enum ModelAssets {
 
 public struct ModelDownloadStatus: Codable, Sendable, Equatable {
     public enum Phase: String, Codable, Sendable { case waiting, downloading, verifying, ready, failed }
+    /// The decision model's download, which starts once the embedder is ready.
+    public struct Secondary: Codable, Sendable, Equatable {
+        public var phase: Phase
+        public var received: Int64
+        public var total: Int64
+        public var error: String?
+        public var fraction: Double { total > 0 ? min(1, Double(received) / Double(total)) : 0 }
+        public init(_ status: ModelDownloadStatus) {
+            phase = status.phase; received = status.received; total = status.total; error = status.error
+        }
+    }
     public var phase: Phase = .waiting
     public var received: Int64 = 0
     public var total: Int64 = 0
     public var error: String?
+    /// Nil from a downloader that predates the decision model.
+    public var answerModel: Secondary?
     public var fraction: Double { total > 0 ? min(1, Double(received) / Double(total)) : 0 }
-    public init(phase: Phase = .waiting, received: Int64 = 0, total: Int64 = 0, error: String? = nil) {
-        self.phase = phase; self.received = received; self.total = total; self.error = error
+    public init(phase: Phase = .waiting, received: Int64 = 0, total: Int64 = 0, error: String? = nil, answerModel: Secondary? = nil) {
+        self.phase = phase; self.received = received; self.total = total; self.error = error; self.answerModel = answerModel
     }
 }
 
