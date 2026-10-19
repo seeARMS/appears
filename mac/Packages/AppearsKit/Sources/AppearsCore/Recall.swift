@@ -35,14 +35,18 @@ public struct Features: Sendable, Codable, Hashable {
     /// The decision model's probability that one of the lookup's candidates is what's needed
     /// (one minus "none"). The same for every result of a lookup; what an ambient signal needs.
     public var answered: Double?
+    /// Which decision model and prompt gave `probability` (`Decider.modelID`), so journaled
+    /// outcomes from different models can be told apart.
+    public var decider: String?
 
     public init(cosine: Double, daysSinceTouched: Double, recallIntent: Bool = false, probability: Double? = nil,
-                answered: Double? = nil) {
+                answered: Double? = nil, decider: String? = nil) {
         self.cosine = cosine
         self.daysSinceTouched = daysSinceTouched
         self.recallIntent = recallIntent
         self.probability = probability
         self.answered = answered
+        self.decider = decider
     }
 
     // Journal rows from before the decision model carry other measurements and no probability.
@@ -53,7 +57,8 @@ public struct Features: Sendable, Codable, Hashable {
             daysSinceTouched: try c.decode(Double.self, forKey: .daysSinceTouched),
             recallIntent: try c.decodeIfPresent(Bool.self, forKey: .recallIntent) ?? false,
             probability: try c.decodeIfPresent(Double.self, forKey: .probability),
-            answered: try c.decodeIfPresent(Double.self, forKey: .answered)
+            answered: try c.decodeIfPresent(Double.self, forKey: .answered),
+            decider: try c.decodeIfPresent(String.self, forKey: .decider)
         )
     }
 }
@@ -96,11 +101,12 @@ public struct Suggestion: Sendable, Codable, Hashable, Identifiable {
     }
 
     /// The same result with the decision model's probability for it, and that some candidate
-    /// of the lookup is what's needed.
-    func withProbability(_ probability: Double, answered: Double) -> Suggestion {
+    /// of the lookup is what's needed, as decided by `decider` (its `modelID`).
+    func withProbability(_ probability: Double, answered: Double, decider: String) -> Suggestion {
         var features = features
         features.probability = probability
         features.answered = answered
+        features.decider = decider
         return Suggestion(item: item, unit: unit, reason: reason, snippet: snippet, score: score, confidence: probability,
                           features: features, line: line, evidence: evidence)
     }
@@ -434,7 +440,7 @@ public struct Recall: Sendable {
                 let probabilities = try await decider.decide(decision)
                 guard probabilities.count == pool.count + 1 else { throw DecisionError.invalid("wrong number of answers") }
                 unanswered = probabilities[pool.count]
-                ordered = zip(pool, probabilities).map { $0.withProbability($1, answered: 1 - probabilities[pool.count]) }
+                ordered = zip(pool, probabilities).map { $0.withProbability($1, answered: 1 - probabilities[pool.count], decider: decider.modelID) }
                     .sorted { $0.confidence == $1.confidence ? $0.score > $1.score : $0.confidence > $1.confidence }
             } catch is CancellationError {
                 throw CancellationError()

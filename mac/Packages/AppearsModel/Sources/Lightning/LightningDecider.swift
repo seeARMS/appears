@@ -29,7 +29,7 @@ public actor LightningDecider: Decider {
     public init(folder: URL, idleUnload: Duration = .seconds(300)) {
         self.folder = folder
         self.idleUnload = idleUnload
-        modelID = "h2o-lightning-4b@\(folder.lastPathComponent)/" + DecisionPrompt.prefill
+        modelID = "h2o-lightning-4b@\(folder.lastPathComponent)/\(DecisionPrompt.fingerprint)"
     }
 
     /// Whether `folder` holds what this decider needs, without loading it.
@@ -45,6 +45,9 @@ public actor LightningDecider: Decider {
         try Task.checkCancellation()
         let prompt = try DecisionPrompt.render(request)
         let state = try await load()
+        // Every way out from here, a rejected prompt or a cancellation included, starts the
+        // idle clock, so a model that loaded but never answered is still released.
+        defer { used() }
         let ids = encode(prompt, state)
         guard ids.count <= Self.maximumTokens else { throw DecisionError.invalid("prompt too long (\(ids.count) tokens)") }
         try Task.checkCancellation()
@@ -53,13 +56,18 @@ public actor LightningDecider: Decider {
         let rows = state.model.embeddings.rows(MLXArray(labels.map(Int32.init))).asType(.float32)
         let logits = matmul(rows, hidden)
         eval(logits)
-        lastUse = .now
-        scheduleUnload()
         return try DecisionPrompt.probabilities(logits.asArray(Float.self).map(Double.init))
     }
 
     /// A rendered prompt's token ids, for tests.
-    func tokens(_ prompt: String) async throws -> [Int] { encode(prompt, try await load()) }
+    func tokens(_ prompt: String) async throws -> [Int] {
+        let state = try await load()
+        defer { used() }
+        return encode(prompt, state)
+    }
+
+    /// Whether the weights are in memory, for tests.
+    var isLoaded: Bool { loaded != nil }
 
     /// The token ids for a rendered prompt. Special tokens are split out first, as Hugging Face
     /// tokenizers do, then each stretch of text is encoded without adding any.
@@ -120,7 +128,9 @@ public actor LightningDecider: Decider {
         return result
     }
 
-    private func scheduleUnload() {
+    /// Restarts the idle clock: the weights are released `idleUnload` after the last use.
+    private func used() {
+        lastUse = .now
         unloadTask?.cancel()
         let wait = idleUnload
         unloadTask = Task { [weak self] in

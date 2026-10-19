@@ -74,8 +74,25 @@ struct ReferenceDecisions: Decodable {
     }
 }
 
+@Test func theModelIDNamesTheWeightsAndThePrompt() {
+    #expect(DecisionPrompt.fingerprint.count == 8 && DecisionPrompt.fingerprint.allSatisfy(\.isHexDigit))
+    let decider = LightningDecider(folder: URL(filePath: "/models/h2o-lightning-4b-acaf0d4e-q4"))
+    #expect(decider.modelID == "h2o-lightning-4b@h2o-lightning-4b-acaf0d4e-q4/" + DecisionPrompt.fingerprint)
+}
+
 @Test func probabilitiesUseTheShimTemperature() throws {
     let p = try DecisionPrompt.probabilities([0, log(2) * 0.75])
     #expect(abs(p[0] - 1.0 / 3) < 1e-9 && abs(p[1] - 2.0 / 3) < 1e-9)
     #expect(throws: DecisionError.self) { try DecisionPrompt.probabilities([.nan, 0]) }
+}
+
+@Test(.enabled(if: DeciderFolder.exists)) func aRejectedPromptStillReleasesTheModel() async throws {
+    // The prompt is valid but too long, so it's rejected after the model has loaded.
+    let decider = LightningDecider(folder: DeciderFolder.url, idleUnload: .milliseconds(500))
+    let long = DecisionRequest(record: String(repeating: "word ", count: LightningDecider.maximumTokens + 100), question: "Which one?",
+                               options: [DecisionOption(name: "one", description: "the first"), DecisionOption(name: "two", description: "the second")])
+    await #expect(throws: DecisionError.self) { try await decider.decide(long) }
+    #expect(await decider.isLoaded)
+    try await Task.sleep(for: .seconds(2))
+    #expect(await !decider.isLoaded)
 }

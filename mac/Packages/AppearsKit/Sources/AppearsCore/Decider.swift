@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// One option a decision model can choose: a short name and the text it reads.
@@ -28,7 +29,8 @@ public struct DecisionRequest: Sendable, Equatable {
 /// Reads a record and a question together and returns a probability for every option. This is
 /// what decides which result answers, and how sure Appears is: one calibrated number.
 public protocol Decider: Sendable {
-    /// Changes when the weights or the prompt change, so stored outcomes can be told apart.
+    /// Changes when the weights or the prompt change. Every decided result carries it
+    /// (`Features.decider`), so journaled outcomes from different models can be told apart.
     var modelID: String { get }
     /// Probabilities aligned with `request.options`, summing to 1.
     func decide(_ request: DecisionRequest) async throws -> [Double]
@@ -53,6 +55,14 @@ public enum DecisionPrompt {
     public static let maximumOptions = 16
     /// The first labels of the shim's 255; each is one token after the prefill and a space.
     public static let labels = (UnicodeScalar("A").value...UnicodeScalar("Z").value).map { String(UnicodeScalar($0)!) }
+
+    /// Eight hex digits that change with the system prompt, the template, the prefill or the
+    /// temperature: the prompt's part of a decider's `modelID`.
+    public static let fingerprint: String = {
+        let sample = DecisionRequest(record: "r", question: "q", options: [.init(name: "a", description: "1"), .init(name: "b", description: "2")])
+        let text = ((try? render(sample)) ?? "") + "\n\(temperature)"
+        return SHA256.hash(data: Data(text.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
+    }()
 
     /// The user turn: the record, the question, then one `A) name: description` line per option.
     public static func user(_ request: DecisionRequest) throws -> String {

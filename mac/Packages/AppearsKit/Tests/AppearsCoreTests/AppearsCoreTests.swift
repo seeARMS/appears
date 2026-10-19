@@ -134,6 +134,8 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         let response = try await recall.run(RecallRequest(context: context, trigger: .pull, limit: 3))
         let first = try #require(response.suggestions.first)
         #expect(first.item.title == "quote.txt" && first.decided && abs(first.confidence - 0.85) < 1e-9)
+        // Each decided result records which model decided it, for the journal.
+        #expect(response.suggestions.allSatisfy { $0.features.decider == decider.modelID })
         #expect(response.suggestions.dropFirst().allSatisfy { $0.decided && $0.confidence == 0 })
         #expect(abs((response.unanswered ?? 0) - 0.15) < 1e-9)
         // The model reads the draft as a question, the candidates and a way to say none.
@@ -223,7 +225,9 @@ private func makeIndex(_ files: [(name: String, text: String, age: Double)], now
         let old = #"{"cosine":0.7,"zScore":3,"agreement":true,"entityHit":false,"daysSinceTouched":10,"fused":0.02,"forgotten":0.8,"novelty":1}"#
         let decoded = try JSONDecoder().decode(Features.self, from: Data(old.utf8))
         #expect(decoded.cosine == 0.7 && decoded.daysSinceTouched == 10 && !decoded.recallIntent && decoded.probability == nil)
-        let current = Features(cosine: 0.5, daysSinceTouched: 2, recallIntent: true, probability: 0.9)
+        #expect(decoded.decider == nil)
+        let current = Features(cosine: 0.5, daysSinceTouched: 2, recallIntent: true, probability: 0.9, answered: 0.95,
+                               decider: "scripted")
         #expect(try JSONDecoder().decode(Features.self, from: JSONEncoder().encode(current)) == current)
     }
 
